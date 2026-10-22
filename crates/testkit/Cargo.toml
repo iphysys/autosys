@@ -1,0 +1,25 @@
+[package]
+name = "synth-testkit"
+version = "0.1.0"
+description = "In-memory stores, fakes and one contract-test suite per contracts trait. Dev-dependency only."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "testkit"
+
+[dependencies]
+synth-contracts.workspace = true
+synth-schema-types.workspace = true
+
+async-trait.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }
+
+[lints]
+workspace = true

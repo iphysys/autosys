@@ -22,7 +22,13 @@ Before opening a pull request, run every check CI runs:
 cargo xtask ci
 ```
 
-This runs, in order: `cargo fmt --check`, `cargo clippy` with warnings as errors, `cargo test`, and `cargo deny check`. CI runs only `cargo xtask ci`, so a local pass means a CI pass.
+This runs, in order: `cargo fmt --check`, `cargo clippy` with warnings as errors, `cargo xtask arch-check`, `cargo test`, and `cargo deny check`. CI runs only `cargo xtask ci`, so a local pass means a CI pass.
+
+`cargo xtask arch-check` fails when a crate depends on a workspace crate that blueprint §10.3 does not allow, when `synth-testkit` is used as anything but a dev-dependency, or when a crate other than `contracts`, `testkit`, `sdr`, `infra` or `bootstrap` names `SdrRepository` (§7.2).
+
+## Implementing a contract
+
+The traits every harness crate implements live in `crates/contracts`. `crates/testkit` has an in-memory implementation or fake for each, and one contract-test suite per trait in `testkit::contract`. A new implementation (for example a Postgres store) runs the same suite from its own tests, with `synth-testkit` as a dev-dependency.
 
 ## Schemas
 
