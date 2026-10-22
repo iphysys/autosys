@@ -13,3 +13,8 @@ mod generated {
 }
 
 pub use generated::*;
+
+/// Every schema file under `schemas/`, as (path relative to `schemas/`, file
+/// text), embedded at build time. Lets the harness validate values against the
+/// same schemas these types were generated from.
+pub const SCHEMA_FILES: &[(&str, &str)] = include!(concat!(env!("OUT_DIR"), "/schema_files.rs"));

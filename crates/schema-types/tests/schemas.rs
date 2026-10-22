@@ -310,3 +310,20 @@ fn examples_round_trip_through_rust_types() {
         failures.join("\n")
     );
 }
+
+#[test]
+fn embedded_schema_files_match_the_files_on_disk() {
+    let embedded: BTreeMap<String, Value> = schema_types::SCHEMA_FILES
+        .iter()
+        .map(|(path, text)| {
+            let schema = serde_json::from_str(text)
+                .unwrap_or_else(|e| panic!("{path}: embedded text is not JSON: {e}"));
+            ((*path).to_owned(), schema)
+        })
+        .collect();
+    assert_eq!(
+        embedded,
+        load_schemas(),
+        "SCHEMA_FILES differs from schemas/"
+    );
+}

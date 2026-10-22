@@ -5,6 +5,7 @@ members = [
     "crates/contracts",
     "crates/infra",
     "crates/schema-types",
+    "crates/sdr",
     "crates/testkit",
     "xtask",
 ]
@@ -27,6 +28,8 @@ chrono = { version = "0.4", default-features = false, features = ["serde", "std"
 # Network schema resolution stays off: tests resolve references from local files only.
 jsonschema = { version = "0.58", default-features = false }
 prettyplease = "0.3"
+# Property tests; the fork and timeout runners are not needed.
+proptest = { version = "1.11", default-features = false, features = ["std"] }
 regress = "0.12"
 # typify 0.8 reads schemars 0.8 schema types.
 schemars = "0.8"
