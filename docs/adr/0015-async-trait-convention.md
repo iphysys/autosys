@@ -1,6 +1,6 @@
 # ADR-0015: Async methods on trait objects use `async-trait`
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-22
 
 ## Context

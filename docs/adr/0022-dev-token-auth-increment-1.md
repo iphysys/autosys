@@ -1,6 +1,6 @@
 # ADR-0022: Development-token authentication for Increment 1
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-22
 
 ## Context

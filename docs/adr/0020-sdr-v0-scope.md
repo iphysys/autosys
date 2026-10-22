@@ -1,6 +1,6 @@
 # ADR-0020: SDR v0 scope
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-22
 
 ## Context
