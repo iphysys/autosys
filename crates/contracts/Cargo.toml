@@ -1,0 +1,28 @@
+[package]
+name = "synth-contracts"
+version = "0.1.0"
+description = "Traits and core types every harness crate implements or uses. No infrastructure."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "contracts"
+
+[dependencies]
+synth-schema-types.workspace = true
+
+async-trait.workspace = true
+# `clock` for SystemClock.
+chrono = { workspace = true, features = ["clock"] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio-util.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "time"] }
+
+[lints]
+workspace = true

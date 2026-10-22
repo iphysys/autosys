@@ -2,6 +2,8 @@
 //!
 //! CI calls only `cargo xtask ci`, so the same checks run locally and in CI.
 
+mod arch_check;
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
@@ -11,7 +13,8 @@ const USAGE: &str = "\
 Usage: cargo xtask <task>
 
 Tasks:
-  ci    Format check, clippy (warnings as errors), tests, cargo-deny";
+  ci            Format check, clippy (warnings as errors), arch-check, tests, cargo-deny
+  arch-check    Allowed crate dependencies (blueprint 10.3) and the SDR single-writer rule (7.2)";
 
 fn main() -> ExitCode {
     match run() {
@@ -27,6 +30,7 @@ fn run() -> Result<()> {
     let task = std::env::args().nth(1);
     match task.as_deref() {
         Some("ci") => ci(),
+        Some("arch-check") => arch_check(&workspace_root()?),
         Some("-h" | "--help") => {
             println!("{USAGE}");
             Ok(())
@@ -36,18 +40,21 @@ fn run() -> Result<()> {
     }
 }
 
-/// A named check: the arguments passed to `cargo`.
-struct Step {
-    name: &'static str,
-    args: &'static [&'static str],
+/// A named check: either a `cargo` command or the in-process arch-check.
+enum Step {
+    Cargo {
+        name: &'static str,
+        args: &'static [&'static str],
+    },
+    ArchCheck,
 }
 
 const CI_STEPS: &[Step] = &[
-    Step {
+    Step::Cargo {
         name: "format",
         args: &["fmt", "--all", "--check"],
     },
-    Step {
+    Step::Cargo {
         name: "clippy",
         args: &[
             "clippy",
@@ -60,11 +67,12 @@ const CI_STEPS: &[Step] = &[
             "warnings",
         ],
     },
-    Step {
+    Step::ArchCheck,
+    Step::Cargo {
         name: "tests",
         args: &["test", "--workspace", "--all-features", "--locked"],
     },
-    Step {
+    Step::Cargo {
         name: "cargo-deny",
         args: &["deny", "--locked", "check"],
     },
@@ -74,20 +82,41 @@ fn ci() -> Result<()> {
     let root = workspace_root()?;
     ensure_cargo_deny(&root)?;
     for step in CI_STEPS {
-        eprintln!(
-            "xtask: ci: running {} (cargo {})",
-            step.name,
-            step.args.join(" ")
-        );
-        let status = cargo(&root)
-            .args(step.args)
-            .status()
-            .with_context(|| format!("failed to start step `{}`", step.name))?;
-        if !status.success() {
-            bail!("ci step `{}` failed ({status})", step.name);
+        match step {
+            Step::Cargo { name, args } => {
+                eprintln!("xtask: ci: running {name} (cargo {})", args.join(" "));
+                let status = cargo(&root)
+                    .args(*args)
+                    .status()
+                    .with_context(|| format!("failed to start step `{name}`"))?;
+                if !status.success() {
+                    bail!("ci step `{name}` failed ({status})");
+                }
+            }
+            Step::ArchCheck => {
+                eprintln!("xtask: ci: running arch-check");
+                arch_check(&root).context("ci step `arch-check` failed")?;
+            }
         }
     }
     eprintln!("xtask: ci: all steps passed");
+    Ok(())
+}
+
+fn arch_check(root: &Path) -> Result<()> {
+    let output = cargo(root)
+        .args(["metadata", "--format-version", "1", "--no-deps", "--locked"])
+        .output()
+        .context("failed to run cargo metadata")?;
+    if !output.status.success() {
+        bail!(
+            "cargo metadata failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let metadata = serde_json::from_slice(&output.stdout).context("parsing cargo metadata")?;
+    arch_check::run(root, &metadata)?;
+    eprintln!("xtask: arch-check: passed");
     Ok(())
 }
 

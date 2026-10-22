@@ -27,6 +27,8 @@ fn main() -> BuildResult<()> {
         serde_json::from_value(serde_json::json!({ "$defs": definitions }))?;
     let mut settings = typify::TypeSpaceSettings::default();
     settings.with_struct_builder(false);
+    // Lets stores and tests compare stored and retrieved values directly.
+    settings.with_derive("PartialEq".to_string());
     let mut type_space = typify::TypeSpace::new(&settings);
     type_space.add_root_schema(root)?;
 
