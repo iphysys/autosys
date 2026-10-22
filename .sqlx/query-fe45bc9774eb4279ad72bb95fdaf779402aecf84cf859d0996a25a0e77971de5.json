@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    SELECT record AS \"record!: Json<SdrVersionRecord>\"\n                    FROM sdr_versions\n                    WHERE project_id = $1 AND version = $2\n                    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "record!: Json<SdrVersionRecord>",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "sdr_versions",
+            "name": "record"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "fe45bc9774eb4279ad72bb95fdaf779402aecf84cf859d0996a25a0e77971de5"
+}

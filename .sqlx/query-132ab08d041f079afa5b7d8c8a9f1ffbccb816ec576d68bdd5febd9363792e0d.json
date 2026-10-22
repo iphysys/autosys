@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT metadata AS \"metadata!: Json<ArtifactMetadata>\" FROM artifacts WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "metadata!: Json<ArtifactMetadata>",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "artifacts",
+            "name": "metadata"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "132ab08d041f079afa5b7d8c8a9f1ffbccb816ec576d68bdd5febd9363792e0d"
+}

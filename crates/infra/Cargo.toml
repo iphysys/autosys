@@ -1,0 +1,39 @@
+[package]
+name = "synth-infra"
+version = "0.1.0"
+description = "Adapters behind the contracts traits: PostgreSQL persistence and the artifact volume (ADR-0016)."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "infra"
+
+[dependencies]
+synth-contracts.workspace = true
+
+async-trait.workspace = true
+chrono.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sqlx = { workspace = true, features = [
+    "chrono",
+    "json",
+    "macros",
+    "migrate",
+    "postgres",
+    "runtime-tokio",
+] }
+tokio = { workspace = true, features = ["fs", "macros", "rt", "sync", "time"] }
+tracing.workspace = true
+
+[dev-dependencies]
+synth-testkit.workspace = true
+
+chrono = { workspace = true, features = ["clock"] }
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+
+[lints]
+workspace = true

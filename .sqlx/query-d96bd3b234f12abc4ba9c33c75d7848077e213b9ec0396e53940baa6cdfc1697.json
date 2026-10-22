@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    SELECT metadata AS \"metadata!: Json<ArtifactMetadata>\"\n                    FROM artifacts\n                    WHERE run_id = $1\n                    ORDER BY created_at, id\n                    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "metadata!: Json<ArtifactMetadata>",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "artifacts",
+            "name": "metadata"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d96bd3b234f12abc4ba9c33c75d7848077e213b9ec0396e53940baa6cdfc1697"
+}

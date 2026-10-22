@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    INSERT INTO event_sequences (run_id, last_seq) VALUES ($1, 1)\n                    ON CONFLICT (run_id) DO UPDATE SET last_seq = event_sequences.last_seq + 1\n                    RETURNING last_seq\n                    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "last_seq",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "event_sequences",
+            "name": "last_seq"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4a296dc21a6ab40fd4d76b124fe3db54745793d840bcbe597afba027ff7a0b11"
+}
