@@ -1,0 +1,27 @@
+# PostgreSQL for local development and CI (ADR-0016). From the repository root:
+#
+#   docker compose --env-file .env -f deploy/compose/compose.yaml up -d --wait
+#
+# The password comes from AUTOSYS_DB_PASSWORD, so no credential is committed.
+name: autosys
+
+services:
+  postgres:
+    image: postgres:18.4-alpine
+    environment:
+      POSTGRES_USER: autosys
+      POSTGRES_PASSWORD: ${AUTOSYS_DB_PASSWORD:?set AUTOSYS_DB_PASSWORD (see README, section Database)}
+      POSTGRES_DB: autosys
+    ports:
+      # Reachable from this machine only.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U autosys -d autosys"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  postgres-data:
