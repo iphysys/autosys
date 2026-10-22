@@ -30,6 +30,19 @@ jobs:
         with:
           tool: cargo-deny
 
+      - name: Install sqlx-cli
+        run: cargo install --locked sqlx-cli --version 0.9.0 --no-default-features --features postgres
+
+      # The same compose file developers use. A fresh password for each run,
+      # masked in the logs.
+      - name: Start Postgres
+        run: |
+          password="$(openssl rand -hex 16)"
+          echo "::add-mask::$password"
+          echo "AUTOSYS_DB_PASSWORD=$password" >> "$GITHUB_ENV"
+          echo "DATABASE_URL=postgres://autosys:$password@127.0.0.1:5432/autosys" >> "$GITHUB_ENV"
+          AUTOSYS_DB_PASSWORD="$password" docker compose -f deploy/compose/compose.yaml up -d --wait
+
       # All checks live in xtask; CI adds none of its own.
       - name: cargo xtask ci
         run: cargo xtask ci

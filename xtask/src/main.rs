@@ -1,6 +1,8 @@
 //! Developer automation. Run with `cargo xtask <task>`.
 //!
 //! CI calls only `cargo xtask ci`, so the same checks run locally and in CI.
+//! `ci` needs a Postgres server at `DATABASE_URL` (see README, section
+//! Database).
 
 mod arch_check;
 
@@ -13,7 +15,8 @@ const USAGE: &str = "\
 Usage: cargo xtask <task>
 
 Tasks:
-  ci            Format check, clippy (warnings as errors), arch-check, tests, cargo-deny
+  ci            Format check, clippy (warnings as errors), arch-check, database
+                migrations and sqlx query data, tests, cargo-deny
   arch-check    Allowed crate dependencies (blueprint 10.3) and the SDR single-writer rule (7.2)";
 
 fn main() -> ExitCode {
@@ -49,6 +52,9 @@ enum Step {
     ArchCheck,
 }
 
+/// Workspace-relative directory of the SQL migrations.
+const MIGRATIONS: &str = "crates/infra/migrations";
+
 const CI_STEPS: &[Step] = &[
     Step::Cargo {
         name: "format",
@@ -68,6 +74,17 @@ const CI_STEPS: &[Step] = &[
         ],
     },
     Step::ArchCheck,
+    // Creates the database at DATABASE_URL if needed and applies the
+    // migrations, so the query-data check below describes the current schema.
+    Step::Cargo {
+        name: "database",
+        args: &["sqlx", "database", "setup", "--source", MIGRATIONS],
+    },
+    // Fails if `.sqlx/` no longer matches the queries or the schema.
+    Step::Cargo {
+        name: "sqlx query data",
+        args: &["sqlx", "prepare", "--workspace", "--check"],
+    },
     Step::Cargo {
         name: "tests",
         args: &["test", "--workspace", "--all-features", "--locked"],
@@ -80,12 +97,22 @@ const CI_STEPS: &[Step] = &[
 
 fn ci() -> Result<()> {
     let root = workspace_root()?;
-    ensure_cargo_deny(&root)?;
+    ensure_tool(&root, "deny", "cargo install --locked cargo-deny")?;
+    ensure_tool(
+        &root,
+        "sqlx",
+        "cargo install --locked sqlx-cli --version 0.9.0 --no-default-features --features postgres",
+    )?;
+    ensure_database_url()?;
     for step in CI_STEPS {
         match step {
             Step::Cargo { name, args } => {
                 eprintln!("xtask: ci: running {name} (cargo {})", args.join(" "));
+                // Query macros read the committed `.sqlx/` data, never the
+                // live database, so CI proves that data is complete.
+                // `cargo sqlx prepare` overrides this for its own build.
                 let status = cargo(&root)
+                    .env("SQLX_OFFLINE", "true")
                     .args(*args)
                     .status()
                     .with_context(|| format!("failed to start step `{name}`"))?;
@@ -121,13 +148,26 @@ fn arch_check(root: &Path) -> Result<()> {
 }
 
 /// Fails early with install instructions instead of a confusing cargo error.
-fn ensure_cargo_deny(root: &Path) -> Result<()> {
+fn ensure_tool(root: &Path, subcommand: &str, install: &str) -> Result<()> {
     let installed = cargo(root)
-        .args(["deny", "--version"])
+        .args([subcommand, "--version"])
         .output()
         .is_ok_and(|out| out.status.success());
     if !installed {
-        bail!("cargo-deny is not installed; install it with `cargo install --locked cargo-deny`");
+        bail!("`cargo {subcommand}` is not installed; install it with `{install}`");
+    }
+    Ok(())
+}
+
+/// The database steps and tests need a Postgres server. Never prints the
+/// URL, which carries a password.
+fn ensure_database_url() -> Result<()> {
+    if std::env::var_os("DATABASE_URL").is_none_or(|url| url.is_empty()) {
+        bail!(
+            "DATABASE_URL is not set; start Postgres with \
+             `docker compose --env-file .env -f deploy/compose/compose.yaml up -d --wait` \
+             and set DATABASE_URL (see README, section Database)"
+        );
     }
     Ok(())
 }

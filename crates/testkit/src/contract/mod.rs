@@ -7,10 +7,14 @@
 //!
 //! ```ignore
 //! #[tokio::test(flavor = "multi_thread")]
-//! async fn postgres_job_store() {
-//!     testkit::contract::job_store(|clock| async move { PgJobStore::new(pool(), clock) }).await;
+//! async fn in_memory_job_store() {
+//!     testkit::contract::job_store(|clock| async move { InMemoryJobStore::new(clock) }).await;
 //! }
 //! ```
+//!
+//! The job-store suite controls time through the clock it passes to `make`.
+//! When a store reads time elsewhere, such as the database clock (ADR-0023),
+//! its test makes that time follow the given clock.
 
 mod artifact_store;
 mod check;

@@ -1,8 +1,10 @@
 //! Repository traits implemented by `synth-infra` (Postgres, ADR-0016) and by
 //! testkit's in-memory stores.
 //!
-//! Stores that depend on time take a [`crate::Clock`] at construction, so lease
-//! expiry behaves the same in every implementation and is testable.
+//! Lease expiry follows a single clock per store (ADR-0023). The Postgres
+//! stores read the database clock. The in-memory stores take a
+//! [`crate::Clock`] at construction that stands in for it, so tests control
+//! time.
 
 use std::time::Duration;
 

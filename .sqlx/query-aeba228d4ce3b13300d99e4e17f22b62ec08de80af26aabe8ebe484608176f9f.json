@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                        UPDATE jobs\n                        SET state = 'queued', wake_condition = NULL, updated_at = autosys_now()\n                        WHERE id = $1\n                        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "aeba228d4ce3b13300d99e4e17f22b62ec08de80af26aabe8ebe484608176f9f"
+}

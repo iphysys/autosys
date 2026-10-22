@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    SELECT document AS \"document!: Json<Evidence>\"\n                    FROM evidence\n                    WHERE run_id = $1\n                    ORDER BY created_at, id\n                    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "document!: Json<Evidence>",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "evidence",
+            "name": "document"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "112fdd4d905440e0513c29602897bc9c0d1c781b9b7b7e93ea65e40bdbcc1d90"
+}

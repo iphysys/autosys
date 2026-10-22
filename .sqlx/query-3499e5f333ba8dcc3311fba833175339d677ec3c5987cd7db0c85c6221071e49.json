@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    INSERT INTO sdr_versions (project_id, version, parent_version, document, record)\n                    VALUES ($1, $2, $3, $4, $5)\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8",
+        "Jsonb",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3499e5f333ba8dcc3311fba833175339d677ec3c5987cd7db0c85c6221071e49"
+}

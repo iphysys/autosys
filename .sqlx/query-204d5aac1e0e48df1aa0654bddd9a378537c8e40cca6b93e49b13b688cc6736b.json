@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    SELECT document AS \"document!: Json<Event>\"\n                    FROM events\n                    WHERE run_id = $1 AND seq > $2\n                    ORDER BY seq\n                    LIMIT $3\n                    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "document!: Json<Event>",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "document"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "204d5aac1e0e48df1aa0654bddd9a378537c8e40cca6b93e49b13b688cc6736b"
+}

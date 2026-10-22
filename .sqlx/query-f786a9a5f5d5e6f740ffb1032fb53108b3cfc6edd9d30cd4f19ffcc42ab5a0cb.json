@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    INSERT INTO evidence (id, run_id, created_at, document)\n                    VALUES ($1, $2, $3, $4)\n                    ON CONFLICT (id) DO NOTHING\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f786a9a5f5d5e6f740ffb1032fb53108b3cfc6edd9d30cd4f19ffcc42ab5a0cb"
+}
