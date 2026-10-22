@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "run_id": "run-0001",
+  "seq": 8,
+  "occurred_at": "2026-10-22T09:04:13Z",
+  "correlation_id": "corr-0005",
+  "actor": { "kind": "system", "component": "evaluation" },
+  "payload": {
+    "type": "check_completed",
+    "check_id": "requirement.numeric_threshold",
+    "evidence_id": "ev-check-mass-1",
+    "verdict": "pass"
+  }
+}

@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RunReport",
+  "description": "The record of one synthesis run (blueprint section 18.1). Numbers and statuses come from evidence and the SDR; only narrative is model-written. Branches, fidelity and cost are added in later increments.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "project_id",
+    "objective",
+    "started_at",
+    "ended_at",
+    "stop_reason",
+    "final_sdr_version",
+    "requirements",
+    "decisions",
+    "assumptions",
+    "artifacts",
+    "budget_used",
+    "approvals",
+    "escalations",
+    "versions"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "run_id": { "$ref": "../common/types.schema.json#/$defs/RunId" },
+    "project_id": { "$ref": "../common/types.schema.json#/$defs/ProjectId" },
+    "objective": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+    "started_at": { "$ref": "../common/types.schema.json#/$defs/Timestamp" },
+    "ended_at": { "$ref": "../common/types.schema.json#/$defs/Timestamp" },
+    "stop_reason": { "$ref": "../common/types.schema.json#/$defs/StopReason" },
+    "final_sdr_version": { "$ref": "../common/types.schema.json#/$defs/SdrVersion" },
+    "requirements": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/RequirementStatusRow" }
+    },
+    "decisions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ReportDecision" }
+    },
+    "assumptions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ReportAssumption" }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ReportArtifact" }
+    },
+    "budget_used": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/AgentUsage" }
+    },
+    "approvals": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ReportApproval" }
+    },
+    "escalations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ReportEscalation" }
+    },
+    "versions": { "$ref": "../common/types.schema.json#/$defs/HarnessVersions" },
+    "narrative": { "$ref": "#/$defs/ReportNarrative" }
+  },
+  "$defs": {
+    "RequirementStatus": {
+      "type": "string",
+      "enum": ["pass", "fail", "unverified", "waived"]
+    },
+    "RequirementStatusRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirement_id", "priority", "status", "evidence_ids"],
+      "properties": {
+        "requirement_id": { "$ref": "../common/types.schema.json#/$defs/ElementId" },
+        "priority": { "$ref": "../sdr/requirement.schema.json#/$defs/RequirementPriority" },
+        "status": { "$ref": "#/$defs/RequirementStatus" },
+        "evidence_ids": {
+          "description": "The evidence the status was derived from.",
+          "type": "array",
+          "items": { "$ref": "../common/types.schema.json#/$defs/EvidenceId" }
+        }
+      }
+    },
+    "ReportDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision_id", "choice", "rationale"],
+      "properties": {
+        "decision_id": { "$ref": "../common/types.schema.json#/$defs/ElementId" },
+        "choice": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+        "rationale": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" }
+      }
+    },
+    "ReportAssumption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assumption_id", "statement"],
+      "properties": {
+        "assumption_id": { "$ref": "../common/types.schema.json#/$defs/ElementId" },
+        "statement": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" }
+      }
+    },
+    "ReportArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "format", "source_sdr_version", "tool", "tool_version"],
+      "properties": {
+        "artifact_id": { "$ref": "../common/types.schema.json#/$defs/ArtifactId" },
+        "format": { "$ref": "../common/types.schema.json#/$defs/Identifier" },
+        "source_sdr_version": { "$ref": "../common/types.schema.json#/$defs/SdrVersion" },
+        "tool": { "$ref": "../common/types.schema.json#/$defs/ToolName" },
+        "tool_version": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" }
+      }
+    },
+    "AgentUsage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agent_id", "usage"],
+      "properties": {
+        "agent_id": { "$ref": "../common/types.schema.json#/$defs/AgentId" },
+        "usage": { "$ref": "../common/types.schema.json#/$defs/Usage" }
+      }
+    },
+    "ReportApproval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approval_id", "gate", "answer", "actor", "answered_at"],
+      "properties": {
+        "approval_id": { "$ref": "../common/types.schema.json#/$defs/ApprovalId" },
+        "gate": { "$ref": "../common/types.schema.json#/$defs/Identifier" },
+        "answer": { "$ref": "../events/event.schema.json#/$defs/ApprovalAnswer" },
+        "actor": { "$ref": "../common/types.schema.json#/$defs/Actor" },
+        "answered_at": { "$ref": "../common/types.schema.json#/$defs/Timestamp" }
+      }
+    },
+    "ReportEscalation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason", "occurred_at"],
+      "properties": {
+        "reason": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+        "occurred_at": { "$ref": "../common/types.schema.json#/$defs/Timestamp" }
+      }
+    },
+    "ReportNarrative": {
+      "description": "The only model-written part of the report.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "open_questions"],
+      "properties": {
+        "summary": { "$ref": "../common/types.schema.json#/$defs/Narrative" },
+        "open_questions": {
+          "type": "array",
+          "items": { "$ref": "../common/types.schema.json#/$defs/Narrative" }
+        }
+      }
+    }
+  }
+}

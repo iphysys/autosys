@@ -1,0 +1,25 @@
+{
+  "schema_version": "0.1",
+  "id": "ev-check-mass-1",
+  "run_id": "run-0001",
+  "created_at": "2026-10-22T09:04:13.250Z",
+  "sdr_version": 2,
+  "subject_ids": ["req-mass"],
+  "body": {
+    "kind": "check",
+    "check_id": "requirement.numeric_threshold",
+    "check_version": "0.1.0",
+    "method": "deterministic",
+    "inputs": [
+      {
+        "name": "part.mass",
+        "quantity": { "value": 212, "unit": "g" },
+        "normalized": { "value": 0.212, "unit": "kg" },
+        "source_evidence_id": "ev-tool-measure-1"
+      },
+      { "name": "limit", "quantity": { "value": 0.25, "unit": "kg" } }
+    ],
+    "verdict": "pass",
+    "message": "0.212 kg is at most 0.25 kg"
+  }
+}

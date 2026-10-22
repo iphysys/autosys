@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AutonomyPolicy",
+  "description": "config/policies/autonomy.yaml: actions that need human approval. An action no rule matches needs none.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "approvals"],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "approvals": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ApprovalRule" }
+    }
+  },
+  "$defs": {
+    "ApprovalRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "description", "trigger"],
+      "properties": {
+        "id": { "$ref": "../common/types.schema.json#/$defs/Identifier" },
+        "description": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+        "trigger": { "$ref": "#/$defs/ApprovalTrigger" }
+      }
+    },
+    "ApprovalTrigger": {
+      "oneOf": [
+        {
+          "description": "An SDR commit. With final_only, only transitions marked final.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "final_only"],
+          "properties": {
+            "kind": { "const": "sdr_commit" },
+            "final_only": { "type": "boolean" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "tool"],
+          "properties": {
+            "kind": { "const": "tool_call" },
+            "tool": { "$ref": "../common/types.schema.json#/$defs/ToolName" }
+          }
+        }
+      ]
+    }
+  }
+}

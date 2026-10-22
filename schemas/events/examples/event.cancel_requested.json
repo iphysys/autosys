@@ -1,0 +1,9 @@
+{
+  "schema_version": "0.1",
+  "run_id": "run-0002",
+  "seq": 21,
+  "occurred_at": "2026-10-22T10:30:00Z",
+  "correlation_id": "corr-0101",
+  "actor": { "kind": "user", "user_id": "dev" },
+  "payload": { "type": "cancel_requested", "reason": "Wrong requirements loaded." }
+}

@@ -1,0 +1,46 @@
+{
+  "schema_version": "0.1",
+  "id": "tr-0002",
+  "base_version": 1,
+  "actor": { "kind": "agent", "agent_id": "main_orchestrator" },
+  "reason": "Record the measured mass and the ribbed-section decision.",
+  "final": true,
+  "operations": [
+    {
+      "op": "add_requirement",
+      "requirement": {
+        "id": "req-finish",
+        "text": "The visible faces should have a uniform finish.",
+        "priority": "should",
+        "evidence_ids": []
+      }
+    },
+    {
+      "op": "set_parameter",
+      "parameter": {
+        "id": "part.mass",
+        "value": { "value": 0.212, "unit": "kg" },
+        "source": { "kind": "tool_result", "evidence_id": "ev-tool-measure-1" },
+        "evidence_ids": ["ev-tool-measure-1"]
+      }
+    },
+    {
+      "op": "add_decision",
+      "decision": {
+        "id": "dec-ribbed",
+        "choice": "Use a ribbed section instead of a solid section.",
+        "rationale": "Ribs keep the wall thickness while reducing mass.",
+        "related_ids": ["req-mass"]
+      }
+    },
+    {
+      "op": "add_assumption",
+      "assumption": {
+        "id": "asm-material",
+        "statement": "The part is machined from aluminium 6061.",
+        "related_ids": []
+      }
+    },
+    { "op": "link_evidence", "element_id": "req-mass", "evidence_id": "ev-check-mass-1" }
+  ]
+}

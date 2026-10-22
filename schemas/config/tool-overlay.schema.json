@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ToolOverlay",
+  "description": "Governance overlay for one MCP server in config/tools/ (blueprint section 14.2). Tools the server offers but this file does not list are unavailable. Connection details are deployment configuration and do not belong here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "server_id", "description", "tools"],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "server_id": { "$ref": "../common/types.schema.json#/$defs/Identifier" },
+    "description": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+    "tools": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/ToolPolicy" }
+    }
+  },
+  "$defs": {
+    "ToolPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "access",
+        "external_side_effects",
+        "idempotent",
+        "concurrency_safe",
+        "timeout_seconds",
+        "requires_approval"
+      ],
+      "properties": {
+        "name": {
+          "description": "The tool name as the MCP server exposes it.",
+          "$ref": "../common/types.schema.json#/$defs/ToolName"
+        },
+        "description": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+        "access": { "$ref": "#/$defs/ToolAccess" },
+        "external_side_effects": {
+          "description": "True if a call changes anything outside the sandbox and artifact store.",
+          "type": "boolean"
+        },
+        "idempotent": { "type": "boolean" },
+        "concurrency_safe": { "type": "boolean" },
+        "timeout_seconds": { "type": "integer", "minimum": 1 },
+        "requires_approval": { "type": "boolean" },
+        "request_schema": { "$ref": "../common/types.schema.json#/$defs/SchemaPath" },
+        "result_schema": { "$ref": "../common/types.schema.json#/$defs/SchemaPath" }
+      }
+    },
+    "ToolAccess": {
+      "type": "string",
+      "enum": ["read_only", "mutating"]
+    }
+  }
+}

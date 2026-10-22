@@ -1,0 +1,15 @@
+{
+  "schema_version": "0.1",
+  "run_id": "run-0001",
+  "seq": 13,
+  "occurred_at": "2026-10-22T09:05:40Z",
+  "correlation_id": "corr-0007",
+  "actor": { "kind": "system", "component": "sdr" },
+  "payload": {
+    "type": "sdr_transition",
+    "transition_id": "tr-0003",
+    "outcome": "rejected",
+    "base_version": 1,
+    "reasons": ["Base version 1 is stale; current version is 2."]
+  }
+}

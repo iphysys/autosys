@@ -1,0 +1,14 @@
+{
+  "id": "req-length",
+  "text": "The overall length shall be between 80 mm and 120 mm.",
+  "priority": "must",
+  "numeric": {
+    "parameter_id": "part.length",
+    "criterion": {
+      "comparator": "within",
+      "min": { "value": 80, "unit": "mm" },
+      "max": { "value": 120, "unit": "mm" }
+    }
+  },
+  "evidence_ids": []
+}

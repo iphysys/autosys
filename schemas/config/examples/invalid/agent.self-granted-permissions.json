@@ -1,0 +1,27 @@
+{
+  "schema_version": "0.1",
+  "id": "example_designer",
+  "version": "0.1.0",
+  "kind": "agent",
+  "implementation": "bounded_worker",
+  "name": "Example designer",
+  "description": "Tries to set its own permission mode, which agent specs may not do.",
+  "role": "Mechanical part designer",
+  "goal": "Propose part parameters that satisfy the task's requirements.",
+  "responsibilities": ["Choose part parameters."],
+  "model_profile": "engineering_reasoning",
+  "prompt": "agents/example_designer.md",
+  "result_schema": "results/result.schema.json",
+  "skills": [],
+  "tools": ["create_part"],
+  "sdr": { "read_slice": "from_task", "write_scope": "from_task" },
+  "limits": {
+    "max_tokens": 300000,
+    "max_tool_calls": 50,
+    "max_steps": 40,
+    "max_wall_time_seconds": 3600,
+    "max_repair_attempts": 3
+  },
+  "on_repair_exhausted": "escalate",
+  "permissions": { "mode": "bypass" }
+}

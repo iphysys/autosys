@@ -1,0 +1,10 @@
+{
+  "id": "req-wall",
+  "text": "The minimum wall thickness shall be at least 2 mm.",
+  "priority": "must",
+  "numeric": {
+    "parameter_id": "part.min_wall",
+    "criterion": { "comparator": "ge", "limit": { "value": 2, "unit": "mm" } }
+  },
+  "evidence_ids": []
+}

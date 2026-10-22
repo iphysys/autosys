@@ -1,0 +1,15 @@
+{
+  "schema_version": "0.1",
+  "approvals": [
+    {
+      "id": "approve_final_design",
+      "description": "Ask a human before committing the design the run intends to stop on.",
+      "trigger": { "kind": "sdr_commit", "final_only": true }
+    },
+    {
+      "id": "approve_example_export",
+      "description": "Illustrates a tool-call rule.",
+      "trigger": { "kind": "tool_call", "tool": "export_part" }
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "schema_version": "0.1",
+  "server_id": "example_cad",
+  "description": "A tool without a timeout is rejected.",
+  "tools": [
+    {
+      "name": "create_part",
+      "access": "mutating",
+      "external_side_effects": false,
+      "idempotent": true,
+      "concurrency_safe": true,
+      "requires_approval": false
+    }
+  ]
+}

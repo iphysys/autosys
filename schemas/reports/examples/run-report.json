@@ -1,0 +1,93 @@
+{
+  "schema_version": "0.1",
+  "run_id": "run-0001",
+  "project_id": "example-project",
+  "objective": "Design the example bracket",
+  "started_at": "2026-10-22T09:00:00Z",
+  "ended_at": "2026-10-22T09:12:40Z",
+  "stop_reason": "success",
+  "final_sdr_version": 3,
+  "requirements": [
+    {
+      "requirement_id": "req-mass",
+      "priority": "must",
+      "status": "pass",
+      "evidence_ids": ["ev-check-mass-1"]
+    },
+    {
+      "requirement_id": "req-finish",
+      "priority": "should",
+      "status": "unverified",
+      "evidence_ids": ["ev-check-finish-1"]
+    }
+  ],
+  "decisions": [
+    {
+      "decision_id": "dec-ribbed",
+      "choice": "Use a ribbed section instead of a solid section.",
+      "rationale": "Ribs keep the wall thickness while reducing mass."
+    }
+  ],
+  "assumptions": [
+    { "assumption_id": "asm-material", "statement": "The part is machined from aluminium 6061." }
+  ],
+  "artifacts": [
+    {
+      "artifact_id": "art-part-step-1",
+      "format": "step",
+      "source_sdr_version": 3,
+      "tool": "create_part",
+      "tool_version": "0.1.0"
+    }
+  ],
+  "budget_used": [
+    {
+      "agent_id": "main_orchestrator",
+      "usage": {
+        "input_tokens": 52000,
+        "output_tokens": 4700,
+        "tool_calls": 7,
+        "steps": 11,
+        "wall_time_seconds": 760
+      }
+    }
+  ],
+  "approvals": [
+    {
+      "approval_id": "appr-0001",
+      "gate": "approval",
+      "answer": "approve",
+      "actor": { "kind": "user", "user_id": "dev" },
+      "answered_at": "2026-10-22T09:11:02Z"
+    }
+  ],
+  "escalations": [],
+  "versions": {
+    "harness_build": "synth 0.1.0 (example)",
+    "model_ids": ["example-model-1"],
+    "prompts": [
+      {
+        "id": "orchestrator.main",
+        "version": "0.1.0",
+        "sha256": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+      }
+    ],
+    "skills": [],
+    "agent_specs": [
+      {
+        "id": "main_orchestrator",
+        "version": "0.1.0",
+        "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ]
+  },
+  "narrative": {
+    "summary": {
+      "text": "A ribbed bracket meets the mass and length limits; the finish requirement could not be checked numerically.",
+      "origin": "model"
+    },
+    "open_questions": [
+      { "text": "Should the finish requirement be restated as a measurable roughness limit?", "origin": "model" }
+    ]
+  }
+}

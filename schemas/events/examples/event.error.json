@@ -1,0 +1,17 @@
+{
+  "schema_version": "0.1",
+  "run_id": "run-0003",
+  "seq": 5,
+  "occurred_at": "2026-10-22T11:00:05Z",
+  "correlation_id": "corr-0201",
+  "actor": { "kind": "system", "component": "worker" },
+  "payload": {
+    "type": "error",
+    "error": {
+      "code": "model.unavailable",
+      "message": "The model provider returned 503 after 3 attempts.",
+      "retryable": true,
+      "correlation_id": "corr-0201"
+    }
+  }
+}

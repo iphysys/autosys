@@ -1,0 +1,14 @@
+{
+  "id": "req-hole",
+  "text": "The mounting hole diameter shall be 6.5 mm within 0.1 mm.",
+  "priority": "should",
+  "numeric": {
+    "parameter_id": "part.hole_diameter",
+    "criterion": {
+      "comparator": "eq",
+      "target": { "value": 6.5, "unit": "mm" },
+      "tolerance": { "value": 0.1, "unit": "mm" }
+    }
+  },
+  "evidence_ids": []
+}

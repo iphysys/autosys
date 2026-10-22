@@ -1,0 +1,26 @@
+{
+  "schema_version": "0.1",
+  "id": "task-0001",
+  "project_id": "example-project",
+  "agent_id": "main_orchestrator",
+  "name": "Design the example bracket",
+  "description": "Size a bracket that meets the mass and length requirements.",
+  "goal": "A committed SDR version whose must-level requirements all have passing evidence.",
+  "acceptance_criteria": ["Every must-level requirement has passing evidence."],
+  "requirement_ids": ["req-mass", "req-length"],
+  "skills": [],
+  "tools": ["create_part", "measure_part"],
+  "sdr": {
+    "base_version": 0,
+    "read_slice": { "kinds": ["requirement", "parameter", "decision", "assumption"], "ids": [] },
+    "write_scope": { "kinds": ["parameter", "decision", "assumption"], "ids": ["req-mass"] }
+  },
+  "budget": {
+    "max_tokens": 200000,
+    "max_tool_calls": 40,
+    "max_steps": 30,
+    "max_wall_time_seconds": 1800,
+    "max_repair_attempts": 3
+  },
+  "result_schema": "results/result.schema.json"
+}

@@ -1,0 +1,9 @@
+{
+  "schema_version": "0.1",
+  "run_id": "run-0001",
+  "seq": 0,
+  "occurred_at": "2026-10-22T09:00:00Z",
+  "correlation_id": "corr-0001",
+  "actor": { "kind": "user", "user_id": "dev" },
+  "payload": { "type": "run_started", "task_id": "task-0001", "agent_id": "main_orchestrator" }
+}

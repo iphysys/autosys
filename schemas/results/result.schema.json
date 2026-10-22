@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TaskResult",
+  "description": "What a task returns. Every field except summary is set by the harness, not the model.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "task_id",
+    "stop_reason",
+    "committed_transition_ids",
+    "evidence_ids",
+    "artifact_ids",
+    "usage"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "task_id": { "$ref": "../common/types.schema.json#/$defs/TaskId" },
+    "stop_reason": { "$ref": "../common/types.schema.json#/$defs/StopReason" },
+    "sdr_version": {
+      "description": "The last SDR version committed by this task, if any.",
+      "$ref": "../common/types.schema.json#/$defs/SdrVersion"
+    },
+    "committed_transition_ids": {
+      "type": "array",
+      "items": { "$ref": "../common/types.schema.json#/$defs/TransitionId" }
+    },
+    "evidence_ids": {
+      "type": "array",
+      "items": { "$ref": "../common/types.schema.json#/$defs/EvidenceId" }
+    },
+    "artifact_ids": {
+      "type": "array",
+      "items": { "$ref": "../common/types.schema.json#/$defs/ArtifactId" }
+    },
+    "usage": { "$ref": "../common/types.schema.json#/$defs/Usage" },
+    "error": { "$ref": "../common/types.schema.json#/$defs/ErrorInfo" },
+    "summary": { "$ref": "../common/types.schema.json#/$defs/Narrative" }
+  }
+}

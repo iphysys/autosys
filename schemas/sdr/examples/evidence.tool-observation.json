@@ -1,0 +1,19 @@
+{
+  "schema_version": "0.1",
+  "id": "ev-tool-measure-1",
+  "run_id": "run-0001",
+  "created_at": "2026-10-22T09:04:12Z",
+  "sdr_version": 1,
+  "subject_ids": ["part.mass"],
+  "body": {
+    "kind": "tool_observation",
+    "tool": "measure_part",
+    "tool_version": "0.1.0",
+    "step_id": "step-0007",
+    "outputs": [
+      { "name": "mass", "quantity": { "value": 0.212, "unit": "kg" } },
+      { "name": "volume", "quantity": { "value": 78518.5, "unit": "mm3" } }
+    ],
+    "artifact_ids": ["art-part-step-1"]
+  }
+}
