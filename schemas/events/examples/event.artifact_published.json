@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "run_id": "run-0001",
+  "seq": 14,
+  "occurred_at": "2026-10-22T09:12:30Z",
+  "correlation_id": "corr-0008",
+  "actor": { "kind": "system", "component": "artifacts" },
+  "payload": {
+    "type": "artifact_published",
+    "artifact_id": "art-part-step-1",
+    "format": "step",
+    "source_sdr_version": 2
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Evidence",
+  "description": "An observation supporting or rejecting a claim. Stored in the evidence store; the SDR links to it by id.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "run_id", "created_at", "sdr_version", "subject_ids", "body"],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "id": { "$ref": "../common/types.schema.json#/$defs/EvidenceId" },
+    "run_id": { "$ref": "../common/types.schema.json#/$defs/RunId" },
+    "created_at": { "$ref": "../common/types.schema.json#/$defs/Timestamp" },
+    "sdr_version": {
+      "description": "The SDR version the evidence was produced against.",
+      "$ref": "../common/types.schema.json#/$defs/SdrVersion"
+    },
+    "subject_ids": {
+      "description": "SDR elements this evidence is about.",
+      "type": "array",
+      "items": { "$ref": "../common/types.schema.json#/$defs/ElementId" }
+    },
+    "body": { "$ref": "#/$defs/EvidenceBody" }
+  },
+  "$defs": {
+    "EvidenceBody": {
+      "oneOf": [
+        {
+          "description": "Values a tool returned. Carries no verdict.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "tool", "tool_version", "step_id", "outputs", "artifact_ids"],
+          "properties": {
+            "kind": { "const": "tool_observation" },
+            "tool": { "$ref": "../common/types.schema.json#/$defs/ToolName" },
+            "tool_version": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+            "step_id": { "$ref": "../common/types.schema.json#/$defs/StepId" },
+            "outputs": {
+              "type": "array",
+              "items": { "$ref": "../common/quantity.schema.json#/$defs/NamedQuantity" }
+            },
+            "artifact_ids": {
+              "type": "array",
+              "items": { "$ref": "../common/types.schema.json#/$defs/ArtifactId" }
+            }
+          }
+        },
+        {
+          "description": "The outcome of a check, with the inputs it used.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "check_id", "check_version", "method", "inputs", "verdict"],
+          "properties": {
+            "kind": { "const": "check" },
+            "check_id": { "$ref": "../common/types.schema.json#/$defs/CheckId" },
+            "check_version": { "$ref": "../common/types.schema.json#/$defs/SemVer" },
+            "method": { "$ref": "#/$defs/CheckMethod" },
+            "inputs": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/CheckInput" }
+            },
+            "verdict": { "$ref": "#/$defs/Verdict" },
+            "message": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" }
+          }
+        }
+      ]
+    },
+    "CheckMethod": {
+      "type": "string",
+      "enum": ["deterministic", "model_based"]
+    },
+    "Verdict": {
+      "description": "pass and fail are decided outcomes; unverified means the check could not decide (for example, no numeric criterion); error means the check itself failed to run.",
+      "type": "string",
+      "enum": ["pass", "fail", "unverified", "error"]
+    },
+    "CheckInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "quantity"],
+      "properties": {
+        "name": { "$ref": "../common/types.schema.json#/$defs/Identifier" },
+        "quantity": {
+          "description": "The value as received.",
+          "$ref": "../common/quantity.schema.json#/$defs/Quantity"
+        },
+        "normalized": {
+          "description": "The same value converted to the unit used for comparison.",
+          "$ref": "../common/quantity.schema.json#/$defs/Quantity"
+        },
+        "source_evidence_id": { "$ref": "../common/types.schema.json#/$defs/EvidenceId" }
+      }
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "schema_version": "0.1",
+  "run_id": "run-0001",
+  "seq": 3,
+  "occurred_at": "2026-10-22T09:00:00Z",
+  "correlation_id": "corr-0001",
+  "actor": { "kind": "agent", "agent_id": "main_orchestrator" },
+  "payload": { "type": "requirement_passed", "requirement_id": "req-mass" }
+}

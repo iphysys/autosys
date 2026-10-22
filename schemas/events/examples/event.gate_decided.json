@@ -1,0 +1,16 @@
+{
+  "schema_version": "0.1",
+  "run_id": "run-0001",
+  "seq": 9,
+  "occurred_at": "2026-10-22T09:04:13Z",
+  "correlation_id": "corr-0005",
+  "actor": { "kind": "system", "component": "governance" },
+  "payload": {
+    "type": "gate_decided",
+    "gate": "sdr_commit",
+    "subject_id": "tr-0002",
+    "decision": "ask",
+    "reasons": ["Transition is marked final; approve_final_design requires approval."],
+    "evidence_ids": ["ev-check-mass-1"]
+  }
+}

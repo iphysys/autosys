@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Task",
+  "description": "The contract for a bounded unit of agent work (blueprint section 2.6). Its lifecycle is the job's state; a task has no status of its own.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "project_id",
+    "agent_id",
+    "name",
+    "description",
+    "goal",
+    "acceptance_criteria",
+    "requirement_ids",
+    "skills",
+    "tools",
+    "sdr",
+    "budget",
+    "result_schema"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "id": { "$ref": "../common/types.schema.json#/$defs/TaskId" },
+    "project_id": { "$ref": "../common/types.schema.json#/$defs/ProjectId" },
+    "agent_id": { "$ref": "../common/types.schema.json#/$defs/AgentId" },
+    "name": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+    "description": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+    "goal": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+    "acceptance_criteria": {
+      "description": "Guidance for the model. Success is decided by checks and gates, never by these strings.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" }
+    },
+    "requirement_ids": {
+      "description": "Requirements this task must satisfy.",
+      "type": "array",
+      "items": { "$ref": "../common/types.schema.json#/$defs/ElementId" }
+    },
+    "skills": {
+      "type": "array",
+      "items": { "$ref": "../common/types.schema.json#/$defs/Identifier" }
+    },
+    "tools": {
+      "type": "array",
+      "items": { "$ref": "../common/types.schema.json#/$defs/ToolName" }
+    },
+    "sdr": { "$ref": "#/$defs/TaskSdrAccess" },
+    "budget": { "$ref": "../common/types.schema.json#/$defs/Budget" },
+    "result_schema": { "$ref": "../common/types.schema.json#/$defs/SchemaPath" }
+  },
+  "$defs": {
+    "TaskSdrAccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["base_version", "read_slice", "write_scope"],
+      "properties": {
+        "base_version": { "$ref": "../common/types.schema.json#/$defs/SdrVersion" },
+        "read_slice": { "$ref": "#/$defs/SdrSlice" },
+        "write_scope": { "$ref": "#/$defs/SdrSlice" }
+      }
+    },
+    "SdrSlice": {
+      "description": "A set of SDR elements: every element of the listed kinds, plus the listed ids.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kinds", "ids"],
+      "properties": {
+        "kinds": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ElementKind" }
+        },
+        "ids": {
+          "type": "array",
+          "items": { "$ref": "../common/types.schema.json#/$defs/ElementId" }
+        }
+      }
+    },
+    "ElementKind": {
+      "type": "string",
+      "enum": ["requirement", "parameter", "decision", "assumption"]
+    }
+  }
+}

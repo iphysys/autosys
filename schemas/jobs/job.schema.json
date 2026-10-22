@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Job",
+  "description": "A persisted unit of pending work (blueprint section 6.1). In Increment 1 each run is one job. Remaining budget is task.budget minus budget_used.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "run_id",
+    "project_id",
+    "state",
+    "task",
+    "idempotency_key",
+    "attempt",
+    "created_at",
+    "updated_at",
+    "sdr_base_version",
+    "progress",
+    "pending_work",
+    "artifact_ids",
+    "budget_used"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "id": { "$ref": "../common/types.schema.json#/$defs/JobId" },
+    "run_id": { "$ref": "../common/types.schema.json#/$defs/RunId" },
+    "project_id": { "$ref": "../common/types.schema.json#/$defs/ProjectId" },
+    "state": { "$ref": "#/$defs/JobState" },
+    "task": { "$ref": "../tasks/task.schema.json" },
+    "idempotency_key": { "$ref": "../common/types.schema.json#/$defs/Identifier" },
+    "attempt": {
+      "description": "How many times the job has been claimed after an interruption.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "created_at": { "$ref": "../common/types.schema.json#/$defs/Timestamp" },
+    "updated_at": { "$ref": "../common/types.schema.json#/$defs/Timestamp" },
+    "sdr_base_version": { "$ref": "../common/types.schema.json#/$defs/SdrVersion" },
+    "progress": { "$ref": "#/$defs/JobProgress" },
+    "pending_work": {
+      "description": "Human-readable description of outstanding work. Recovery uses step records and the event log, not this list.",
+      "type": "array",
+      "items": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" }
+    },
+    "artifact_ids": {
+      "type": "array",
+      "items": { "$ref": "../common/types.schema.json#/$defs/ArtifactId" }
+    },
+    "budget_used": { "$ref": "../common/types.schema.json#/$defs/Usage" },
+    "wake_condition": { "$ref": "#/$defs/WakeCondition" },
+    "lease": { "$ref": "#/$defs/Lease" },
+    "stop_reason": {
+      "description": "Set when the job reaches a terminal state.",
+      "$ref": "../common/types.schema.json#/$defs/StopReason"
+    }
+  },
+  "$defs": {
+    "JobState": {
+      "type": "string",
+      "enum": ["queued", "running", "waiting", "suspended", "completed", "failed", "cancelled"]
+    },
+    "JobProgress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["steps_completed", "last_event_seq"],
+      "properties": {
+        "steps_completed": { "type": "integer", "minimum": 0 },
+        "last_event_seq": {
+          "description": "Sequence number of the last event written for this run; 0 before the first.",
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "WakeCondition": {
+      "description": "What a waiting or suspended job is waiting for. A cancel wakes any job regardless.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "approval_id"],
+          "properties": {
+            "kind": { "const": "approval_answered" },
+            "approval_id": { "$ref": "../common/types.schema.json#/$defs/ApprovalId" }
+          }
+        }
+      ]
+    },
+    "Lease": {
+      "description": "Held by the worker running the job and renewed by heartbeat. An expired lease means the job was interrupted.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["holder", "acquired_at", "expires_at", "heartbeat_at"],
+      "properties": {
+        "holder": { "$ref": "../common/types.schema.json#/$defs/Identifier" },
+        "acquired_at": { "$ref": "../common/types.schema.json#/$defs/Timestamp" },
+        "expires_at": { "$ref": "../common/types.schema.json#/$defs/Timestamp" },
+        "heartbeat_at": { "$ref": "../common/types.schema.json#/$defs/Timestamp" }
+      }
+    }
+  }
+}

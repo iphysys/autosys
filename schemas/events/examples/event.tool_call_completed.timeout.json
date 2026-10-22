@@ -1,0 +1,22 @@
+{
+  "schema_version": "0.1",
+  "run_id": "run-0001",
+  "seq": 7,
+  "occurred_at": "2026-10-22T09:02:14Z",
+  "correlation_id": "corr-0004",
+  "actor": { "kind": "system", "component": "tool_gateway" },
+  "payload": {
+    "type": "tool_call_completed",
+    "step_id": "step-0008",
+    "tool": "create_part",
+    "outcome": "error",
+    "error": {
+      "code": "tool.timeout",
+      "message": "create_part did not finish within 120 s.",
+      "retryable": true,
+      "correlation_id": "corr-0004"
+    },
+    "evidence_ids": [],
+    "duration_ms": 120000
+  }
+}

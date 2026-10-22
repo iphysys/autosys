@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.1",
+  "run_id": "run-0001",
+  "seq": 3,
+  "occurred_at": "2026-10-22T09:00:02Z",
+  "correlation_id": "corr-0002",
+  "actor": { "kind": "system", "component": "context" },
+  "payload": {
+    "type": "context_assembled",
+    "context_hash": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    "total_tokens": 6120
+  }
+}

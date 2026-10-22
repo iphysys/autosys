@@ -1,0 +1,6 @@
+{
+  "schema_version": "0.1",
+  "sdr_commit": {
+    "required_checks": ["schema", "units", "requirement.numeric_threshold"]
+  }
+}

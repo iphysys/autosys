@@ -1,0 +1,26 @@
+{
+  "schema_version": "0.1",
+  "server_id": "example_cad",
+  "description": "Illustrates the overlay format; the real build123d overlay arrives with its server.",
+  "tools": [
+    {
+      "name": "create_part",
+      "description": "Builds a part from typed parameters and stores it as an artifact.",
+      "access": "mutating",
+      "external_side_effects": false,
+      "idempotent": true,
+      "concurrency_safe": true,
+      "timeout_seconds": 120,
+      "requires_approval": false
+    },
+    {
+      "name": "measure_part",
+      "access": "read_only",
+      "external_side_effects": false,
+      "idempotent": true,
+      "concurrency_safe": true,
+      "timeout_seconds": 60,
+      "requires_approval": false
+    }
+  ]
+}

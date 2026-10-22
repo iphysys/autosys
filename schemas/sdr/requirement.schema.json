@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Requirement",
+  "description": "A design requirement (ADR-0020). Its status is not stored here: checks produce evidence, and the run report derives status from that evidence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "text", "priority", "evidence_ids"],
+  "properties": {
+    "id": { "$ref": "../common/types.schema.json#/$defs/ElementId" },
+    "text": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+    "priority": { "$ref": "#/$defs/RequirementPriority" },
+    "numeric": {
+      "description": "Present when the requirement is checkable as a numeric threshold. Without it the requirement check reports unverified (ADR-0021).",
+      "$ref": "#/$defs/NumericRequirement"
+    },
+    "evidence_ids": {
+      "type": "array",
+      "items": { "$ref": "../common/types.schema.json#/$defs/EvidenceId" }
+    }
+  },
+  "$defs": {
+    "RequirementPriority": {
+      "type": "string",
+      "enum": ["must", "should"]
+    },
+    "NumericRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["parameter_id", "criterion"],
+      "properties": {
+        "parameter_id": {
+          "description": "The SDR parameter whose value is compared.",
+          "$ref": "../common/types.schema.json#/$defs/ElementId"
+        },
+        "criterion": { "$ref": "#/$defs/Criterion" }
+      }
+    },
+    "Criterion": {
+      "description": "Comparison applied after unit conversion. le is <=, ge is >=, eq is = within a tolerance, within is an inclusive range.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["comparator", "limit"],
+          "properties": {
+            "comparator": { "const": "le" },
+            "limit": { "$ref": "../common/quantity.schema.json#/$defs/Quantity" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["comparator", "limit"],
+          "properties": {
+            "comparator": { "const": "ge" },
+            "limit": { "$ref": "../common/quantity.schema.json#/$defs/Quantity" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["comparator", "target", "tolerance"],
+          "properties": {
+            "comparator": { "const": "eq" },
+            "target": { "$ref": "../common/quantity.schema.json#/$defs/Quantity" },
+            "tolerance": { "$ref": "../common/quantity.schema.json#/$defs/Quantity" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["comparator", "min", "max"],
+          "properties": {
+            "comparator": { "const": "within" },
+            "min": { "$ref": "../common/quantity.schema.json#/$defs/Quantity" },
+            "max": { "$ref": "../common/quantity.schema.json#/$defs/Quantity" }
+          }
+        }
+      ]
+    }
+  }
+}

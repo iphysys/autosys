@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Physical quantities. Has no root type.",
+  "$defs": {
+    "Unit": {
+      "description": "A UCUM case-sensitive unit code, for example \"kg\", \"mm\", \"mm3\", \"kg/m3\", or \"1\" for dimensionless. The units check validates the code and its dimension.",
+      "type": "string",
+      "pattern": "^[!-~]{1,64}$"
+    },
+    "Quantity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "unit"],
+      "properties": {
+        "value": { "type": "number" },
+        "unit": { "$ref": "#/$defs/Unit" }
+      }
+    },
+    "NamedQuantity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "quantity"],
+      "properties": {
+        "name": { "$ref": "types.schema.json#/$defs/Identifier" },
+        "quantity": { "$ref": "#/$defs/Quantity" }
+      }
+    }
+  }
+}

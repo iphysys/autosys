@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SdrVersionRecord",
+  "description": "Provenance of one committed SDR version (blueprint section 2.4). One committed transition creates one version.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project_id",
+    "version",
+    "transition_id",
+    "actor",
+    "reason",
+    "committed_at",
+    "evidence_ids",
+    "document_sha256",
+    "harness"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "project_id": { "$ref": "../common/types.schema.json#/$defs/ProjectId" },
+    "version": { "$ref": "../common/types.schema.json#/$defs/SdrVersion" },
+    "parent_version": {
+      "description": "Absent only for version 0.",
+      "$ref": "../common/types.schema.json#/$defs/SdrVersion"
+    },
+    "transition_id": { "$ref": "../common/types.schema.json#/$defs/TransitionId" },
+    "actor": { "$ref": "../common/types.schema.json#/$defs/Actor" },
+    "reason": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+    "committed_at": { "$ref": "../common/types.schema.json#/$defs/Timestamp" },
+    "evidence_ids": {
+      "description": "Evidence the commit gate relied on.",
+      "type": "array",
+      "items": { "$ref": "../common/types.schema.json#/$defs/EvidenceId" }
+    },
+    "document_sha256": {
+      "description": "Hash of the committed SdrDocument.",
+      "$ref": "../common/types.schema.json#/$defs/Sha256"
+    },
+    "harness": { "$ref": "../common/types.schema.json#/$defs/HarnessVersions" }
+  }
+}

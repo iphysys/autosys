@@ -24,6 +24,15 @@ cargo xtask ci
 
 This runs, in order: `cargo fmt --check`, `cargo clippy` with warnings as errors, `cargo test`, and `cargo deny check`. CI runs only `cargo xtask ci`, so a local pass means a CI pass.
 
+## Schemas
+
+`schemas/` holds the canonical contracts as JSON Schema (draft 2020-12). Rust types are generated from them at build time by `crates/schema-types`; never write or edit those types by hand. To change a type, change its schema.
+
+- Each `*.schema.json` file has at most one root type, named by its `title`. Type names must be unique across all schema files.
+- Examples live in `schemas/<area>/examples/<stem>[.<case>].json` and must validate against `<area>/<stem>.schema.json`. Examples that must be rejected go in `examples/invalid/`.
+- `cargo test -p synth-schema-types` checks every schema against the 2020-12 metaschema, validates every example, and round-trips each valid example through its Rust type.
+- Units are [UCUM](https://ucum.org/) case-sensitive codes, for example `kg`, `mm`, `mm3` and `kg/m3`.
+
 ## Documentation
 
 - [Engineering standards and repository blueprint](docs/architecture/blueprint.md) (normative)

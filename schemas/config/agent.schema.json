@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AgentSpec",
+  "description": "An agent specification in config/agents/ (blueprint sections 11.3 and 14.3). It selects capabilities by name; it cannot grant itself permissions, which come from tool overlays and policies.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "version",
+    "kind",
+    "implementation",
+    "name",
+    "description",
+    "role",
+    "goal",
+    "responsibilities",
+    "model_profile",
+    "prompt",
+    "result_schema",
+    "skills",
+    "tools",
+    "sdr",
+    "limits",
+    "on_repair_exhausted"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "id": { "$ref": "../common/types.schema.json#/$defs/AgentId" },
+    "version": { "$ref": "../common/types.schema.json#/$defs/SemVer" },
+    "kind": { "type": "string", "enum": ["agent"] },
+    "implementation": {
+      "description": "The loop type. Specialists are configuration, not new loop types.",
+      "type": "string",
+      "enum": ["bounded_worker"]
+    },
+    "name": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+    "description": {
+      "description": "When and why this agent is used.",
+      "$ref": "../common/types.schema.json#/$defs/NonEmptyString"
+    },
+    "role": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+    "goal": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+    "responsibilities": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" }
+    },
+    "model_profile": {
+      "description": "A profile name in config/models/routing.yaml. Raw model ids are not allowed here.",
+      "$ref": "../common/types.schema.json#/$defs/Identifier"
+    },
+    "prompt": {
+      "description": "Path of the agent's prompt relative to prompts/.",
+      "type": "string",
+      "pattern": "^[a-z0-9_-]+(/[a-z0-9_-]+)*\\.md$"
+    },
+    "result_schema": { "$ref": "../common/types.schema.json#/$defs/SchemaPath" },
+    "skills": {
+      "type": "array",
+      "items": { "$ref": "../common/types.schema.json#/$defs/Identifier" }
+    },
+    "tools": {
+      "type": "array",
+      "items": { "$ref": "../common/types.schema.json#/$defs/ToolName" }
+    },
+    "sdr": { "$ref": "#/$defs/AgentSdrAccess" },
+    "limits": {
+      "description": "Ceiling for any task given to this agent; a task budget may not exceed it.",
+      "$ref": "../common/types.schema.json#/$defs/Budget"
+    },
+    "on_repair_exhausted": {
+      "description": "What happens when a step reaches its repair limit.",
+      "type": "string",
+      "enum": ["escalate", "fail"]
+    }
+  },
+  "$defs": {
+    "AgentSdrAccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["read_slice", "write_scope"],
+      "properties": {
+        "read_slice": { "$ref": "#/$defs/SdrScopeSource" },
+        "write_scope": { "$ref": "#/$defs/SdrScopeSource" }
+      }
+    },
+    "SdrScopeSource": {
+      "description": "Where the SDR read slice or write scope comes from. Only the task can set it.",
+      "type": "string",
+      "enum": ["from_task"]
+    }
+  }
+}

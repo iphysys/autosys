@@ -1,0 +1,18 @@
+# External HTTP API (blueprint section 3.5). Skeleton only: paths, the event
+# stream and contract tests arrive in PR 14 of the Increment 1 plan.
+openapi: 3.1.0
+info:
+  title: autosys API
+  version: 0.1.0
+  description: >-
+    Commands are requests, not state edits. Run events stream as server-sent
+    events and resume from the last sequence number.
+security:
+  - devToken: []
+paths: {}
+components:
+  securitySchemes:
+    devToken:
+      type: http
+      scheme: bearer
+      description: Development token for Increment 1 only (ADR-0022).

@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "run_id": "run-0001",
+  "seq": 5,
+  "occurred_at": "2026-10-22T09:00:10Z",
+  "correlation_id": "corr-0003",
+  "actor": { "kind": "agent", "agent_id": "main_orchestrator" },
+  "payload": {
+    "type": "tool_call_started",
+    "step_id": "step-0007",
+    "tool": "measure_part",
+    "idempotency_key": "run-0001:step-0007"
+  }
+}

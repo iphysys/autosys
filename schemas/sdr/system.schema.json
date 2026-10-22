@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SdrDocument",
+  "description": "One version of the Structured Design Representation, v0 (ADR-0020). Versions are linear. Element ids are unique across the document; SdrManager enforces this.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project_id", "version", "requirements", "design"],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "project_id": { "$ref": "../common/types.schema.json#/$defs/ProjectId" },
+    "version": { "$ref": "../common/types.schema.json#/$defs/SdrVersion" },
+    "parent_version": {
+      "description": "Absent only for version 0.",
+      "$ref": "../common/types.schema.json#/$defs/SdrVersion"
+    },
+    "requirements": {
+      "type": "array",
+      "items": { "$ref": "requirement.schema.json" }
+    },
+    "design": { "$ref": "design.schema.json" }
+  }
+}

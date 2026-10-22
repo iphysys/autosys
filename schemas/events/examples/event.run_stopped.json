@@ -1,0 +1,9 @@
+{
+  "schema_version": "0.1",
+  "run_id": "run-0001",
+  "seq": 15,
+  "occurred_at": "2026-10-22T09:12:40Z",
+  "correlation_id": "corr-0009",
+  "actor": { "kind": "system", "component": "runtime" },
+  "payload": { "type": "run_stopped", "stop_reason": "success", "sdr_version": 2 }
+}

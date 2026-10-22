@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DesignDefinition",
+  "description": "The design part of the SDR v0 (ADR-0020): parameters, decisions and assumptions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["parameters", "decisions", "assumptions"],
+  "properties": {
+    "parameters": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Parameter" }
+    },
+    "decisions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Decision" }
+    },
+    "assumptions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Assumption" }
+    }
+  },
+  "$defs": {
+    "Parameter": {
+      "description": "A numeric design quantity. The id doubles as its name, for example \"part.mass\".",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "value", "source", "evidence_ids"],
+      "properties": {
+        "id": { "$ref": "../common/types.schema.json#/$defs/ElementId" },
+        "description": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+        "value": { "$ref": "../common/quantity.schema.json#/$defs/Quantity" },
+        "source": { "$ref": "#/$defs/ParameterSource" },
+        "evidence_ids": {
+          "type": "array",
+          "items": { "$ref": "../common/types.schema.json#/$defs/EvidenceId" }
+        }
+      }
+    },
+    "ParameterSource": {
+      "description": "Where a parameter value came from.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "evidence_id"],
+          "properties": {
+            "kind": { "const": "tool_result" },
+            "evidence_id": { "$ref": "../common/types.schema.json#/$defs/EvidenceId" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "assumption_id"],
+          "properties": {
+            "kind": { "const": "assumption" },
+            "assumption_id": { "$ref": "../common/types.schema.json#/$defs/ElementId" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": {
+            "kind": { "const": "user" }
+          }
+        }
+      ]
+    },
+    "Decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "choice", "rationale", "related_ids"],
+      "properties": {
+        "id": { "$ref": "../common/types.schema.json#/$defs/ElementId" },
+        "choice": {
+          "description": "What was chosen.",
+          "$ref": "../common/types.schema.json#/$defs/NonEmptyString"
+        },
+        "rationale": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+        "related_ids": {
+          "description": "Requirements or parameters this decision relates to.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "../common/types.schema.json#/$defs/ElementId" }
+        }
+      }
+    },
+    "Assumption": {
+      "description": "Recorded as an element so it can be invalidated later.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "statement", "related_ids"],
+      "properties": {
+        "id": { "$ref": "../common/types.schema.json#/$defs/ElementId" },
+        "statement": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+        "rationale": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+        "related_ids": {
+          "type": "array",
+          "items": { "$ref": "../common/types.schema.json#/$defs/ElementId" }
+        }
+      }
+    }
+  }
+}

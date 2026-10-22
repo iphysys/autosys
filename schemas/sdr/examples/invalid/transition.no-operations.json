@@ -1,0 +1,9 @@
+{
+  "schema_version": "0.1",
+  "id": "tr-0003",
+  "base_version": 2,
+  "actor": { "kind": "agent", "agent_id": "main_orchestrator" },
+  "reason": "Nothing to change.",
+  "final": false,
+  "operations": []
+}

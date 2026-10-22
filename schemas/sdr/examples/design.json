@@ -1,0 +1,39 @@
+{
+  "parameters": [
+    {
+      "id": "part.length",
+      "description": "Overall length",
+      "value": { "value": 100, "unit": "mm" },
+      "source": { "kind": "user" },
+      "evidence_ids": []
+    },
+    {
+      "id": "part.density",
+      "value": { "value": 2700, "unit": "kg/m3" },
+      "source": { "kind": "assumption", "assumption_id": "asm-material" },
+      "evidence_ids": []
+    },
+    {
+      "id": "part.mass",
+      "value": { "value": 0.212, "unit": "kg" },
+      "source": { "kind": "tool_result", "evidence_id": "ev-tool-measure-1" },
+      "evidence_ids": ["ev-tool-measure-1"]
+    }
+  ],
+  "decisions": [
+    {
+      "id": "dec-ribbed",
+      "choice": "Use a ribbed section instead of a solid section.",
+      "rationale": "Ribs keep the wall thickness while reducing mass.",
+      "related_ids": ["req-mass", "req-wall"]
+    }
+  ],
+  "assumptions": [
+    {
+      "id": "asm-material",
+      "statement": "The part is machined from aluminium 6061.",
+      "rationale": "Stock material for the example workshop.",
+      "related_ids": ["part.density"]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "run_id": "run-0001",
+  "seq": 4,
+  "occurred_at": "2026-10-22T09:00:09Z",
+  "correlation_id": "corr-0002",
+  "actor": { "kind": "agent", "agent_id": "main_orchestrator" },
+  "payload": {
+    "type": "model_call_completed",
+    "model_profile": "engineering_reasoning",
+    "model_id": "example-model-1",
+    "usage": { "input_tokens": 6120, "output_tokens": 410 }
+  }
+}

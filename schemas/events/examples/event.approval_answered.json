@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "run_id": "run-0001",
+  "seq": 11,
+  "occurred_at": "2026-10-22T09:11:02Z",
+  "correlation_id": "corr-0006",
+  "actor": { "kind": "user", "user_id": "dev" },
+  "payload": {
+    "type": "approval_answered",
+    "approval_id": "appr-0001",
+    "answer": "approve",
+    "comment": "Looks right."
+  }
+}

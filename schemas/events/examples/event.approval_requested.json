@@ -1,0 +1,15 @@
+{
+  "schema_version": "0.1",
+  "run_id": "run-0001",
+  "seq": 10,
+  "occurred_at": "2026-10-22T09:04:14Z",
+  "correlation_id": "corr-0005",
+  "actor": { "kind": "system", "component": "governance" },
+  "payload": {
+    "type": "approval_requested",
+    "approval_id": "appr-0001",
+    "gate": "sdr_commit",
+    "subject_id": "tr-0002",
+    "summary": "Commit the final design (SDR version 2 from base 1)?"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "id": "req-mass",
+  "text": "The part mass shall not exceed 0.25 kg.",
+  "priority": "must",
+  "status": "pass",
+  "evidence_ids": []
+}

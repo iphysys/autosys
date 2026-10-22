@@ -1,0 +1,239 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Event",
+  "description": "One entry of a run's append-only event log. seq is gap-free per run, so a client resumes a stream from the last seq it saw.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "seq", "occurred_at", "correlation_id", "actor", "payload"],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "run_id": { "$ref": "../common/types.schema.json#/$defs/RunId" },
+    "seq": {
+      "description": "Per-run sequence number, starting at 1 with no gaps.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "occurred_at": { "$ref": "../common/types.schema.json#/$defs/Timestamp" },
+    "correlation_id": { "$ref": "../common/types.schema.json#/$defs/CorrelationId" },
+    "actor": { "$ref": "../common/types.schema.json#/$defs/Actor" },
+    "payload": { "$ref": "#/$defs/EventPayload" }
+  },
+  "$defs": {
+    "EventPayload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "task_id", "agent_id"],
+          "properties": {
+            "type": { "const": "run_started" },
+            "task_id": { "$ref": "../common/types.schema.json#/$defs/TaskId" },
+            "agent_id": { "$ref": "../common/types.schema.json#/$defs/AgentId" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "stop_reason"],
+          "properties": {
+            "type": { "const": "run_stopped" },
+            "stop_reason": { "$ref": "../common/types.schema.json#/$defs/StopReason" },
+            "sdr_version": { "$ref": "../common/types.schema.json#/$defs/SdrVersion" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "to"],
+          "properties": {
+            "type": { "const": "job_state_changed" },
+            "from": { "$ref": "../jobs/job.schema.json#/$defs/JobState" },
+            "to": { "$ref": "../jobs/job.schema.json#/$defs/JobState" },
+            "reason": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "context_hash", "total_tokens"],
+          "properties": {
+            "type": { "const": "context_assembled" },
+            "context_hash": { "$ref": "../common/types.schema.json#/$defs/Sha256" },
+            "total_tokens": { "type": "integer", "minimum": 0 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "model_profile", "model_id", "usage"],
+          "properties": {
+            "type": { "const": "model_call_completed" },
+            "model_profile": { "$ref": "../common/types.schema.json#/$defs/Identifier" },
+            "model_id": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+            "usage": { "$ref": "#/$defs/TokenUsage" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "step_id", "tool", "idempotency_key"],
+          "properties": {
+            "type": { "const": "tool_call_started" },
+            "step_id": { "$ref": "../common/types.schema.json#/$defs/StepId" },
+            "tool": { "$ref": "../common/types.schema.json#/$defs/ToolName" },
+            "idempotency_key": { "$ref": "../common/types.schema.json#/$defs/Identifier" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "step_id", "tool", "outcome", "evidence_ids", "duration_ms"],
+          "properties": {
+            "type": { "const": "tool_call_completed" },
+            "step_id": { "$ref": "../common/types.schema.json#/$defs/StepId" },
+            "tool": { "$ref": "../common/types.schema.json#/$defs/ToolName" },
+            "outcome": { "$ref": "#/$defs/ToolCallOutcome" },
+            "error": { "$ref": "../common/types.schema.json#/$defs/ErrorInfo" },
+            "evidence_ids": {
+              "type": "array",
+              "items": { "$ref": "../common/types.schema.json#/$defs/EvidenceId" }
+            },
+            "duration_ms": { "type": "integer", "minimum": 0 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "check_id", "evidence_id", "verdict"],
+          "properties": {
+            "type": { "const": "check_completed" },
+            "check_id": { "$ref": "../common/types.schema.json#/$defs/CheckId" },
+            "evidence_id": { "$ref": "../common/types.schema.json#/$defs/EvidenceId" },
+            "verdict": { "$ref": "../sdr/evidence.schema.json#/$defs/Verdict" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "gate", "subject_id", "decision", "reasons", "evidence_ids"],
+          "properties": {
+            "type": { "const": "gate_decided" },
+            "gate": { "$ref": "../common/types.schema.json#/$defs/Identifier" },
+            "subject_id": {
+              "description": "What was decided on, for example a step or transition id.",
+              "$ref": "../common/types.schema.json#/$defs/Identifier"
+            },
+            "decision": { "$ref": "#/$defs/GateDecision" },
+            "reasons": {
+              "type": "array",
+              "items": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" }
+            },
+            "evidence_ids": {
+              "type": "array",
+              "items": { "$ref": "../common/types.schema.json#/$defs/EvidenceId" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "approval_id", "gate", "subject_id", "summary"],
+          "properties": {
+            "type": { "const": "approval_requested" },
+            "approval_id": { "$ref": "../common/types.schema.json#/$defs/ApprovalId" },
+            "gate": { "$ref": "../common/types.schema.json#/$defs/Identifier" },
+            "subject_id": { "$ref": "../common/types.schema.json#/$defs/Identifier" },
+            "summary": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" }
+          }
+        },
+        {
+          "description": "The answering human is the event's actor.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "approval_id", "answer"],
+          "properties": {
+            "type": { "const": "approval_answered" },
+            "approval_id": { "$ref": "../common/types.schema.json#/$defs/ApprovalId" },
+            "answer": { "$ref": "#/$defs/ApprovalAnswer" },
+            "comment": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "transition_id", "outcome", "base_version", "reasons"],
+          "properties": {
+            "type": { "const": "sdr_transition" },
+            "transition_id": { "$ref": "../common/types.schema.json#/$defs/TransitionId" },
+            "outcome": { "$ref": "#/$defs/TransitionOutcome" },
+            "base_version": { "$ref": "../common/types.schema.json#/$defs/SdrVersion" },
+            "new_version": {
+              "description": "Set when the outcome is committed.",
+              "$ref": "../common/types.schema.json#/$defs/SdrVersion"
+            },
+            "reasons": {
+              "type": "array",
+              "items": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "artifact_id", "format", "source_sdr_version"],
+          "properties": {
+            "type": { "const": "artifact_published" },
+            "artifact_id": { "$ref": "../common/types.schema.json#/$defs/ArtifactId" },
+            "format": { "$ref": "../common/types.schema.json#/$defs/Identifier" },
+            "source_sdr_version": { "$ref": "../common/types.schema.json#/$defs/SdrVersion" }
+          }
+        },
+        {
+          "description": "The requesting user or operator is the event's actor.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": {
+            "type": { "const": "cancel_requested" },
+            "reason": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "error"],
+          "properties": {
+            "type": { "const": "error" },
+            "error": { "$ref": "../common/types.schema.json#/$defs/ErrorInfo" }
+          }
+        }
+      ]
+    },
+    "TokenUsage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input_tokens", "output_tokens"],
+      "properties": {
+        "input_tokens": { "type": "integer", "minimum": 0 },
+        "output_tokens": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "ToolCallOutcome": {
+      "type": "string",
+      "enum": ["ok", "error"]
+    },
+    "GateDecision": {
+      "description": "Typed gate decisions (blueprint section 15.2).",
+      "type": "string",
+      "enum": ["allow", "deny", "ask", "retry", "reject_transition"]
+    },
+    "ApprovalAnswer": {
+      "type": "string",
+      "enum": ["approve", "reject"]
+    },
+    "TransitionOutcome": {
+      "type": "string",
+      "enum": ["committed", "rejected"]
+    }
+  }
+}

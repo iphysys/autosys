@@ -1,0 +1,21 @@
+{
+  "schema_version": "0.1",
+  "task_id": "task-0002",
+  "stop_reason": "budget_exhausted",
+  "committed_transition_ids": [],
+  "evidence_ids": [],
+  "artifact_ids": [],
+  "usage": {
+    "input_tokens": 200000,
+    "output_tokens": 12000,
+    "tool_calls": 3,
+    "steps": 14,
+    "wall_time_seconds": 640
+  },
+  "error": {
+    "code": "budget.tokens_exhausted",
+    "message": "The token budget of 200000 was used up.",
+    "retryable": false,
+    "correlation_id": "corr-7f3a"
+  }
+}

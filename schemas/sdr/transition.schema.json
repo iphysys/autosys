@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Transition",
+  "description": "A proposed change to the SDR against a base version. Whether it is proposed, validated, committed or rejected is tracked by SdrManager and the event log, not in this document.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "base_version", "actor", "reason", "final", "operations"],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "id": { "$ref": "../common/types.schema.json#/$defs/TransitionId" },
+    "base_version": { "$ref": "../common/types.schema.json#/$defs/SdrVersion" },
+    "actor": { "$ref": "../common/types.schema.json#/$defs/Actor" },
+    "reason": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+    "final": {
+      "description": "True when this is the design the orchestrator intends to stop on. The autonomy policy can require approval for it, and a run stops with success only after an approved final commit.",
+      "type": "boolean"
+    },
+    "operations": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/Operation" }
+    }
+  },
+  "$defs": {
+    "Operation": {
+      "description": "One change inside a transition. There is no delete: elements are retired, not removed (retirement arrives with Increment 2).",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "requirement"],
+          "properties": {
+            "op": { "const": "add_requirement" },
+            "requirement": { "$ref": "requirement.schema.json" }
+          }
+        },
+        {
+          "description": "Insert a parameter, or replace the one with the same id.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "parameter"],
+          "properties": {
+            "op": { "const": "set_parameter" },
+            "parameter": { "$ref": "design.schema.json#/$defs/Parameter" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "decision"],
+          "properties": {
+            "op": { "const": "add_decision" },
+            "decision": { "$ref": "design.schema.json#/$defs/Decision" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "assumption"],
+          "properties": {
+            "op": { "const": "add_assumption" },
+            "assumption": { "$ref": "design.schema.json#/$defs/Assumption" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "element_id", "evidence_id"],
+          "properties": {
+            "op": { "const": "link_evidence" },
+            "element_id": { "$ref": "../common/types.schema.json#/$defs/ElementId" },
+            "evidence_id": { "$ref": "../common/types.schema.json#/$defs/EvidenceId" }
+          }
+        }
+      ]
+    }
+  }
+}
