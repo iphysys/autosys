@@ -27,6 +27,10 @@ type RoundTrip = fn(&Value) -> Result<Value, String>;
 /// Every schema file with a root type, and the Rust type generated for it.
 const ROOT_TYPES: &[(&str, RoundTrip)] = &[
     (
+        "artifacts/artifact.schema.json",
+        round_trip::<schema_types::ArtifactMetadata>,
+    ),
+    (
         "config/agent.schema.json",
         round_trip::<schema_types::AgentSpec>,
     ),

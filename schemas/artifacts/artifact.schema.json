@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ArtifactMetadata",
+  "description": "Metadata of a generated artifact (blueprint section 2.7). The bytes live in the artifact store; this record identifies what produced them and from which SDR version.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "run_id",
+    "project_id",
+    "format",
+    "media_type",
+    "sha256",
+    "size_bytes",
+    "source_sdr_version",
+    "tool",
+    "tool_version",
+    "step_id",
+    "evidence_ids",
+    "created_at"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "id": { "$ref": "../common/types.schema.json#/$defs/ArtifactId" },
+    "run_id": { "$ref": "../common/types.schema.json#/$defs/RunId" },
+    "project_id": { "$ref": "../common/types.schema.json#/$defs/ProjectId" },
+    "format": {
+      "description": "Short format name, for example \"step\".",
+      "$ref": "../common/types.schema.json#/$defs/Identifier"
+    },
+    "media_type": {
+      "description": "IANA media type of the content, for example \"model/step\".",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9.+-]*/[a-z0-9][a-z0-9.+-]*$"
+    },
+    "sha256": { "$ref": "../common/types.schema.json#/$defs/Sha256" },
+    "size_bytes": { "type": "integer", "minimum": 0 },
+    "source_sdr_version": { "$ref": "../common/types.schema.json#/$defs/SdrVersion" },
+    "tool": { "$ref": "../common/types.schema.json#/$defs/ToolName" },
+    "tool_version": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+    "step_id": {
+      "description": "The tool call that produced the artifact; its step record holds the generation parameters.",
+      "$ref": "../common/types.schema.json#/$defs/StepId"
+    },
+    "evidence_ids": {
+      "type": "array",
+      "items": { "$ref": "../common/types.schema.json#/$defs/EvidenceId" }
+    },
+    "created_at": { "$ref": "../common/types.schema.json#/$defs/Timestamp" }
+  }
+}
