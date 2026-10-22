@@ -1,0 +1,21 @@
+[workspace]
+resolver = "3"
+# Crates are added when their component is first built (blueprint §10.1, §24).
+members = ["xtask"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.99"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+anyhow = "1.0"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+# Allowed in tests through clippy.toml.
+unwrap_used = "deny"
+expect_used = "deny"

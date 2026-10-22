@@ -1,6 +1,6 @@
 # ADR-0021: Numeric requirement check for Increment 1
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-22
 
 ## Context

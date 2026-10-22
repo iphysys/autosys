@@ -1,6 +1,6 @@
 # ADR-0016: PostgreSQL for jobs, events and design state
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-22
 
 ## Context
