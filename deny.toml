@@ -13,6 +13,8 @@ ignore = []
 # Licenses compatible with distributing this MIT-licensed project.
 allow = [
     "MIT",
+    # MIT without the attribution clause (borrow-or-share, via jsonschema).
+    "MIT-0",
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",

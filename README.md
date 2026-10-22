@@ -63,6 +63,12 @@ Migrations live in `crates/infra/migrations/` and are embedded in the binary. A 
 
 The store tests in `crates/infra/tests/` create a database named `autosys_test_*` on the `DATABASE_URL` server for each test and drop it at the end. A test that panics leaves its database behind; drop it by hand. Without `DATABASE_URL` these tests fail; they never skip.
 
+## Design state (SDR)
+
+`crates/sdr` exports `SdrManager`, the only writer of design state (blueprint §7.2); its storage is crate-private. A change is proposed, validated, then committed or rejected, and the types make committing an unvalidated transition a compile error.
+
+`validate` checks the transition against `schemas/sdr/transition.schema.json`, including constraints the Rust types do not enforce, such as `minItems`. It then requires the transition's base to be the current head, applies the operations, and checks the result against `system.schema.json`. Problems come back as typed reasons, not errors. Versions are linear: a transition on a stale base is rejected, never rebased ([ADR-0020](docs/adr/0020-sdr-v0-scope.md)).
+
 ## Schemas
 
 `schemas/` holds the canonical contracts as JSON Schema (draft 2020-12). Rust types are generated from them at build time by `crates/schema-types`; never write or edit those types by hand. To change a type, change its schema.
@@ -70,6 +76,7 @@ The store tests in `crates/infra/tests/` create a database named `autosys_test_*
 - Each `*.schema.json` file has at most one root type, named by its `title`. Type names must be unique across all schema files.
 - Examples live in `schemas/<area>/examples/<stem>[.<case>].json` and must validate against `<area>/<stem>.schema.json`. Examples that must be rejected go in `examples/invalid/`.
 - `cargo test -p synth-schema-types` checks every schema against the 2020-12 metaschema, validates every example, and round-trips each valid example through its Rust type.
+- `schema_types::SCHEMA_FILES` embeds every schema file at build time, so the harness validates values against the same schemas its types were generated from.
 - Units are [UCUM](https://ucum.org/) case-sensitive codes, for example `kg`, `mm`, `mm3` and `kg/m3`.
 
 ## Documentation
