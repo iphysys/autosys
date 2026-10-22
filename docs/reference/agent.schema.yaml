@@ -1,0 +1,313 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "https://example.org/schemas/agent.schema.yaml"
+title: Agent specification
+description: >-
+  Canonical contract for creating and validating agent instances. The semantic
+  section defines what the agent is and why it exists. The runtime section
+  defines how the agent is configured and executed.
+type: object
+additionalProperties: false
+required:
+  - agent
+
+properties:
+  agent:
+    type: object
+    additionalProperties: false
+    required:
+      - semantic
+      - runtime
+    properties:
+      semantic:
+        $ref: "#/$defs/semanticDefinition"
+      runtime:
+        $ref: "#/$defs/runtimeDefinition"
+      contract:
+        $ref: "#/$defs/agentContract"
+      metadata:
+        $ref: "#/$defs/metadata"
+
+$defs:
+  nonEmptyString:
+    type: string
+    minLength: 1
+
+  stringList:
+    type: array
+    items:
+      $ref: "#/$defs/nonEmptyString"
+    uniqueItems: true
+
+  semanticDefinition:
+    title: Semantic definition
+    description: >-
+      Describes the agent's identity, purpose, owned responsibilities, operating
+      context, and behavioral instructions independently of any runtime.
+    type: object
+    additionalProperties: false
+    required:
+      - name
+      - description
+      - role
+      - goal
+      - responsibilities
+      - instructions
+    properties:
+      name:
+        allOf:
+          - $ref: "#/$defs/nonEmptyString"
+        description: Unique or recognizable name of the agent.
+      description:
+        allOf:
+          - $ref: "#/$defs/nonEmptyString"
+        description: Concise explanation of when and why this agent should be used.
+      role:
+        allOf:
+          - $ref: "#/$defs/nonEmptyString"
+        description: The specialist function performed by the agent.
+      goal:
+        allOf:
+          - $ref: "#/$defs/nonEmptyString"
+        description: The outcome that the agent is expected to achieve.
+      responsibilities:
+        type: array
+        minItems: 1
+        uniqueItems: true
+        description: Work and decisions owned by the agent.
+        items:
+          $ref: "#/$defs/nonEmptyString"
+      context:
+        type: object
+        additionalProperties: false
+        description: Domain and workflow relationships relevant to the agent.
+        properties:
+          domain:
+            $ref: "#/$defs/nonEmptyString"
+          upstream:
+            allOf:
+              - $ref: "#/$defs/stringList"
+            description: Inputs, stages, systems, or agents that feed this agent.
+          downstream:
+            allOf:
+              - $ref: "#/$defs/stringList"
+            description: Consumers, stages, systems, or agents served by this agent.
+      instructions:
+        allOf:
+          - $ref: "#/$defs/nonEmptyString"
+        description: Behavioral instructions and operating constraints for the agent.
+
+  runtimeDefinition:
+    title: Runtime definition
+    description: >-
+      Describes the model, capabilities, execution limits, permissions,
+      lifecycle integration, memory, and delegation configuration.
+    type: object
+    additionalProperties: false
+    required:
+      - model
+      - tools
+      - execution
+      - permissions
+    properties:
+      model:
+        type: object
+        additionalProperties: false
+        required:
+          - id
+        properties:
+          id:
+            allOf:
+              - $ref: "#/$defs/nonEmptyString"
+            description: Runtime-specific model identifier.
+          effort:
+            type: string
+            enum:
+              - low
+              - medium
+              - high
+            default: medium
+
+      tools:
+        type: object
+        additionalProperties: false
+        required:
+          - allowed
+        properties:
+          allowed:
+            allOf:
+              - $ref: "#/$defs/stringList"
+            description: Tools that the agent may invoke.
+          disallowed:
+            allOf:
+              - $ref: "#/$defs/stringList"
+            description: Tools explicitly denied to the agent.
+            default: []
+
+      skills:
+        allOf:
+          - $ref: "#/$defs/stringList"
+        description: Skills made available to the agent.
+        default: []
+
+      mcpServers:
+        type: object
+        description: Named MCP server configurations available to the agent.
+        default: {}
+        additionalProperties:
+          $ref: "#/$defs/mcpServer"
+
+      execution:
+        type: object
+        additionalProperties: false
+        required:
+          - maxTurns
+        properties:
+          maxTurns:
+            type: integer
+            minimum: 1
+            description: Maximum number of agent-loop turns allowed.
+          background:
+            type: boolean
+            default: false
+          isolation:
+            type: string
+            enum:
+              - none
+              - worktree
+              - container
+            default: none
+
+      permissions:
+        type: object
+        additionalProperties: false
+        required:
+          - mode
+        properties:
+          mode:
+            type: string
+            enum:
+              - plan
+              - default
+              - auto
+              - dontAsk
+              - bypass
+            description: Named permission policy applied to runtime actions.
+
+      hooks:
+        type: object
+        additionalProperties: false
+        properties:
+          PreToolUse:
+            $ref: "#/$defs/hooks"
+          PostToolUse:
+            $ref: "#/$defs/hooks"
+          Stop:
+            $ref: "#/$defs/hooks"
+
+      memory:
+        type: object
+        additionalProperties: false
+        properties:
+          enabled:
+            type: boolean
+            default: false
+          scope:
+            type: string
+            enum:
+              - session
+              - user
+              - project
+              - shared
+            default: session
+
+      delegation:
+        type: object
+        additionalProperties: false
+        properties:
+          allowed:
+            type: boolean
+            default: false
+          agents:
+            allOf:
+              - $ref: "#/$defs/stringList"
+            description: Agent identifiers to which work may be delegated.
+            default: []
+
+  agentContract:
+    title: Input and output contract
+    description: Machine-readable schemas for data accepted and produced by the agent.
+    type: object
+    additionalProperties: false
+    properties:
+      input:
+        type: object
+        additionalProperties: false
+        required:
+          - schema
+        properties:
+          schema:
+            $ref: "#/$defs/embeddedJsonSchema"
+      output:
+        type: object
+        additionalProperties: false
+        required:
+          - schema
+        properties:
+          schema:
+            $ref: "#/$defs/embeddedJsonSchema"
+
+  metadata:
+    type: object
+    additionalProperties: false
+    properties:
+      tags:
+        allOf:
+          - $ref: "#/$defs/stringList"
+        default: []
+      version:
+        type: string
+        pattern: "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+        default: "1.0.0"
+
+  mcpServer:
+    type: object
+    additionalProperties: false
+    required:
+      - command
+    properties:
+      command:
+        $ref: "#/$defs/nonEmptyString"
+      args:
+        type: array
+        items:
+          type: string
+        default: []
+      env:
+        type: object
+        additionalProperties:
+          type: string
+        default: {}
+
+  hooks:
+    type: array
+    default: []
+    items:
+      type: object
+      additionalProperties: false
+      required:
+        - command
+      properties:
+        command:
+          $ref: "#/$defs/nonEmptyString"
+        timeoutSeconds:
+          type: integer
+          minimum: 1
+        continueOnError:
+          type: boolean
+          default: false
+
+  embeddedJsonSchema:
+    description: Embedded JSON Schema describing agent input or output.
+    oneOf:
+      - type: object
+      - type: boolean

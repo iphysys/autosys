@@ -1,0 +1,182 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "https://example.org/schemas/tool.schema.yaml"
+title: Tool specification
+description: >-
+  Canonical contract for creating and validating tool definitions. The semantic
+  section describes what the tool does and when it should be used. The contract
+  section defines its typed input and output. The runtime section defines how the
+  tool is reached and executed by the agent runtime.
+type: object
+additionalProperties: false
+required:
+  - tool
+
+properties:
+  tool:
+    type: object
+    additionalProperties: false
+    required:
+      - semantic
+      - contract
+      - runtime
+    properties:
+      semantic:
+        $ref: "#/$defs/semanticDefinition"
+      contract:
+        $ref: "#/$defs/toolContract"
+      runtime:
+        $ref: "#/$defs/runtimeDefinition"
+      metadata:
+        $ref: "#/$defs/metadata"
+
+$defs:
+  nonEmptyString:
+    type: string
+    minLength: 1
+
+  semanticDefinition:
+    title: Semantic definition
+    type: object
+    additionalProperties: false
+    required:
+      - name
+      - description
+    properties:
+      name:
+        allOf:
+          - $ref: "#/$defs/nonEmptyString"
+        description: Stable tool identifier exposed to agents.
+      description:
+        allOf:
+          - $ref: "#/$defs/nonEmptyString"
+        description: What the tool does, when to use it, and the result it provides.
+
+  toolContract:
+    title: Tool contract
+    description: Typed interface presented to agents and validated at runtime.
+    type: object
+    additionalProperties: false
+    required:
+      - inputSchema
+    properties:
+      inputSchema:
+        allOf:
+          - $ref: "#/$defs/inputJsonSchema"
+        description: JSON Schema describing arguments accepted by the tool.
+      outputSchema:
+        allOf:
+          - $ref: "#/$defs/jsonSchema"
+        description: JSON Schema describing structured output produced by the tool.
+
+  runtimeDefinition:
+    title: Runtime definition
+    type: object
+    additionalProperties: false
+    required:
+      - transport
+    properties:
+      transport:
+        type: string
+        enum:
+          - mcp
+          - local
+          - process
+          - http
+        description: Mechanism used by the runtime to reach the tool.
+
+      mcp:
+        type: object
+        additionalProperties: false
+        properties:
+          server:
+            $ref: "#/$defs/nonEmptyString"
+          toolName:
+            $ref: "#/$defs/nonEmptyString"
+
+      local:
+        type: object
+        additionalProperties: false
+        properties:
+          callable:
+            $ref: "#/$defs/nonEmptyString"
+
+      process:
+        type: object
+        additionalProperties: false
+        properties:
+          command:
+            $ref: "#/$defs/nonEmptyString"
+          args:
+            type: array
+            items:
+              type: string
+            default: []
+
+      http:
+        type: object
+        additionalProperties: false
+        properties:
+          endpoint:
+            type: string
+            minLength: 1
+          method:
+            type: string
+            enum:
+              - GET
+              - POST
+              - PUT
+              - PATCH
+              - DELETE
+            default: POST
+
+      execution:
+        type: object
+        additionalProperties: false
+        properties:
+          timeoutSeconds:
+            type: integer
+            minimum: 1
+          concurrencySafe:
+            type: boolean
+            default: false
+          sideEffects:
+            type: boolean
+            default: false
+
+      permissions:
+        type: object
+        additionalProperties: false
+        properties:
+          requiresApproval:
+            type: boolean
+            default: false
+
+  metadata:
+    type: object
+    additionalProperties: false
+    properties:
+      tags:
+        type: array
+        uniqueItems: true
+        items:
+          $ref: "#/$defs/nonEmptyString"
+        default: []
+      version:
+        type: string
+        pattern: "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+        default: "1.0.0"
+
+  inputJsonSchema:
+    description: JSON Schema for tool arguments. Tool arguments are represented as an object.
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        const: object
+
+  jsonSchema:
+    description: Embedded JSON Schema.
+    oneOf:
+      - type: object
+      - type: boolean
