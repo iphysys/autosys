@@ -1,0 +1,36 @@
+{
+  "schema_version": "0.1",
+  "id": "secret_problem",
+  "split": "heldout",
+  "status": "approved",
+  "source": "elsewhere",
+  "feasibility": "solvable",
+  "description": "Held-out problems are never stored in the repository.",
+  "givens": [],
+  "design_variables": [{ "parameter_id": "x", "text": "x", "unit": "mm" }],
+  "derived_parameters": [],
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "Short enough",
+      "quantity": "x",
+      "priority": "must",
+      "numeric": {
+        "parameter_id": "x",
+        "criterion": { "comparator": "le", "limit": { "value": 1, "unit": "mm" } }
+      }
+    }
+  ],
+  "budgets": {
+    "max_tool_calls": 1,
+    "max_wall_time": { "value": 1, "unit": "min" },
+    "max_repair_attempts_per_step": 1
+  },
+  "expected_outcomes": [
+    {
+      "id": "stops",
+      "statement": "Stops with success.",
+      "checks": [{ "kind": "stop_reason", "allowed": ["success"] }]
+    }
+  ]
+}

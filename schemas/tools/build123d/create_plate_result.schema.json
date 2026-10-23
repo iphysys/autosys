@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Build123dCreatePlateResult",
+  "description": "Result of the build123d create_plate tool. Returned only when the plate is a single valid solid.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["part"],
+  "properties": {
+    "part": {
+      "description": "Pass this handle unchanged to measure.",
+      "$ref": "part.schema.json"
+    }
+  }
+}

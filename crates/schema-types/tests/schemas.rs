@@ -31,6 +31,10 @@ const ROOT_TYPES: &[(&str, RoundTrip)] = &[
         round_trip::<schema_types::ArtifactMetadata>,
     ),
     (
+        "benchmarks/benchmark-problem.schema.json",
+        round_trip::<schema_types::BenchmarkProblem>,
+    ),
+    (
         "config/agent.schema.json",
         round_trip::<schema_types::AgentSpec>,
     ),
@@ -84,6 +88,26 @@ const ROOT_TYPES: &[(&str, RoundTrip)] = &[
         round_trip::<schema_types::SdrVersionRecord>,
     ),
     ("tasks/task.schema.json", round_trip::<schema_types::Task>),
+    (
+        "tools/build123d/create_plate_request.schema.json",
+        round_trip::<schema_types::Build123dCreatePlateRequest>,
+    ),
+    (
+        "tools/build123d/create_plate_result.schema.json",
+        round_trip::<schema_types::Build123dCreatePlateResult>,
+    ),
+    (
+        "tools/build123d/measure_request.schema.json",
+        round_trip::<schema_types::Build123dMeasureRequest>,
+    ),
+    (
+        "tools/build123d/measure_result.schema.json",
+        round_trip::<schema_types::Build123dMeasureResult>,
+    ),
+    (
+        "tools/build123d/part.schema.json",
+        round_trip::<schema_types::Build123dPart>,
+    ),
 ];
 
 fn round_trip<T: DeserializeOwned + Serialize>(instance: &Value) -> Result<Value, String> {

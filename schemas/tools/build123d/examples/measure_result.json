@@ -1,0 +1,10 @@
+{
+  "part_id": "sha256:c184e3b64442c589f4fee88c0f62ec6e182cf4b5f0eed59e90cb693259dbf706",
+  "volume": { "value": 45403.60626231498, "unit": "mm3" },
+  "mass": { "value": 122.58973690825044, "unit": "g" },
+  "bounding_box": {
+    "length": { "value": 110, "unit": "mm" },
+    "width": { "value": 70, "unit": "mm" },
+    "height": { "value": 6, "unit": "mm" }
+  }
+}

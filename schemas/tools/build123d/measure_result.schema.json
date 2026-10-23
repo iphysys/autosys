@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Build123dMeasureResult",
+  "description": "Result of the build123d measure tool. Volume comes from OpenCASCADE mass properties of the solid; mass is volume times density. Units are UCUM codes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["part_id", "volume", "mass", "bounding_box"],
+  "properties": {
+    "part_id": {
+      "description": "part_id of the measured handle.",
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "volume": { "$ref": "#/$defs/Build123dVolume" },
+    "mass": { "$ref": "#/$defs/Build123dMass" },
+    "bounding_box": { "$ref": "#/$defs/Build123dBoundingBox" }
+  },
+  "$defs": {
+    "Build123dVolume": {
+      "description": "Volume in mm3.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "unit"],
+      "properties": {
+        "value": { "type": "number", "minimum": 0 },
+        "unit": { "const": "mm3" }
+      }
+    },
+    "Build123dMass": {
+      "description": "Mass in g.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "unit"],
+      "properties": {
+        "value": { "type": "number", "minimum": 0 },
+        "unit": { "const": "g" }
+      }
+    },
+    "Build123dLength": {
+      "description": "Length in mm.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "unit"],
+      "properties": {
+        "value": { "type": "number", "minimum": 0 },
+        "unit": { "const": "mm" }
+      }
+    },
+    "Build123dBoundingBox": {
+      "description": "Extents of the tight axis-aligned bounding box in the create_plate frame: length along X, width along Y, height along Z.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["length", "width", "height"],
+      "properties": {
+        "length": { "$ref": "#/$defs/Build123dLength" },
+        "width": { "$ref": "#/$defs/Build123dLength" },
+        "height": { "$ref": "#/$defs/Build123dLength" }
+      }
+    }
+  }
+}

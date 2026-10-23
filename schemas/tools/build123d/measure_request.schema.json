@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Build123dMeasureRequest",
+  "description": "Arguments of the build123d measure tool: a part handle from create_plate and the material density.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["part", "density"],
+  "properties": {
+    "part": {
+      "description": "The handle create_plate returned, unchanged.",
+      "$ref": "part.schema.json"
+    },
+    "density": { "$ref": "#/$defs/Build123dDensity" }
+  },
+  "$defs": {
+    "Build123dDensity": {
+      "description": "Material density in g/cm3 (UCUM).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "unit"],
+      "properties": {
+        "value": { "type": "number", "exclusiveMinimum": 0 },
+        "unit": { "const": "g/cm3" }
+      }
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Build123dPart",
+  "description": "Handle to a part built by the build123d tool server. The server keeps no state between calls, so the handle carries the parameters the part is rebuilt from. part_id is derived from those parameters; a handle whose part_id does not match them is rejected.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["part_id", "plate"],
+  "properties": {
+    "part_id": {
+      "description": "sha256 of the canonical JSON of plate. Equal parameters give an equal part_id.",
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "plate": {
+      "description": "The create_plate arguments this part was built from.",
+      "$ref": "create_plate_request.schema.json"
+    }
+  }
+}
