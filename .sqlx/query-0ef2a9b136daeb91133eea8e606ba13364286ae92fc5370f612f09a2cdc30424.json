@@ -1,0 +1,113 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    UPDATE step_records\n                    SET completed_at = autosys_now(), outcome = $2\n                    WHERE idempotency_key = $1 AND outcome IS NULL\n                    RETURNING idempotency_key, run_id, step_id, tool, request_sha256,\n                              started_at, completed_at,\n                              outcome AS \"outcome: Json<StepOutcome>\"\n                    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "idempotency_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "step_records",
+            "name": "idempotency_key"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "run_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "step_records",
+            "name": "run_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "step_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "step_records",
+            "name": "step_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "tool",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "step_records",
+            "name": "tool"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "request_sha256",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "step_records",
+            "name": "request_sha256"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "started_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "step_records",
+            "name": "started_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "completed_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "step_records",
+            "name": "completed_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "outcome: Json<StepOutcome>",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "step_records",
+            "name": "outcome"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "0ef2a9b136daeb91133eea8e606ba13364286ae92fc5370f612f09a2cdc30424"
+}

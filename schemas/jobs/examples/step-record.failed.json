@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "idempotency_key": "run-0001:step-0009",
+  "run_id": "run-0001",
+  "step_id": "step-0009",
+  "tool": "create_plate",
+  "request_sha256": "sha256:aa1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1ff",
+  "started_at": "2026-10-23T10:00:03Z",
+  "completed_at": "2026-10-23T10:01:03Z",
+  "outcome": {
+    "kind": "failed",
+    "error": { "code": "timeout", "message": "create_plate did not answer within 60s", "retryable": true }
+  }
+}

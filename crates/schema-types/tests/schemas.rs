@@ -56,6 +56,10 @@ const ROOT_TYPES: &[(&str, RoundTrip)] = &[
     ),
     ("jobs/job.schema.json", round_trip::<schema_types::Job>),
     (
+        "jobs/step-record.schema.json",
+        round_trip::<schema_types::StepRecord>,
+    ),
+    (
         "reports/run-report.schema.json",
         round_trip::<schema_types::RunReport>,
     ),

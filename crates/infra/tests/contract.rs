@@ -8,7 +8,7 @@ mod support;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use infra::persistence::{
-    PgArtifactStore, PgEventLog, PgEvidenceStore, PgJobStore, PgSdrRepository,
+    PgArtifactStore, PgEventLog, PgEvidenceStore, PgJobStore, PgSdrRepository, PgStepStore,
 };
 use support::TestDb;
 use testkit::contract;
@@ -51,6 +51,23 @@ async fn postgres_sdr_repository() {
     contract::sdr_repository(|| async {
         db.empty().await;
         PgSdrRepository::new(db.database())
+    })
+    .await;
+    db.drop().await;
+}
+
+/// Like the job store: `PgStepStore` reads time only from the database, so
+/// the database clock follows the suite's clock.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn postgres_step_store() {
+    let db = TestDb::create().await;
+    db.use_session_clock().await;
+    contract::step_store(|clock| {
+        let db = &db;
+        async move {
+            db.empty().await;
+            PgStepStore::new(db.following(clock))
+        }
     })
     .await;
     db.drop().await;

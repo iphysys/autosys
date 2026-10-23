@@ -32,6 +32,7 @@ pub use model::{
 };
 pub use schema::SchemaSet;
 pub use storage::{
-    ArtifactStore, EventLog, EvidenceStore, JobStore, NewEvent, SdrRepository, WakeReason,
+    ArtifactStore, EventLog, EvidenceStore, JobStore, NewEvent, NewStep, SdrRepository, StepStart,
+    StepStore, WakeReason,
 };
 pub use tool::{Tool, ToolDescriptor, ToolOutput, ToolRequest};

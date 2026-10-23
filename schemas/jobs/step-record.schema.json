@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "StepRecord",
+  "description": "The record of one tool call, keyed by its idempotency key (blueprint section 6.3, ADR-0026). Written by the tool gateway through the step store. A record without an outcome is a call that started and has not finished; completed_at and outcome are set together, once.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "idempotency_key",
+    "run_id",
+    "step_id",
+    "tool",
+    "request_sha256",
+    "started_at"
+  ],
+  "dependentRequired": {
+    "outcome": ["completed_at"],
+    "completed_at": ["outcome"]
+  },
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "idempotency_key": { "$ref": "../common/types.schema.json#/$defs/Identifier" },
+    "run_id": { "$ref": "../common/types.schema.json#/$defs/RunId" },
+    "step_id": { "$ref": "../common/types.schema.json#/$defs/StepId" },
+    "tool": { "$ref": "../common/types.schema.json#/$defs/ToolName" },
+    "request_sha256": {
+      "description": "sha256 of the canonical JSON of the tool name and arguments. A key reused for a different request is rejected.",
+      "$ref": "../common/types.schema.json#/$defs/Sha256"
+    },
+    "started_at": { "$ref": "../common/types.schema.json#/$defs/Timestamp" },
+    "completed_at": { "$ref": "../common/types.schema.json#/$defs/Timestamp" },
+    "outcome": { "$ref": "#/$defs/StepOutcome" }
+  },
+  "$defs": {
+    "StepOutcome": {
+      "oneOf": [
+        {
+          "description": "The tool returned a result that passed its result schema.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "tool_version", "result", "evidence_ids"],
+          "properties": {
+            "kind": { "const": "succeeded" },
+            "tool_version": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+            "result": {
+              "description": "The normalized structured result, as the tool's result schema describes it.",
+              "type": "object"
+            },
+            "evidence_ids": {
+              "type": "array",
+              "items": { "$ref": "../common/types.schema.json#/$defs/EvidenceId" }
+            }
+          }
+        },
+        {
+          "description": "The call failed: the tool reported an error, timed out, was cancelled, or returned a result that broke its schema.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "error"],
+          "properties": {
+            "kind": { "const": "failed" },
+            "error": { "$ref": "../common/types.schema.json#/$defs/ErrorInfo" }
+          }
+        }
+      ]
+    }
+  }
+}

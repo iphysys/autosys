@@ -6,12 +6,14 @@ mod event;
 mod evidence;
 mod job;
 mod sdr;
+mod step;
 
 pub use artifact::InMemoryArtifactStore;
 pub use event::InMemoryEventLog;
 pub use evidence::InMemoryEvidenceStore;
 pub use job::InMemoryJobStore;
 pub use sdr::InMemorySdrRepository;
+pub use step::InMemoryStepStore;
 
 use std::sync::Arc;
 
