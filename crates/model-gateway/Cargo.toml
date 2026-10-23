@@ -1,0 +1,34 @@
+[package]
+name = "synth-model-gateway"
+version = "0.1.0"
+description = "The model gateway: model profiles, provider adapters (Anthropic, OpenAI-compatible), retries and cost accounting (blueprint section 14.4, ADR-0027)."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "model_gateway"
+
+[dependencies]
+synth-contracts.workspace = true
+
+async-trait.workspace = true
+reqwest = { workspace = true, features = ["rustls-no-provider"] }
+rustls.workspace = true
+rustls-platform-verifier.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "time"] }
+tracing.workspace = true
+
+[dev-dependencies]
+synth-testkit.workspace = true
+
+# Reads the committed config/models/routing.yaml in tests.
+serde-saphyr.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
+
+[lints]
+workspace = true

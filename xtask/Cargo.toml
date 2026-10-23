@@ -11,6 +11,8 @@ publish.workspace = true
 # building xtask needs no database.
 synth-contracts.workspace = true
 synth-infra = { workspace = true, default-features = false }
+# Model routing checks beyond the schema: the gateway's own (ADR-0027).
+synth-model-gateway.workspace = true
 
 anyhow.workspace = true
 serde_json.workspace = true

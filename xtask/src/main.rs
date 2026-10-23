@@ -24,7 +24,9 @@ Tasks:
                 servers, cargo-deny
   arch-check    Allowed crate dependencies (blueprint 10.3) and the SDR single-writer rule (7.2)
   validate-config
-                Every file in config/ against its schema (blueprint 11.2)
+                Every file in config/ against its schema (blueprint 11.2), and the model
+                routing checks of the gateway: unique profiles, headers, agent profiles
+                and tool calling (ADR-0027)
   validate-benchmarks
                 Every problem in evals/benchmarks/ against its schema (blueprint 14.7)
   codegen [--check]
@@ -196,17 +198,53 @@ fn arch_check(root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Validates `config/` with the same loader the harness uses.
+/// Validates `config/` with the same loader the harness uses, then the model
+/// routing with the gateway's own checks, including every agent's profile.
 fn validate_config(root: &Path) -> Result<()> {
+    let config = root.join("config");
     let loader = infra::config::ConfigLoader::new().context("loading the config schemas")?;
-    let problems = loader
-        .validate_dir(&root.join("config"))
-        .context("reading config/")?;
+    let mut problems = loader.validate_dir(&config).context("reading config/")?;
+    if problems.is_empty() {
+        problems.extend(model_routing_problems(&loader, &config));
+    }
     if !problems.is_empty() {
         bail!("invalid configuration:\n  - {}", problems.join("\n  - "));
     }
     eprintln!("xtask: validate-config: passed");
     Ok(())
+}
+
+/// The checks `ModelGateway::start` makes that need no environment: the
+/// routing is consistent, and every agent in `config/agents/` has a profile
+/// that exists and, if the agent has tools, supports tool calling.
+fn model_routing_problems(loader: &infra::config::ConfigLoader, config: &Path) -> Vec<String> {
+    let routing_path = config.join("models/routing.yaml");
+    let routing = match loader
+        .load::<contracts::types::ModelRouting>(&routing_path)
+        .and_then(model_gateway::Routing::new)
+    {
+        Ok(routing) => routing,
+        Err(e) => return vec![format!("{}: {}", routing_path.display(), e.message())],
+    };
+    let agents_dir = config.join("agents");
+    let Ok(entries) = std::fs::read_dir(&agents_dir) else {
+        return Vec::new();
+    };
+    let mut paths: Vec<PathBuf> = entries
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|x| x == "yaml"))
+        .collect();
+    paths.sort();
+    paths
+        .iter()
+        .filter_map(|path| {
+            loader
+                .load::<contracts::types::AgentSpec>(path)
+                .and_then(|agent| routing.check_agent(&agent))
+                .err()
+                .map(|e| format!("{}: {}", path.display(), e.message()))
+        })
+        .collect()
 }
 
 /// Validates `evals/benchmarks/` with the loader the evaluation runs use.

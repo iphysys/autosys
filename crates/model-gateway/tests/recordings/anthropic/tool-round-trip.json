@@ -1,0 +1,47 @@
+{
+  "description": "Hand-written from the Messages API reference (anthropic-version 2026-10-21), not captured: a tool_use turn with an omitted thinking block, then the answer after the tool result.",
+  "replies": [
+    {
+      "status": 200,
+      "headers": [["request-id", "req_test_tool_1"]],
+      "body": {
+        "id": "msg_test_tool_1",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-opus-5-5",
+        "content": [
+          { "type": "thinking", "thinking": "", "signature": "EtestSignatureBeforeToolUse" },
+          { "type": "text", "text": "I will create the plate first." },
+          {
+            "type": "tool_use",
+            "id": "toolu_test_01",
+            "name": "create_plate",
+            "input": { "length_mm": 100 }
+          }
+        ],
+        "stop_reason": "tool_use",
+        "stop_sequence": null,
+        "stop_details": null,
+        "usage": { "input_tokens": 210, "output_tokens": 64 }
+      }
+    },
+    {
+      "status": 200,
+      "headers": [["request-id", "req_test_tool_2"]],
+      "body": {
+        "id": "msg_test_tool_2",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-opus-5-5",
+        "content": [
+          { "type": "thinking", "thinking": "", "signature": "EtestSignatureAfterToolResult" },
+          { "type": "text", "text": "The plate is created." }
+        ],
+        "stop_reason": "end_turn",
+        "stop_sequence": null,
+        "stop_details": null,
+        "usage": { "input_tokens": 300, "output_tokens": 20 }
+      }
+    }
+  ]
+}

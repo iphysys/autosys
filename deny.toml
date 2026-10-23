@@ -26,6 +26,12 @@ allow = [
 confidence-threshold = 0.9
 # The allow-list is set ahead of the dependencies that later PRs add.
 unused-allowed-license = "allow"
+# Mozilla's root certificates as data, a permissive data licence. reqwest's
+# rustls features always bring it in through rustls-platform-verifier
+# (ADR-0027); allowed for this crate only.
+exceptions = [
+    { allow = ["CDLA-Permissive-2.0"], crate = "webpki-root-certs" },
+]
 
 [licenses.private]
 ignore = true

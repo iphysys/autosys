@@ -1,0 +1,121 @@
+# Model profiles for the model gateway (blueprint section 14.4, ADR-0027).
+# Schema: schemas/config/model-routing.schema.json
+#
+# Choosing a model: each profile pairs a provider with one model, and the
+# profile name is the choice. The Claude models share the anthropic provider:
+#
+#   haiku    claude-haiku-5-5    the default, the cheapest
+#   sonnet   claude-sonnet-5-5
+#   opus     claude-opus-5-5     the most capable
+#   pliny    the internal Pliny platform (no tool calling yet)
+#
+# An agent names a profile in its model_profile, or gets default_profile.
+# SYNTH_MODEL_PROFILE replaces the default for a run, for example
+# SYNTH_MODEL_PROFILE=opus. Another model is one more profile here, with its
+# price below; no code changes.
+#
+# Keys and deployment endpoints are named by environment variable (see
+# .env.example) and never written here. A missing variable of a profile in
+# use fails at startup, naming it.
+schema_version: "0.1"
+default_profile: haiku
+profiles:
+  - provider: anthropic
+    name: haiku
+    model: claude-haiku-5-5
+    tool_calling: true
+    base_url: https://api.anthropic.com
+    api_key_env: ANTHROPIC_API_KEY
+    # Needed only for a key that is not scoped to one workspace.
+    workspace_id_env: ANTHROPIC_WORKSPACE_ID
+    # Claude Haiku 5.5 defaults to medium.
+    effort: high
+    # No refusal_fallback: Claude Haiku 5.5 has no server-side fallback, so a
+    # declined request comes back as a refusal.
+    max_output_tokens: 16000
+    request_timeout_seconds: 600
+    retry:
+      max_attempts: 3
+      initial_backoff_ms: 1000
+      max_backoff_ms: 30000
+
+  - provider: anthropic
+    name: sonnet
+    model: claude-sonnet-5-5
+    tool_calling: true
+    base_url: https://api.anthropic.com
+    api_key_env: ANTHROPIC_API_KEY
+    workspace_id_env: ANTHROPIC_WORKSPACE_ID
+    effort: high
+    # A declined request runs again on the model the API picks for the
+    # refusal category; the response names the model that answered.
+    refusal_fallback: default
+    max_output_tokens: 16000
+    request_timeout_seconds: 600
+    retry:
+      max_attempts: 3
+      initial_backoff_ms: 1000
+      max_backoff_ms: 30000
+
+  - provider: anthropic
+    name: opus
+    model: claude-opus-5-5
+    tool_calling: true
+    base_url: https://api.anthropic.com
+    api_key_env: ANTHROPIC_API_KEY
+    workspace_id_env: ANTHROPIC_WORKSPACE_ID
+    # Claude Opus 5.5 defaults to medium.
+    effort: high
+    refusal_fallback: default
+    max_output_tokens: 16000
+    request_timeout_seconds: 600
+    retry:
+      max_attempts: 3
+      initial_backoff_ms: 1000
+      max_backoff_ms: 30000
+
+  # The internal Pliny platform, through its OpenAI-compatible endpoint.
+  - provider: openai_compatible
+    name: pliny
+    model: snps-provider/nemotron-3-ultra-550b-a55
+    # Pliny does not return tool calls yet, so agents with tools cannot use
+    # this profile; the gateway refuses such an assignment at startup.
+    tool_calling: false
+    base_url_env: PLINY_BASE_URL
+    api_key_env: PLINY_API_KEY
+    # A PEM bundle trusted in addition to the system roots. TLS verification
+    # cannot be turned off.
+    ca_bundle_env: INTERNAL_CA_BUNDLE
+    headers:
+      X-TFY-LOGGING-CONFIG: '{"enabled":true}'
+    max_output_tokens: 16000
+    request_timeout_seconds: 600
+    retry:
+      max_attempts: 3
+      initial_backoff_ms: 1000
+      max_backoff_ms: 30000
+
+# USD per million tokens, from platform.claude.com/docs/en/about-claude/pricing
+# (2026-10-24). Claude Haiku 5.5 is priced for prompts up to 100,000 tokens;
+# longer prompts cost five times as much, so their cost is under-reported.
+# Claude Sonnet 5, Opus 5 and Opus 4.8 are refusal-fallback targets. Pliny's
+# model has no price, so its calls report an unknown cost.
+prices:
+  - model: claude-haiku-5-5
+    input_usd_per_mtok: 0.10
+    output_usd_per_mtok: 0.50
+  - model: claude-sonnet-5-5
+    input_usd_per_mtok: 2.0
+    output_usd_per_mtok: 10.0
+  - model: claude-sonnet-5
+    input_usd_per_mtok: 2.0
+    output_usd_per_mtok: 10.0
+  - model: claude-opus-5-5
+    input_usd_per_mtok: 4.0
+    output_usd_per_mtok: 20.0
+  - model: claude-opus-5
+    input_usd_per_mtok: 5.0
+    output_usd_per_mtok: 25.0
+  - model: claude-opus-4-8
+    input_usd_per_mtok: 5.0
+    output_usd_per_mtok: 25.0
