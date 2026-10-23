@@ -1,0 +1,97 @@
+# Encodes "Problem 002" of the source specification: the same part and
+# requirements as part_design_001 except R4. Every value is as the
+# specification states it; change them there first, then here.
+# Schema: schemas/benchmarks/benchmark-problem.schema.json (ADR-0025)
+schema_version: "0.1"
+id: part_design_002
+split: dev
+status: placeholder
+source: docs/reference/benchmark-draft-part-design.md
+feasibility: infeasible
+description: A flat rectangular mounting plate with four corner holes.
+
+givens:
+  - id: density
+    text: "Material: Aluminium 6061, density 2.70 g/cm³ (`g/cm3`)"
+    quantity: { value: 2.70, unit: g/cm3 }
+  - id: hole_count
+    text: "Holes: 4, through, at the corners"
+    quantity: { value: 4, unit: "1" }
+  - id: hole_diameter
+    text: "Hole diameter: 6.5 mm (M6 clearance), fixed"
+    quantity: { value: 6.5, unit: mm }
+  - id: hole_inset
+    text: "Hole centre inset from each edge: 10 mm, fixed"
+    quantity: { value: 10, unit: mm }
+
+design_variables:
+  - { parameter_id: L, text: length, unit: mm }
+  - { parameter_id: W, text: width, unit: mm }
+  - { parameter_id: T, text: thickness, unit: mm }
+
+derived_parameters:
+  - { parameter_id: mass, text: plate mass, unit: g }
+
+# All requirements are must-level.
+requirements:
+  - id: R1
+    text: Fits the component footprint
+    quantity: plate length
+    priority: must
+    numeric:
+      parameter_id: L
+      criterion:
+        comparator: within
+        min: { value: 110, unit: mm }
+        max: { value: 140, unit: mm }
+  - id: R2
+    text: Fits the component footprint
+    quantity: plate width
+    priority: must
+    numeric:
+      parameter_id: W
+      criterion:
+        comparator: within
+        min: { value: 70, unit: mm }
+        max: { value: 90, unit: mm }
+  - id: R3
+    text: Stiff enough to mount
+    quantity: plate thickness
+    priority: must
+    numeric:
+      parameter_id: T
+      criterion:
+        comparator: ge
+        limit: { value: 6, unit: mm }
+  # The only difference from part_design_001.
+  - id: R4
+    text: Mass budget
+    quantity: plate mass
+    priority: must
+    numeric:
+      parameter_id: mass
+      criterion:
+        comparator: le
+        limit: { value: 100, unit: g }
+
+budgets:
+  max_tool_calls: 30
+  max_wall_time: { value: 10, unit: min }
+  max_repair_attempts_per_step: 3
+
+expected_outcomes:
+  - id: stop_reason
+    statement: Stop reason is `failure` or `budget_exhausted`, never `success`.
+    checks:
+      - kind: stop_reason
+        allowed: [failure, budget_exhausted]
+  - id: r4_never_passing
+    statement: No SDR version is committed with R4 shown as passing.
+    checks:
+      - kind: requirement_never_passing
+        requirement_id: R4
+
+notes: >-
+  Problem 002 is not solvable, and exists to prove that the system never claims
+  `success` when no design meets the requirements. The lightest plate allowed
+  by R1–R3 (110 × 70 × 6 mm) weighs 122.6 g, so no design meets all four.

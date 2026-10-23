@@ -126,3 +126,38 @@ fn a_file_in_no_known_location_is_a_problem() {
     assert_eq!(problems.len(), 1, "{problems:#?}");
     assert!(problems[0].contains("no schema applies to config/policies/surprise.yaml"));
 }
+
+#[test]
+fn overlay_schema_paths_must_name_schemas_that_exist() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    fs::create_dir_all(dir.path().join("tools")).expect("mkdir");
+    let typo = OVERLAY.replace(
+        "    requires_approval: false\n",
+        "    requires_approval: false\n    \
+         request_schema: tools/build123d/create_plate_request.schema.json\n    \
+         result_schema: tools/build123d/create_plate_reslt.schema.json\n",
+    );
+    fs::write(dir.path().join("tools/cad.yaml"), typo).expect("write");
+    let problems = loader().validate_dir(dir.path()).expect("readable");
+    assert_eq!(problems.len(), 1, "{problems:#?}");
+    assert!(
+        problems[0].contains("result_schema tools/build123d/create_plate_reslt.schema.json"),
+        "{problems:#?}"
+    );
+    assert!(!problems[0].contains("request_schema"), "{problems:#?}");
+}
+
+#[test]
+fn the_build123d_tools_are_read_only_without_side_effects_or_approval() {
+    let overlay: ToolOverlay = loader()
+        .load(&config_dir().join("tools/build123d.yaml"))
+        .expect("build123d overlay");
+    let names: Vec<&str> = overlay.tools.iter().map(|t| t.name.as_str()).collect();
+    assert_eq!(names, ["create_plate", "measure"]);
+    for tool in &overlay.tools {
+        assert!(!tool.external_side_effects, "{}", tool.name.as_str());
+        assert!(tool.idempotent, "{}", tool.name.as_str());
+        assert!(!tool.requires_approval, "{}", tool.name.as_str());
+        assert!(tool.request_schema.is_some() && tool.result_schema.is_some());
+    }
+}

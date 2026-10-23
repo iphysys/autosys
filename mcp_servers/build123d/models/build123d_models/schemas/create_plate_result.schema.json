@@ -1,0 +1,79 @@
+{
+  "$defs": {
+    "Build123dCreatePlateRequest": {
+      "additionalProperties": false,
+      "description": "Arguments of the build123d create_plate tool: a flat rectangular plate with one through hole at each corner. All lengths are in millimetres. Frame: length along X, width along Y, thickness along Z; the plate is centred on the origin in X and Y and its bottom face lies on Z = 0. Besides these bounds, the server rejects geometry where a hole would break an edge (hole_inset_mm <= hole_diameter_mm / 2) or two holes would meet (length_mm or width_mm minus 2 * hole_inset_mm <= hole_diameter_mm).",
+      "properties": {
+        "hole_diameter_mm": {
+          "description": "Diameter of each of the four through holes, in mm.",
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "hole_inset_mm": {
+          "description": "Distance from each plate edge to the centre of the nearest holes, in mm.",
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "length_mm": {
+          "description": "Plate length along X, in mm.",
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "thickness_mm": {
+          "description": "Plate thickness along Z, in mm.",
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "width_mm": {
+          "description": "Plate width along Y, in mm.",
+          "exclusiveMinimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "length_mm",
+        "width_mm",
+        "thickness_mm",
+        "hole_diameter_mm",
+        "hole_inset_mm"
+      ],
+      "title": "Build123dCreatePlateRequest",
+      "type": "object"
+    },
+    "Build123dPart": {
+      "additionalProperties": false,
+      "description": "Handle to a part built by the build123d tool server. The server keeps no state between calls, so the handle carries the parameters the part is rebuilt from. part_id is derived from those parameters; a handle whose part_id does not match them is rejected.",
+      "properties": {
+        "part_id": {
+          "description": "sha256 of the canonical JSON of plate. Equal parameters give an equal part_id.",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "plate": {
+          "$ref": "#/$defs/Build123dCreatePlateRequest",
+          "description": "The create_plate arguments this part was built from."
+        }
+      },
+      "required": [
+        "part_id",
+        "plate"
+      ],
+      "title": "Build123dPart",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Result of the build123d create_plate tool. Returned only when the plate is a single valid solid.",
+  "properties": {
+    "part": {
+      "$ref": "#/$defs/Build123dPart",
+      "description": "Pass this handle unchanged to measure."
+    }
+  },
+  "required": [
+    "part"
+  ],
+  "title": "Build123dCreatePlateResult",
+  "type": "object"
+}

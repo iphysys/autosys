@@ -1,0 +1,122 @@
+# Encodes "Problem 001" of the source specification. Every value is as the
+# specification states it; change them there first, then here.
+# Schema: schemas/benchmarks/benchmark-problem.schema.json (ADR-0025)
+schema_version: "0.1"
+id: part_design_001
+split: dev
+status: placeholder
+source: docs/reference/benchmark-draft-part-design.md
+feasibility: solvable
+description: A flat rectangular mounting plate with four corner holes.
+
+givens:
+  - id: density
+    text: "Material: Aluminium 6061, density 2.70 g/cm³ (`g/cm3`)"
+    quantity: { value: 2.70, unit: g/cm3 }
+  - id: hole_count
+    text: "Holes: 4, through, at the corners"
+    quantity: { value: 4, unit: "1" }
+  - id: hole_diameter
+    text: "Hole diameter: 6.5 mm (M6 clearance), fixed"
+    quantity: { value: 6.5, unit: mm }
+  - id: hole_inset
+    text: "Hole centre inset from each edge: 10 mm, fixed"
+    quantity: { value: 10, unit: mm }
+
+design_variables:
+  - { parameter_id: L, text: length, unit: mm }
+  - { parameter_id: W, text: width, unit: mm }
+  - { parameter_id: T, text: thickness, unit: mm }
+
+derived_parameters:
+  - { parameter_id: mass, text: plate mass, unit: g }
+
+# All requirements are must-level.
+requirements:
+  - id: R1
+    text: Fits the component footprint
+    quantity: plate length
+    priority: must
+    numeric:
+      parameter_id: L
+      criterion:
+        comparator: within
+        min: { value: 110, unit: mm }
+        max: { value: 140, unit: mm }
+  - id: R2
+    text: Fits the component footprint
+    quantity: plate width
+    priority: must
+    numeric:
+      parameter_id: W
+      criterion:
+        comparator: within
+        min: { value: 70, unit: mm }
+        max: { value: 90, unit: mm }
+  - id: R3
+    text: Stiff enough to mount
+    quantity: plate thickness
+    priority: must
+    numeric:
+      parameter_id: T
+      criterion:
+        comparator: ge
+        limit: { value: 6, unit: mm }
+  - id: R4
+    text: Mass budget
+    quantity: plate mass
+    priority: must
+    numeric:
+      parameter_id: mass
+      criterion:
+        comparator: le
+        limit: { value: 130, unit: g }
+
+budgets:
+  max_tool_calls: 30
+  max_wall_time: { value: 10, unit: min }
+  max_repair_attempts_per_step: 3
+
+expected_outcomes:
+  - id: stop_reason
+    statement: Stop reason is `success`.
+    checks:
+      - kind: stop_reason
+        allowed: [success]
+  - id: final_sdr
+    statement: >-
+      The final SDR version has L, W, T and mass as parameters with units, and
+      R1–R4 each have passing evidence from the checks.
+    checks:
+      - kind: parameters_present
+        parameter_ids: [L, W, T, mass]
+      - kind: requirements_passing
+        requirement_ids: [R1, R2, R3, R4]
+  - id: tool_mass_sanity
+    statement: >-
+      Sanity check on the tool: the reported mass is within 0.5 % of
+      `2.70e-3 × (L × W − 4 × π × 3.25²) × T` grams for the final L, W and T
+      in millimetres.
+    checks:
+      - kind: parameter_matches_reference
+        parameter_id: mass
+        unit: g
+        expression: "2.70e-3 * (L * W - 4 * pi * 3.25^2) * T"
+        variables:
+          - { parameter_id: L, unit: mm }
+          - { parameter_id: W, unit: mm }
+          - { parameter_id: T, unit: mm }
+        relative_tolerance: { value: 0.5, unit: "%" }
+  - id: final_commit_approved
+    statement: >-
+      The approval before the final commit was requested and answered (plan
+      decision 7).
+    checks:
+      - kind: approval_answered
+        approval_rule: approve_final_design
+
+notes: >-
+  Why it is not trivial: round-number footprints fail the mass budget. At 6 mm
+  thick, 120 × 80 mm weighs 153.4 g and 120 × 70 mm weighs 133.9 g. The agent
+  has to stay near the minimum footprint (110 × 70 mm weighs 122.6 g; 112 × 72
+  mm weighs 128.5 g). At 6 mm, any plate up to about 8157 mm² of area meets R4.

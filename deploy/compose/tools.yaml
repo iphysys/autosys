@@ -1,0 +1,69 @@
+# Tool servers (blueprint sections 3.2 and 17). From the repository root:
+#
+#   docker compose -f deploy/compose/tools.yaml up -d --wait build123d
+#   docker compose -f deploy/compose/tools.yaml --profile test run --rm build123d-test
+#
+# `cargo xtask test-tools` runs both and checks the isolation from outside.
+#
+# Tool servers are attached only to the `tools` network, which is internal:
+# Docker gives it no route off the host, so nothing on it can reach the
+# internet, and no port is published. Containers run as a non-root user with
+# a read-only root filesystem, no capabilities, and CPU, memory and process
+# limits. Separate from compose.yaml so that running the tools does not need
+# the database password.
+name: autosys-tools
+
+x-sandbox: &sandbox
+  networks: [tools]
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  pids_limit: 128
+  deploy:
+    resources:
+      limits:
+        cpus: "1.0"
+        memory: 1g
+
+services:
+  build123d:
+    <<: *sandbox
+    build:
+      context: ../../mcp_servers/build123d
+      target: runtime
+    image: autosys/build123d:dev
+    environment:
+      BUILD123D_HOST: 0.0.0.0
+      BUILD123D_PORT: "8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -I
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  # The server's tests, lint and type check, on the same network and limits.
+  build123d-test:
+    <<: *sandbox
+    profiles: [test]
+    build:
+      context: ../../mcp_servers/build123d
+      target: test
+    image: autosys/build123d:dev-test
+    environment:
+      BUILD123D_URL: http://build123d:8000/mcp
+      BUILD123D_ISOLATION_TEST: "1"
+    depends_on:
+      build123d:
+        condition: service_healthy
+
+networks:
+  tools:
+    internal: true

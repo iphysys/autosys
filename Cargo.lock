@@ -1840,6 +1840,7 @@ dependencies = [
  "synth-contracts",
  "synth-testkit",
  "tempfile",
+ "thiserror",
  "tokio",
  "tracing",
 ]
@@ -2294,7 +2295,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "serde_json",
+ "synth-contracts",
  "synth-infra",
+ "tempfile",
 ]
 
 [[package]]
