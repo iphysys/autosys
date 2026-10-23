@@ -101,7 +101,12 @@ YAML is parsed with [serde-saphyr](https://crates.io/crates/serde-saphyr):
 - YAML 1.2 booleans, so `no` stays a string;
 - duplicate keys, merge keys and custom tags are rejected.
 
-Run `cargo xtask validate-config` to check `config/` without starting anything. A file in a location with no schema is an error, and so is a tool overlay whose `request_schema` or `result_schema` names no file in `schemas/`.
+Run `cargo xtask validate-config` to check `config/` without starting anything. These are all errors:
+
+- a file in a location with no schema;
+- a tool overlay whose `request_schema` or `result_schema` names no file in `schemas/`;
+- a model routing file the gateway would reject;
+- an agent whose model profile is missing, or has no tool calling while the agent has tools.
 
 ## Tool servers
 
@@ -138,6 +143,28 @@ uv run --frozen pytest
 ```
 
 The isolation tests skip outside the compose network; only `cargo xtask test-tools` runs them.
+
+## Model gateway
+
+`crates/model-gateway` is the harness side of every model call (blueprint §14.4, [ADR-0027](docs/adr/0027-model-gateway-providers.md)). It has two adapters behind `contracts::ModelProvider`:
+
+- `anthropic`: Claude through the Messages API;
+- `openai_compatible`: the internal Pliny platform.
+
+Profiles are in `config/models/routing.yaml`.
+
+- **Choosing a model.** Each profile pairs a provider with one model. The Claude options all use the `anthropic` provider: `haiku` (Claude Haiku 5.5, the default and the cheapest), `sonnet` (Claude Sonnet 5.5) and `opus` (Claude Opus 5.5). Set `SYNTH_MODEL_PROFILE=opus`, for example, to use another for a run. An agent that names a profile in `model_profile` keeps it. Another model is one more profile and its price in the routing file; no code changes.
+- **Tool calling.** `pliny` has `tool_calling: false`, so `ModelGateway::start` refuses it for an agent with tools.
+- **Credentials.** Keys and the Pliny base URL come from environment variables (see `.env.example`). A missing one fails at startup, naming it.
+- **TLS.** Verification always uses the system's roots. `INTERNAL_CA_BUNDLE` adds a PEM bundle of internal CAs.
+- **Retries.** Rate limits, overload and timeouts are retried with a bound. Every request has a timeout and stops when its context is cancelled.
+- **Cost.** Each call reports its tokens and its cost at the prices in the routing file.
+
+The tests replay hand-written provider responses from a loopback server, so CI needs no key. The smoke tests against the real providers are ignored by default; they need the keys and cost money:
+
+```sh
+cargo test -p synth-model-gateway --test live -- --ignored --test-threads=1
+```
 
 ## Benchmarks
 
@@ -188,6 +215,7 @@ A mass or other reference value is an arithmetic expression over parameter IDs. 
 | [0024](docs/adr/0024-schema-validation-in-contracts.md) | Validation against the canonical schemas lives in contracts | Accepted |
 | [0025](docs/adr/0025-benchmark-problem-format.md) | Benchmark problem format v0 | Proposed |
 | [0026](docs/adr/0026-step-records-and-replay.md) | Step records and replay of tool calls | Proposed |
+| [0027](docs/adr/0027-model-gateway-providers.md) | Model gateway with two providers, Claude by default | Proposed |
 
 ## License
 
