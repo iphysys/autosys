@@ -8,8 +8,8 @@ use serde_json::json;
 use testkit::builders::{evidence, id, model_request, sdr_document, tool_request, transition};
 use testkit::contract;
 use testkit::fakes::{
-    FakeCheck, FakeGate, FakeTool, RecordingSubscriber, ScriptedModelProvider, text_response,
-    tool_call_response,
+    FakeCheck, FakeGate, FakeTool, RecordedModelProvider, RecordingSubscriber,
+    ScriptedModelProvider, text_response, tool_call_response,
 };
 use testkit::stores::{
     InMemoryArtifactStore, InMemoryEventLog, InMemoryEvidenceStore, InMemoryJobStore,
@@ -69,6 +69,19 @@ async fn scripted_model_provider() {
         model_request("Design the part."),
     )
     .await;
+}
+
+#[tokio::test]
+async fn recorded_model_provider() {
+    let recording = || {
+        RecordedModelProvider::from_file(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/recordings/model-tool-round-trip.json"),
+        )
+        .expect("recording loads")
+    };
+    contract::model_provider(recording, model_request("Design the part.")).await;
+    contract::model_provider_tool_round_trip(recording, model_request("Design the part.")).await;
 }
 
 #[tokio::test]
