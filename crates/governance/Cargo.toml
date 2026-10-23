@@ -1,0 +1,28 @@
+[package]
+name = "synth-governance"
+version = "0.1.0"
+description = "Gates decide, hooks observe: tool permission, SDR commit and approval gates (blueprint section 15)."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "governance"
+
+[dependencies]
+synth-contracts.workspace = true
+
+async-trait.workspace = true
+sha2.workspace = true
+tokio = { workspace = true, features = ["time"] }
+tracing.workspace = true
+
+[dev-dependencies]
+synth-testkit.workspace = true
+
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt"] }
+
+[lints]
+workspace = true

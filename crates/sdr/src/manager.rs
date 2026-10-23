@@ -267,7 +267,7 @@ impl SdrManager {
     /// version and checks it against `system.schema.json`.
     pub fn upgrade_document(&self, raw: Value) -> Result<SdrDocument, Error> {
         let current = migrations::upgrade(raw)?;
-        let errors = self.schemas.raw_document_errors(&current);
+        let errors = self.schemas.raw_document_errors(&current)?;
         if !errors.is_empty() {
             return Err(Error::new(
                 ErrorCode::InvalidInput,

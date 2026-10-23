@@ -1,0 +1,10 @@
+# Actions that need a human's approval (blueprint section 6.4).
+# Increment 1 asks before the final design commit (Increment 1 plan, decision 7).
+# Schema: schemas/config/autonomy-policy.schema.json
+schema_version: "0.1"
+approvals:
+  - id: approve_final_design
+    description: Ask a human before committing the design the run intends to stop on.
+    trigger:
+      kind: sdr_commit
+      final_only: true

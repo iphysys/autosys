@@ -13,7 +13,17 @@ pub use evidence::InMemoryEvidenceStore;
 pub use job::InMemoryJobStore;
 pub use sdr::InMemorySdrRepository;
 
-use contracts::{Error, ErrorCode};
+use std::sync::Arc;
+
+use contracts::{Error, ErrorCode, SdrRepository};
+
+/// In-memory SDR storage for tests outside `crates/sdr` that need an
+/// `SdrManager`. Hand it straight to `SdrManager::new`: arch-check keeps
+/// other crates from naming the repository trait, so they cannot use it
+/// any other way (blueprint section 7.2).
+pub fn sdr_storage() -> Arc<dyn SdrRepository> {
+    Arc::new(InMemorySdrRepository::new())
+}
 
 fn not_found(what: &str, id: &str) -> Error {
     Error::new(ErrorCode::NotFound, format!("{what} {id} does not exist"))

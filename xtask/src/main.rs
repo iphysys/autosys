@@ -15,9 +15,11 @@ const USAGE: &str = "\
 Usage: cargo xtask <task>
 
 Tasks:
-  ci            Format check, clippy (warnings as errors), arch-check, database
+  ci            Format check, clippy (warnings as errors), arch-check, config, database
                 migrations and sqlx query data, tests, cargo-deny
-  arch-check    Allowed crate dependencies (blueprint 10.3) and the SDR single-writer rule (7.2)";
+  arch-check    Allowed crate dependencies (blueprint 10.3) and the SDR single-writer rule (7.2)
+  validate-config
+                Every file in config/ against its schema (blueprint 11.2)";
 
 fn main() -> ExitCode {
     match run() {
@@ -34,6 +36,7 @@ fn run() -> Result<()> {
     match task.as_deref() {
         Some("ci") => ci(),
         Some("arch-check") => arch_check(&workspace_root()?),
+        Some("validate-config") => validate_config(&workspace_root()?),
         Some("-h" | "--help") => {
             println!("{USAGE}");
             Ok(())
@@ -50,6 +53,7 @@ enum Step {
         args: &'static [&'static str],
     },
     ArchCheck,
+    ValidateConfig,
 }
 
 /// Workspace-relative directory of the SQL migrations.
@@ -74,6 +78,7 @@ const CI_STEPS: &[Step] = &[
         ],
     },
     Step::ArchCheck,
+    Step::ValidateConfig,
     // Creates the database at DATABASE_URL if needed and applies the
     // migrations, so the query-data check below describes the current schema.
     Step::Cargo {
@@ -124,6 +129,10 @@ fn ci() -> Result<()> {
                 eprintln!("xtask: ci: running arch-check");
                 arch_check(&root).context("ci step `arch-check` failed")?;
             }
+            Step::ValidateConfig => {
+                eprintln!("xtask: ci: running validate-config");
+                validate_config(&root).context("ci step `validate-config` failed")?;
+            }
         }
     }
     eprintln!("xtask: ci: all steps passed");
@@ -144,6 +153,19 @@ fn arch_check(root: &Path) -> Result<()> {
     let metadata = serde_json::from_slice(&output.stdout).context("parsing cargo metadata")?;
     arch_check::run(root, &metadata)?;
     eprintln!("xtask: arch-check: passed");
+    Ok(())
+}
+
+/// Validates `config/` with the same loader the harness uses.
+fn validate_config(root: &Path) -> Result<()> {
+    let loader = infra::config::ConfigLoader::new().context("loading the config schemas")?;
+    let problems = loader
+        .validate_dir(&root.join("config"))
+        .context("reading config/")?;
+    if !problems.is_empty() {
+        bail!("invalid configuration:\n  - {}", problems.join("\n  - "));
+    }
+    eprintln!("xtask: validate-config: passed");
     Ok(())
 }
 
