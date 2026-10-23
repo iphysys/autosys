@@ -10,14 +10,22 @@ publish.workspace = true
 [lib]
 name = "infra"
 
+[features]
+default = ["postgres"]
+# The PostgreSQL stores (ADR-0016). Tools that only load config, such as
+# xtask, leave it off and so never compile the database-checked queries.
+postgres = ["dep:sqlx"]
+
 [dependencies]
 synth-contracts.workspace = true
 
 async-trait.workspace = true
 chrono.workspace = true
+serde.workspace = true
+serde-saphyr.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
-sqlx = { workspace = true, features = [
+sqlx = { workspace = true, optional = true, features = [
     "chrono",
     "json",
     "macros",
@@ -34,6 +42,18 @@ synth-testkit.workspace = true
 chrono = { workspace = true, features = ["clock"] }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+
+[[test]]
+name = "claiming"
+required-features = ["postgres"]
+
+[[test]]
+name = "contract"
+required-features = ["postgres"]
+
+[[test]]
+name = "event_resume"
+required-features = ["postgres"]
 
 [lints]
 workspace = true

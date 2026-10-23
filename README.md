@@ -29,10 +29,11 @@ It needs Postgres running and `DATABASE_URL` set (see [Database](#database)). It
 1. `cargo fmt --check`;
 2. `cargo clippy`, with warnings as errors;
 3. `cargo xtask arch-check`;
-4. `cargo sqlx database setup`, which creates the database at `DATABASE_URL` if needed and applies the migrations;
-5. `cargo sqlx prepare --check`, which fails if the query data in `.sqlx/` is out of date;
-6. `cargo test`;
-7. `cargo deny check`.
+4. `cargo xtask validate-config`, which checks every file in `config/` against its schema (see [Configuration](#configuration));
+5. `cargo sqlx database setup`, which creates the database at `DATABASE_URL` if needed and applies the migrations;
+6. `cargo sqlx prepare --check`, which fails if the query data in `.sqlx/` is out of date;
+7. `cargo test`;
+8. `cargo deny check`.
 
 Clippy and the tests build with `SQLX_OFFLINE=true`, so they use the committed query data rather than the live database. CI starts Postgres from the same compose file and then runs only `cargo xtask ci`, so a local pass means a CI pass.
 
@@ -61,6 +62,8 @@ Migrations live in `crates/infra/migrations/` and are embedded in the binary. A 
 
 `sqlx` checks every query at compile time: against the database at `DATABASE_URL` when it is set, and against the committed `.sqlx/` data when `SQLX_OFFLINE=true`. After changing a query or a migration, run `cargo sqlx database setup --source crates/infra/migrations`, then `cargo sqlx prepare --workspace`, and commit `.sqlx/`.
 
+The PostgreSQL stores sit behind `synth-infra`'s default `postgres` feature. Code that only loads configuration, such as xtask, turns it off, so building it needs no database.
+
 The store tests in `crates/infra/tests/` create a database named `autosys_test_*` on the `DATABASE_URL` server for each test and drop it at the end. A test that panics leaves its database behind; drop it by hand. Without `DATABASE_URL` these tests fail; they never skip.
 
 ## Design state (SDR)
@@ -68,6 +71,33 @@ The store tests in `crates/infra/tests/` create a database named `autosys_test_*
 `crates/sdr` exports `SdrManager`, the only writer of design state (blueprint §7.2); its storage is crate-private. A change is proposed, validated, then committed or rejected, and the types make committing an unvalidated transition a compile error.
 
 `validate` checks the transition against `schemas/sdr/transition.schema.json`, including constraints the Rust types do not enforce, such as `minItems`. It then requires the transition's base to be the current head, applies the operations, and checks the result against `system.schema.json`. Problems come back as typed reasons, not errors. Versions are linear: a transition on a stale base is rejected, never rebased ([ADR-0020](docs/adr/0020-sdr-v0-scope.md)).
+
+## Checks and gates
+
+Checks produce evidence; gates decide (blueprint §15).
+
+- **Checks** (`crates/evaluation`) are deterministic and report `pass`, `fail`, `unverified` or `error`:
+  - `schema`: the document satisfies its JSON Schema;
+  - `units`: every unit is a supported UCUM code, and each numeric requirement uses the dimension of the parameter it constrains;
+  - `requirement.numeric_threshold`: compares a parameter with a requirement's threshold after unit conversion ([ADR-0021](docs/adr/0021-numeric-requirement-check-v0.md)). A requirement it cannot decide is `unverified`, never `pass`.
+- **The `Evaluator`** stores each finding as evidence and records a `check_completed` event.
+- **Gates** (`crates/governance`):
+  - the tool permission gate allows only tools listed in `config/tools/`;
+  - the SDR commit gate rejects a transition when a check required by `config/policies/gates.yaml` failed, and attaches that evidence;
+  - the approval gate asks a human when `config/policies/autonomy.yaml` requires it.
+- **The `GateRunner`** writes every decision to the event log as `gate_decided`; the most restrictive decision wins.
+- **Hooks** observe every event through `ObservedEventLog` and can never stop the run.
+
+## Configuration
+
+`config/` holds non-secret declarative configuration in YAML. The loader in `crates/infra` parses each file and validates it against its schema in `schemas/config/` before deserializing it, so every error names the file and the path of the problem.
+
+YAML is parsed with [serde-saphyr](https://crates.io/crates/serde-saphyr):
+- a pure-Rust parser with limits against alias bombs;
+- YAML 1.2 booleans, so `no` stays a string;
+- duplicate keys, merge keys and custom tags are rejected.
+
+Run `cargo xtask validate-config` to check `config/` without starting anything. A file in a location with no schema is an error.
 
 ## Schemas
 
@@ -98,6 +128,7 @@ The store tests in `crates/infra/tests/` create a database named `autosys_test_*
 | [0021](docs/adr/0021-numeric-requirement-check-v0.md) | Numeric requirement check for Increment 1 | Accepted |
 | [0022](docs/adr/0022-dev-token-auth-increment-1.md) | Development-token authentication for Increment 1 | Accepted |
 | [0023](docs/adr/0023-lease-times-from-database-clock.md) | Lease times come from the database clock | Accepted |
+| [0024](docs/adr/0024-schema-validation-in-contracts.md) | Validation against the canonical schemas lives in contracts | Accepted |
 
 ## License
 

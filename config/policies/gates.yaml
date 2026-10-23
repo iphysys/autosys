@@ -1,0 +1,10 @@
+# What the design acceptance gates require (blueprint section 15.2).
+# Schema: schemas/config/gates-policy.schema.json
+schema_version: "0.1"
+sdr_commit:
+  # A transition commits only when each of these checks has evidence and
+  # none of it failed.
+  required_checks:
+    - schema
+    - units
+    - requirement.numeric_threshold
