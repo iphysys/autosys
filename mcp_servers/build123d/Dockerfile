@@ -55,6 +55,8 @@ COPY pyproject.toml ./
 COPY src ./src
 COPY tests ./tests
 # The root filesystem is read-only in compose; caches go to the /tmp tmpfs.
-ENV MYPY_CACHE_DIR=/tmp/mypy \
+# mypy's cache for build123d and OCP overflows that 64 MB tmpfs, and the
+# container is single-use, so the mypy cache is disabled.
+ENV MYPY_CACHE_DIR=/dev/null \
     RUFF_CACHE_DIR=/tmp/ruff
 CMD ["sh", "-c", "ruff check && ruff format --check && mypy && pytest -p no:cacheprovider"]
