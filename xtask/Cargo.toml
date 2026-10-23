@@ -7,12 +7,14 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-# Config validation only: without the postgres feature, building xtask needs
-# no database.
+# Config and benchmark validation only: without the postgres feature,
+# building xtask needs no database.
+synth-contracts.workspace = true
 synth-infra = { workspace = true, default-features = false }
 
 anyhow.workspace = true
 serde_json.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true

@@ -30,6 +30,11 @@ jobs:
         with:
           tool: cargo-deny
 
+      # Runs datamodel-code-generator from the tool servers' lock files for
+      # the generated-code check.
+      - name: Install uv
+        run: pipx install uv==0.11.26
+
       - name: Install sqlx-cli
         run: cargo install --locked sqlx-cli --version 0.9.0 --no-default-features --features postgres
 

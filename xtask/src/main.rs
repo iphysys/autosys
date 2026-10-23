@@ -2,10 +2,14 @@
 //!
 //! CI calls only `cargo xtask ci`, so the same checks run locally and in CI.
 //! `ci` needs a Postgres server at `DATABASE_URL` (see README, section
-//! Database).
+//! Database), uv for the generated-code check, and Docker for the tool
+//! servers (see README, section Tool servers).
 
 mod arch_check;
+mod codegen;
+mod tool_servers;
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
@@ -15,11 +19,19 @@ const USAGE: &str = "\
 Usage: cargo xtask <task>
 
 Tasks:
-  ci            Format check, clippy (warnings as errors), arch-check, config, database
-                migrations and sqlx query data, tests, cargo-deny
+  ci            Format check, clippy (warnings as errors), arch-check, config, benchmarks,
+                generated code, database migrations and sqlx query data, tests, tool
+                servers, cargo-deny
   arch-check    Allowed crate dependencies (blueprint 10.3) and the SDR single-writer rule (7.2)
   validate-config
-                Every file in config/ against its schema (blueprint 11.2)";
+                Every file in config/ against its schema (blueprint 11.2)
+  validate-benchmarks
+                Every problem in evals/benchmarks/ against its schema (blueprint 14.7)
+  codegen [--check]
+                Python models for the tool servers from schemas/tools/ (blueprint 7.1);
+                --check fails if the committed models differ
+  test-tools    Each tool server's tests in its container, and its sandbox: internal network
+                without internet egress, resource limits (blueprint 17)";
 
 fn main() -> ExitCode {
     match run() {
@@ -37,6 +49,16 @@ fn run() -> Result<()> {
         Some("ci") => ci(),
         Some("arch-check") => arch_check(&workspace_root()?),
         Some("validate-config") => validate_config(&workspace_root()?),
+        Some("codegen") => {
+            let check = match std::env::args().nth(2).as_deref() {
+                None => false,
+                Some("--check") => true,
+                Some(other) => bail!("unknown codegen option `{other}`\n\n{USAGE}"),
+            };
+            codegen::run(&workspace_root()?, check)
+        }
+        Some("validate-benchmarks") => validate_benchmarks(&workspace_root()?),
+        Some("test-tools") => tool_servers::run(&workspace_root()?),
         Some("-h" | "--help") => {
             println!("{USAGE}");
             Ok(())
@@ -46,7 +68,7 @@ fn run() -> Result<()> {
     }
 }
 
-/// A named check: either a `cargo` command or the in-process arch-check.
+/// A named check: either a `cargo` command or one of the in-process tasks.
 enum Step {
     Cargo {
         name: &'static str,
@@ -54,6 +76,9 @@ enum Step {
     },
     ArchCheck,
     ValidateConfig,
+    ValidateBenchmarks,
+    CodegenCheck,
+    TestTools,
 }
 
 /// Workspace-relative directory of the SQL migrations.
@@ -79,6 +104,8 @@ const CI_STEPS: &[Step] = &[
     },
     Step::ArchCheck,
     Step::ValidateConfig,
+    Step::ValidateBenchmarks,
+    Step::CodegenCheck,
     // Creates the database at DATABASE_URL if needed and applies the
     // migrations, so the query-data check below describes the current schema.
     Step::Cargo {
@@ -94,6 +121,7 @@ const CI_STEPS: &[Step] = &[
         name: "tests",
         args: &["test", "--workspace", "--all-features", "--locked"],
     },
+    Step::TestTools,
     Step::Cargo {
         name: "cargo-deny",
         args: &["deny", "--locked", "check"],
@@ -133,6 +161,18 @@ fn ci() -> Result<()> {
                 eprintln!("xtask: ci: running validate-config");
                 validate_config(&root).context("ci step `validate-config` failed")?;
             }
+            Step::ValidateBenchmarks => {
+                eprintln!("xtask: ci: running validate-benchmarks");
+                validate_benchmarks(&root).context("ci step `validate-benchmarks` failed")?;
+            }
+            Step::CodegenCheck => {
+                eprintln!("xtask: ci: running codegen --check");
+                codegen::run(&root, true).context("ci step `codegen --check` failed")?;
+            }
+            Step::TestTools => {
+                eprintln!("xtask: ci: running test-tools");
+                tool_servers::run(&root).context("ci step `test-tools` failed")?;
+            }
         }
     }
     eprintln!("xtask: ci: all steps passed");
@@ -166,6 +206,26 @@ fn validate_config(root: &Path) -> Result<()> {
         bail!("invalid configuration:\n  - {}", problems.join("\n  - "));
     }
     eprintln!("xtask: validate-config: passed");
+    Ok(())
+}
+
+/// Validates `evals/benchmarks/` with the loader the evaluation runs use.
+/// Approval outcomes must name rules of the autonomy policy.
+fn validate_benchmarks(root: &Path) -> Result<()> {
+    let config = infra::config::ConfigLoader::new().context("loading the config schemas")?;
+    let policy: contracts::types::AutonomyPolicy = config
+        .load(&root.join("config/policies/autonomy.yaml"))
+        .context("loading the autonomy policy")?;
+    let rules: BTreeSet<String> = policy.approvals.iter().map(|r| r.id.to_string()).collect();
+    let loader =
+        infra::benchmarks::BenchmarkLoader::new().context("loading the benchmark schema")?;
+    let problems = loader
+        .validate_dir(&root.join("evals/benchmarks"), &rules)
+        .context("reading evals/benchmarks/")?;
+    if !problems.is_empty() {
+        bail!("invalid benchmarks:\n  - {}", problems.join("\n  - "));
+    }
+    eprintln!("xtask: validate-benchmarks: passed");
     Ok(())
 }
 

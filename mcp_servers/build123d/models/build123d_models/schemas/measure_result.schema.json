@@ -1,0 +1,106 @@
+{
+  "$defs": {
+    "Build123dBoundingBox": {
+      "additionalProperties": false,
+      "description": "Extents of the tight axis-aligned bounding box in the create_plate frame: length along X, width along Y, height along Z.",
+      "properties": {
+        "height": {
+          "$ref": "#/$defs/Build123dLength"
+        },
+        "length": {
+          "$ref": "#/$defs/Build123dLength"
+        },
+        "width": {
+          "$ref": "#/$defs/Build123dLength"
+        }
+      },
+      "required": [
+        "length",
+        "width",
+        "height"
+      ],
+      "type": "object"
+    },
+    "Build123dLength": {
+      "additionalProperties": false,
+      "description": "Length in mm.",
+      "properties": {
+        "unit": {
+          "const": "mm"
+        },
+        "value": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "value",
+        "unit"
+      ],
+      "type": "object"
+    },
+    "Build123dMass": {
+      "additionalProperties": false,
+      "description": "Mass in g.",
+      "properties": {
+        "unit": {
+          "const": "g"
+        },
+        "value": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "value",
+        "unit"
+      ],
+      "type": "object"
+    },
+    "Build123dVolume": {
+      "additionalProperties": false,
+      "description": "Volume in mm3.",
+      "properties": {
+        "unit": {
+          "const": "mm3"
+        },
+        "value": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "value",
+        "unit"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Result of the build123d measure tool. Volume comes from OpenCASCADE mass properties of the solid; mass is volume times density. Units are UCUM codes.",
+  "properties": {
+    "bounding_box": {
+      "$ref": "#/$defs/Build123dBoundingBox"
+    },
+    "mass": {
+      "$ref": "#/$defs/Build123dMass"
+    },
+    "part_id": {
+      "description": "part_id of the measured handle.",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "volume": {
+      "$ref": "#/$defs/Build123dVolume"
+    }
+  },
+  "required": [
+    "part_id",
+    "volume",
+    "mass",
+    "bounding_box"
+  ],
+  "title": "Build123dMeasureResult",
+  "type": "object"
+}

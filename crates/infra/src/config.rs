@@ -11,7 +11,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use contracts::types::{AgentSpec, AutonomyPolicy, GatesPolicy, ToolOverlay};
+use contracts::types::{AgentSpec, AutonomyPolicy, GatesPolicy, SCHEMA_FILES, ToolOverlay};
 use contracts::{Error, ErrorCode, SchemaSet};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -59,10 +59,7 @@ impl ConfigLoader {
     /// Reads and validates the file at `path`.
     pub fn load<T: ConfigFile>(&self, path: &Path) -> Result<T, Error> {
         let origin = path.display().to_string();
-        let text = fs::read_to_string(path).map_err(|e| {
-            Error::new(ErrorCode::NotFound, format!("{origin}: cannot read: {e}")).with_source(e)
-        })?;
-        self.parse(&text, &origin)
+        self.parse(&read_text(path)?, &origin)
     }
 
     /// Validates YAML text. `origin` names it in errors, usually its path.
@@ -101,7 +98,9 @@ impl ConfigLoader {
             let checked = match relative.as_str() {
                 "policies/autonomy.yaml" => self.load::<AutonomyPolicy>(&path).map(|_| ()),
                 "policies/gates.yaml" => self.load::<GatesPolicy>(&path).map(|_| ()),
-                _ if in_dir(&relative, "tools") => self.load::<ToolOverlay>(&path).map(|_| ()),
+                _ if in_dir(&relative, "tools") => self
+                    .load::<ToolOverlay>(&path)
+                    .and_then(|overlay| overlay_schemas_exist(&overlay, &path)),
                 _ if in_dir(&relative, "agents") => self.load::<AgentSpec>(&path).map(|_| ()),
                 _ => Err(Error::new(
                     ErrorCode::InvalidInput,
@@ -116,8 +115,50 @@ impl ConfigLoader {
     }
 }
 
+/// A tool overlay names its tools' request and result schemas; each must be a
+/// file in `schemas/`, or a typo would pass validation unnoticed.
+fn overlay_schemas_exist(overlay: &ToolOverlay, path: &Path) -> Result<(), Error> {
+    let missing: Vec<String> = overlay
+        .tools
+        .iter()
+        .flat_map(|tool| {
+            [
+                ("request_schema", &tool.request_schema),
+                ("result_schema", &tool.result_schema),
+            ]
+            .into_iter()
+            .filter_map(move |(field, schema)| {
+                let schema = schema.as_ref()?.as_str();
+                let known = SCHEMA_FILES.iter().any(|(p, _)| *p == schema);
+                (!known).then(|| format!("tool {}: {field} {schema}", tool.name.as_str()))
+            })
+        })
+        .collect();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    Err(Error::new(
+        ErrorCode::InvalidInput,
+        format!(
+            "{}: not a schema in schemas/: {}",
+            path.display(),
+            missing.join("; ")
+        ),
+    ))
+}
+
+pub(crate) fn read_text(path: &Path) -> Result<String, Error> {
+    fs::read_to_string(path).map_err(|e| {
+        Error::new(
+            ErrorCode::NotFound,
+            format!("{}: cannot read: {e}", path.display()),
+        )
+        .with_source(e)
+    })
+}
+
 /// Parses one YAML document into a JSON value.
-fn yaml_value(text: &str, origin: &str) -> Result<Value, Error> {
+pub(crate) fn yaml_value(text: &str, origin: &str) -> Result<Value, Error> {
     // Options is non-exhaustive: start from the defaults, which keep the
     // parsing budget on.
     let mut options = Options::default();
@@ -141,7 +182,7 @@ fn in_dir(relative: &str, dir: &str) -> bool {
         .is_some_and(|name| !name.contains('/') && name.ends_with(".yaml"))
 }
 
-fn relative_path(root: &Path, path: &Path) -> String {
+pub(crate) fn relative_path(root: &Path, path: &Path) -> String {
     path.strip_prefix(root)
         .unwrap_or(path)
         .components()
@@ -150,7 +191,7 @@ fn relative_path(root: &Path, path: &Path) -> String {
         .join("/")
 }
 
-fn collect_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), Error> {
+pub(crate) fn collect_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), Error> {
     let entries = fs::read_dir(dir).map_err(|e| {
         Error::new(
             ErrorCode::NotFound,
@@ -160,7 +201,13 @@ fn collect_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), Error> {
     })?;
     for entry in entries {
         let path = entry
-            .map_err(|e| Error::new(ErrorCode::Internal, "cannot list config/").with_source(e))?
+            .map_err(|e| {
+                Error::new(
+                    ErrorCode::Internal,
+                    format!("{}: cannot list the directory", dir.display()),
+                )
+                .with_source(e)
+            })?
             .path();
         if path.is_dir() {
             collect_files(&path, out)?;

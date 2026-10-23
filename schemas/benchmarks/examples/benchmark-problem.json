@@ -1,0 +1,79 @@
+{
+  "schema_version": "0.1",
+  "id": "example_bracket",
+  "split": "dev",
+  "status": "placeholder",
+  "source": "docs/reference/example-bracket.md",
+  "feasibility": "solvable",
+  "description": "Illustrates the format with every check kind; not a benchmark problem.",
+  "givens": [
+    {
+      "id": "density",
+      "text": "Material density 7.85 g/cm³",
+      "quantity": { "value": 7.85, "unit": "g/cm3" }
+    }
+  ],
+  "design_variables": [
+    { "parameter_id": "side", "text": "side length", "unit": "mm" }
+  ],
+  "derived_parameters": [
+    { "parameter_id": "mass", "text": "bracket mass", "unit": "g" }
+  ],
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "Mass budget",
+      "quantity": "bracket mass",
+      "priority": "must",
+      "numeric": {
+        "parameter_id": "mass",
+        "criterion": { "comparator": "le", "limit": { "value": 0.5, "unit": "kg" } }
+      }
+    }
+  ],
+  "budgets": {
+    "max_tool_calls": 20,
+    "max_wall_time": { "value": 5, "unit": "min" },
+    "max_repair_attempts_per_step": 2
+  },
+  "expected_outcomes": [
+    {
+      "id": "stops",
+      "statement": "The run stops with success.",
+      "checks": [{ "kind": "stop_reason", "allowed": ["success"] }]
+    },
+    {
+      "id": "final",
+      "statement": "The final design records side and mass, and R1 passes.",
+      "checks": [
+        { "kind": "parameters_present", "parameter_ids": ["side", "mass"] },
+        { "kind": "requirements_passing", "requirement_ids": ["R1"] }
+      ]
+    },
+    {
+      "id": "mass_reference",
+      "statement": "The mass is within 1 % of 7.85e-3 × side³ grams.",
+      "checks": [
+        {
+          "kind": "parameter_matches_reference",
+          "parameter_id": "mass",
+          "unit": "g",
+          "expression": "7.85e-3 * side^3",
+          "variables": [{ "parameter_id": "side", "unit": "mm" }],
+          "relative_tolerance": { "value": 1, "unit": "%" }
+        }
+      ]
+    },
+    {
+      "id": "never_passing",
+      "statement": "R1 is never committed as passing.",
+      "checks": [{ "kind": "requirement_never_passing", "requirement_id": "R1" }]
+    },
+    {
+      "id": "approved",
+      "statement": "The final commit was approved.",
+      "checks": [{ "kind": "approval_answered", "approval_rule": "approve_final_design" }]
+    }
+  ],
+  "notes": "For reviewers only."
+}

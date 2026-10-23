@@ -9,7 +9,8 @@ The repository is built in increments. The current plan is [Increment 1: Executi
 - [rustup](https://rustup.rs). The toolchain version is pinned in `rust-toolchain.toml`, and rustup installs it on first use. On Windows, rustup also needs the MSVC C++ build tools.
 - [cargo-deny](https://github.com/EmbarkStudios/cargo-deny), installed with `cargo install --locked cargo-deny`.
 - [sqlx-cli](https://github.com/launchbadge/sqlx/tree/main/sqlx-cli) 0.9.0, installed with `cargo install --locked sqlx-cli --version 0.9.0 --no-default-features --features postgres`.
-- Docker with Compose, to run PostgreSQL (see [Database](#database)).
+- Docker with Compose, to run PostgreSQL (see [Database](#database)) and the tool servers (see [Tool servers](#tool-servers)).
+- [uv](https://docs.astral.sh/uv/) 0.11.26, to generate the tool servers' Python models. If `uv` is not on `PATH`, point the `UV` environment variable at its binary.
 
 ## Build and test
 
@@ -24,16 +25,19 @@ Before opening a pull request, run every check CI runs:
 cargo xtask ci
 ```
 
-It needs Postgres running and `DATABASE_URL` set (see [Database](#database)). It runs, in order:
+It needs Postgres running and `DATABASE_URL` set (see [Database](#database)), uv, and Docker. It runs, in order:
 
 1. `cargo fmt --check`;
 2. `cargo clippy`, with warnings as errors;
 3. `cargo xtask arch-check`;
 4. `cargo xtask validate-config`, which checks every file in `config/` against its schema (see [Configuration](#configuration));
-5. `cargo sqlx database setup`, which creates the database at `DATABASE_URL` if needed and applies the migrations;
-6. `cargo sqlx prepare --check`, which fails if the query data in `.sqlx/` is out of date;
-7. `cargo test`;
-8. `cargo deny check`.
+5. `cargo xtask validate-benchmarks`, which checks every problem in `evals/benchmarks/` (see [Benchmarks](#benchmarks));
+6. `cargo xtask codegen --check`, which fails if the tool servers' generated models differ from `schemas/tools/`;
+7. `cargo sqlx database setup`, which creates the database at `DATABASE_URL` if needed and applies the migrations;
+8. `cargo sqlx prepare --check`, which fails if the query data in `.sqlx/` is out of date;
+9. `cargo test`;
+10. `cargo xtask test-tools`, which runs each tool server's tests in its container and checks its sandbox (see [Tool servers](#tool-servers));
+11. `cargo deny check`.
 
 Clippy and the tests build with `SQLX_OFFLINE=true`, so they use the committed query data rather than the live database. CI starts Postgres from the same compose file and then runs only `cargo xtask ci`, so a local pass means a CI pass.
 
@@ -97,7 +101,43 @@ YAML is parsed with [serde-saphyr](https://crates.io/crates/serde-saphyr):
 - YAML 1.2 booleans, so `no` stays a string;
 - duplicate keys, merge keys and custom tags are rejected.
 
-Run `cargo xtask validate-config` to check `config/` without starting anything. A file in a location with no schema is an error.
+Run `cargo xtask validate-config` to check `config/` without starting anything. A file in a location with no schema is an error, and so is a tool overlay whose `request_schema` or `result_schema` names no file in `schemas/`.
+
+## Tool servers
+
+Engineering tools are MCP servers in `mcp_servers/`, one container each (blueprint §3.2). Each is self-contained: its own `pyproject.toml`, `uv.lock`, Dockerfile and tests. It holds no harness logic, and no tool accepts code to run. Tools are listed for the harness in `config/tools/<server>.yaml`; a tool missing there is unavailable.
+
+- **[build123d](mcp_servers/build123d/README.md)** has two tools, `create_plate` and `measure`. Their request and result schemas are in `schemas/tools/build123d/`.
+- **Generated models.** `cargo xtask codegen` writes each server's Python models (pydantic) and self-contained copies of its schemas to `mcp_servers/<server>/models/`. Never edit them; change the schema and regenerate. The generator, datamodel-code-generator, is pinned in the server's `uv.lock`.
+- **Sandbox.** `deploy/compose/tools.yaml` runs the servers on an internal Docker network: no internet egress and no published ports. They run as non-root with a read-only root filesystem, no capabilities, and CPU, memory and process limits. MCP runs over streamable HTTP inside that network.
+- **`cargo xtask test-tools`** builds each server's images and starts it. It then checks the sandbox with `docker inspect` and runs an egress probe inside the server container, which must reach nothing on the internet. Last it runs the server's test container: tests, ruff and `mypy --strict`.
+
+To work on a server without Docker, run its tests with uv from its directory:
+
+```sh
+cd mcp_servers/build123d
+uv sync --frozen
+uv run --frozen pytest
+```
+
+The isolation tests skip outside the compose network; only `cargo xtask test-tools` runs them.
+
+## Benchmarks
+
+Benchmark problems live in `evals/benchmarks/<split>/<id>/problem.yaml` and follow `schemas/benchmarks/benchmark-problem.schema.json` ([ADR-0025](docs/adr/0025-benchmark-problem-format.md)). Only `dev` problems are stored in the repository. The team writes them; values come from the specification each file cites in `source`, unchanged.
+
+Each problem holds:
+- requirements, using the numeric requirement check's criteria;
+- budgets;
+- expected outcomes, each with the specification's wording and typed checks an evaluation decides from evidence.
+
+A mass or other reference value is an arithmetic expression over parameter IDs. It is parsed, never executed.
+
+`cargo xtask validate-benchmarks` checks:
+- each file against the schema;
+- that identifiers are unique and every reference names something the problem declares;
+- that each problem's location matches its `split` and `id`;
+- that approval outcomes name rules in `config/policies/autonomy.yaml`.
 
 ## Schemas
 
@@ -129,6 +169,7 @@ Run `cargo xtask validate-config` to check `config/` without starting anything. 
 | [0022](docs/adr/0022-dev-token-auth-increment-1.md) | Development-token authentication for Increment 1 | Accepted |
 | [0023](docs/adr/0023-lease-times-from-database-clock.md) | Lease times come from the database clock | Accepted |
 | [0024](docs/adr/0024-schema-validation-in-contracts.md) | Validation against the canonical schemas lives in contracts | Accepted |
+| [0025](docs/adr/0025-benchmark-problem-format.md) | Benchmark problem format v0 | Proposed |
 
 ## License
 

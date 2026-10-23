@@ -1,0 +1,31 @@
+# Governance overlay for the build123d MCP server (blueprint section 14.2).
+# Tools the server offers but this file does not list are unavailable.
+# Schema: schemas/config/tool-overlay.schema.json
+#
+# Both tools take only typed numbers and keep no state between calls: the
+# part handle carries the parameters, so neither call changes anything,
+# inside or outside the sandbox.
+schema_version: "0.1"
+server_id: build123d
+description: Typed parametric CAD with build123d. No tool accepts or executes code.
+tools:
+  - name: create_plate
+    description: Builds a rectangular plate with four corner through holes and returns its part handle.
+    access: read_only
+    external_side_effects: false
+    idempotent: true
+    concurrency_safe: true
+    timeout_seconds: 60
+    requires_approval: false
+    request_schema: tools/build123d/create_plate_request.schema.json
+    result_schema: tools/build123d/create_plate_result.schema.json
+  - name: measure
+    description: Reports a part's volume, mass from a density, and bounding box.
+    access: read_only
+    external_side_effects: false
+    idempotent: true
+    concurrency_safe: true
+    timeout_seconds: 60
+    requires_approval: false
+    request_schema: tools/build123d/measure_request.schema.json
+    result_schema: tools/build123d/measure_result.schema.json

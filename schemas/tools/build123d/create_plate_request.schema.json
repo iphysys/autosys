@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Build123dCreatePlateRequest",
+  "description": "Arguments of the build123d create_plate tool: a flat rectangular plate with one through hole at each corner. All lengths are in millimetres. Frame: length along X, width along Y, thickness along Z; the plate is centred on the origin in X and Y and its bottom face lies on Z = 0. Besides these bounds, the server rejects geometry where a hole would break an edge (hole_inset_mm <= hole_diameter_mm / 2) or two holes would meet (length_mm or width_mm minus 2 * hole_inset_mm <= hole_diameter_mm).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["length_mm", "width_mm", "thickness_mm", "hole_diameter_mm", "hole_inset_mm"],
+  "properties": {
+    "length_mm": {
+      "description": "Plate length along X, in mm.",
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "width_mm": {
+      "description": "Plate width along Y, in mm.",
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "thickness_mm": {
+      "description": "Plate thickness along Z, in mm.",
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "hole_diameter_mm": {
+      "description": "Diameter of each of the four through holes, in mm.",
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "hole_inset_mm": {
+      "description": "Distance from each plate edge to the centre of the nearest holes, in mm.",
+      "type": "number",
+      "exclusiveMinimum": 0
+    }
+  }
+}
