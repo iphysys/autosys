@@ -20,12 +20,12 @@ x-sandbox: &sandbox
     - /tmp:size=64m,mode=1777
   cap_drop: [ALL]
   security_opt: ["no-new-privileges:true"]
-  pids_limit: 128
   deploy:
     resources:
       limits:
         cpus: "1.0"
         memory: 1g
+        pids: 128
 
 services:
   build123d:
