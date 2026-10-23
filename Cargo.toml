@@ -6,6 +6,7 @@ members = [
     "crates/evaluation",
     "crates/governance",
     "crates/infra",
+    "crates/model-gateway",
     "crates/schema-types",
     "crates/sdr",
     "crates/testkit",
@@ -23,6 +24,7 @@ publish = false
 synth-contracts = { path = "crates/contracts" }
 synth-governance = { path = "crates/governance" }
 synth-infra = { path = "crates/infra" }
+synth-model-gateway = { path = "crates/model-gateway" }
 synth-schema-types = { path = "crates/schema-types" }
 synth-sdr = { path = "crates/sdr" }
 synth-testkit = { path = "crates/testkit" }
@@ -38,11 +40,19 @@ prettyplease = "0.3"
 # Property tests; the fork and timeout runners are not needed.
 proptest = { version = "1.11", default-features = false, features = ["std"] }
 regress = "0.12"
+# HTTPS client of the model gateway (ADR-0027); the same 0.13 line rmcp uses.
+# rustls with the ring provider, chosen in code: reqwest's default provider,
+# aws-lc-rs, carries the OpenSSL license that deny.toml does not allow.
+reqwest = { version = "0.13", default-features = false }
 # MCP client for the tool gateway. Pinned exactly: 3.x changed its default
 # protocol within minor releases, and 3.7.0 is the version checked against the
 # build123d server (protocol 2026-07-28). No TLS feature: tool servers are
 # reached over plain HTTP, on the compose network or its loopback forwarder.
 rmcp = { version = "=3.7.0", default-features = false, features = ["client", "transport-streamable-http-client-reqwest"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+# Verifies servers against the operating system's roots, plus an optional
+# internal CA bundle. The range reqwest 0.13 accepts.
+rustls-platform-verifier = "0.7"
 # typify 0.8 reads schemars 0.8 schema types.
 schemars = "0.8"
 serde = { version = "1.0", features = ["derive"] }

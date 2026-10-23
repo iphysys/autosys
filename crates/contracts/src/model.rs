@@ -56,6 +56,15 @@ pub enum ContentBlock {
         content: String,
         is_error: bool,
     },
+    /// Provider content the harness does not interpret, such as a model's
+    /// thinking blocks, kept so a conversation can be sent back as the model
+    /// produced it (ADR-0027). The adapter whose `provider_id` matches
+    /// `provider` returns it unchanged; every other adapter drops it. Never
+    /// read by checks or written to the SDR.
+    Opaque {
+        provider: Identifier,
+        data: Map<String, Value>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

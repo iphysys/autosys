@@ -9,7 +9,9 @@ use contracts::{
 };
 use serde_json::json;
 use testkit::builders::{id, model_request, sdr_document, tool_request, transition};
-use testkit::fakes::{FakeGate, FakeTool, ScriptedModelProvider, text_response};
+use testkit::fakes::{
+    FakeGate, FakeTool, RecordedModelProvider, ScriptedModelProvider, text_response,
+};
 
 fn ctx() -> ExecutionContext {
     ExecutionContext::new(id("corr-fakes"))
@@ -85,6 +87,33 @@ async fn scripted_provider_records_requests_and_fails_when_exhausted() {
     let exhausted = provider.complete(&request, &ctx()).await;
     assert_eq!(exhausted.map_err(|e| e.code()), Err(ErrorCode::Internal));
     assert_eq!(provider.requests(), vec![request.clone(), request]);
+}
+
+#[tokio::test]
+async fn recorded_provider_rejects_a_request_that_differs_from_the_recording() {
+    let provider = RecordedModelProvider::from_file(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/recordings/model-tool-round-trip.json"),
+    )
+    .expect("recording loads");
+
+    let drifted = provider
+        .complete(&model_request("Design a different part."), &ctx())
+        .await;
+    let error = drifted.expect_err("a drifted request is rejected");
+    assert_eq!(error.code(), ErrorCode::Internal);
+    assert!(error.message().contains("`messages`"), "{error}");
+    assert_eq!(
+        provider.remaining(),
+        2,
+        "a rejected call consumed the recording"
+    );
+
+    let not_a_recording = RecordedModelProvider::from_json("{\"exchanges\": []}");
+    assert_eq!(
+        not_a_recording.err().map(|e| e.code()),
+        Some(ErrorCode::InvalidInput)
+    );
 }
 
 #[tokio::test]

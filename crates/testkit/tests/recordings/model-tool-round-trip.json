@@ -1,0 +1,73 @@
+{
+  "provider": "recorded",
+  "exchanges": [
+    {
+      "request": {
+        "model_id": "test-model",
+        "system": "You are a test.",
+        "messages": [
+          { "role": "user", "content": [{ "type": "text", "text": "Design the part." }] }
+        ],
+        "tools": [],
+        "max_output_tokens": 100
+      },
+      "response": {
+        "model_id": "test-model",
+        "content": [
+          {
+            "type": "opaque",
+            "provider": "recorded",
+            "data": { "type": "thinking", "thinking": "", "signature": "test-signature" }
+          },
+          {
+            "type": "tool_call",
+            "id": "call-1",
+            "name": "create_part",
+            "arguments": { "length": 100 }
+          }
+        ],
+        "stop_reason": "tool_use",
+        "usage": { "input_tokens": 20, "output_tokens": 12 }
+      }
+    },
+    {
+      "request": {
+        "model_id": "test-model",
+        "system": "You are a test.",
+        "messages": [
+          { "role": "user", "content": [{ "type": "text", "text": "Design the part." }] },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "opaque",
+                "provider": "recorded",
+                "data": { "type": "thinking", "thinking": "", "signature": "test-signature" }
+              },
+              {
+                "type": "tool_call",
+                "id": "call-1",
+                "name": "create_part",
+                "arguments": { "length": 100 }
+              }
+            ]
+          },
+          {
+            "role": "user",
+            "content": [
+              { "type": "tool_result", "call_id": "call-1", "content": "result of call-1", "is_error": false }
+            ]
+          }
+        ],
+        "tools": [],
+        "max_output_tokens": 100
+      },
+      "response": {
+        "model_id": "test-model",
+        "content": [{ "type": "text", "text": "The part is created." }],
+        "stop_reason": "end_turn",
+        "usage": { "input_tokens": 40, "output_tokens": 6 }
+      }
+    }
+  ]
+}

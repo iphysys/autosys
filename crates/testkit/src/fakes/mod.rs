@@ -4,11 +4,13 @@
 mod check;
 mod gate;
 mod model;
+mod recorded;
 mod subscriber;
 mod tool;
 
 pub use check::FakeCheck;
 pub use gate::FakeGate;
 pub use model::{ScriptedModelProvider, text_response, tool_call_response};
+pub use recorded::RecordedModelProvider;
 pub use subscriber::RecordingSubscriber;
 pub use tool::FakeTool;

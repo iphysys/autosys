@@ -21,14 +21,14 @@ Increment 1 delivers the execution kernel in 15 PRs: one benchmark problem runs 
 
 ## Decisions before PR 1
 
-Eight choices shape the first commits, so the team settles them before PR 1. Each has a proposed default, and decisions 1, 2, 5, 6 and 8 are recorded as ADRs in `docs/adr/`.
+Eight choices shape the first commits, so the team settles them before PR 1. Each has a proposed default, and decisions 1, 2, 4, 5, 6 and 8 are recorded as ADRs in `docs/adr/`.
 
 | # | Decision | Proposed default | Why |
 | --- | --- | --- | --- |
 | 1 | Persistence backend (ADR-0016) | PostgreSQL through `sqlx`, migrations in the repo; artifact files on a mounted volume | `api-server` and `worker` are separate processes. Postgres gives job claiming with `FOR UPDATE SKIP LOCKED`, an append-only event log with sequence numbers, and `LISTEN/NOTIFY` to push new events and wake waiting jobs. Repository traits keep it swappable. |
 | 2 | Async trait convention (ADR-0015) | `async-trait` for traits held as trait objects (tools, model providers, gates, checks, stores); native `async fn` for generic-only traits | One consistent pattern that is object-safe today. |
 | 3 | Benchmark problem | One small part-design problem solved with build123d through typed parametric tools | The tool code exists in `legacy/`. Typed operations mean no agent-written code, so Increment 1 needs container isolation only. Agent-written CAD scripts need a code-execution sandbox and move to Increment 2. RCAIDE waits until a sizing problem needs it. |
-| 4 | Model provider | The provider the team uses today, one adapter; a recorded-response fake for CI | One adapter proves the gateway contract. |
+| 4 | Model providers (ADR-0027) | Two adapters: Claude through the Messages API, the default profile; and the internal Pliny platform through its OpenAI-compatible endpoint, which has no tool calling yet and is refused at startup for agents with tools. Recorded responses in CI | The team uses both. A `tool_calling` flag per profile keeps a model that cannot call tools away from agents that need them. |
 | 5 | SDR v0 scope (ADR-0020) | Requirements with numeric thresholds and units, parameters with units and source, decisions with rationale, assumptions, evidence links. Linear versions, no branches; one committed transition is one version. | Smallest model that lets checks decide requirement status. Branches arrive in Increment 2. |
 | 6 | Requirement check v0 (ADR-0021) | Numeric threshold checks on SDR quantities; formalized requirements with a solver stay in Increment 3 | The `success` stop reason needs evidence-backed requirement status. This is an addition to blueprint §24. |
 | 7 | What needs approval | The autonomy policy asks before the final design commit | Exercises the ask, suspend and resume path once. |
@@ -47,8 +47,8 @@ The benchmark problem's requirements (3–5 must-level numeric requirements with
                                                                         | claim jobs,
                                                                         | append events
                                                                         v
-  Model provider  <---- HTTPS ----------------------------------  worker
-  external, one adapter                                          query loop, scheduler
+  Model providers <---- HTTPS ----------------------------------  worker
+  Claude, Pliny                                                  query loop, scheduler
   recorded in CI          build123d MCP server  <---- MCP -----  context, gates, SDR
                           container, no egress                   tool and model gateways
                           typed, idempotent tools
@@ -172,13 +172,19 @@ The harness side of every tool call.
 
 ### PR 9 — Model gateway
 
-One provider behind a provider-neutral contract.
+Two providers behind a provider-neutral contract (ADR-0027).
 
-- `crates/model-gateway`: one adapter with normalized messages, tool-call requests, stop reasons and usage; provider types stay inside the adapter.
-- `config/models/routing.yaml` with one profile; bounded retries for retryable errors; token and cost accounting.
+- `crates/model-gateway`: two adapters, `anthropic` (Claude, Messages API) and `openai_compatible` (the internal Pliny platform). Each normalizes messages, tool-call requests, tool results, stop reasons and usage; provider types stay inside the adapter. Claude's thinking blocks travel as the new `ContentBlock::Opaque` and go back unchanged.
+- `config/models/routing.yaml`, checked by `cargo xtask validate-config`:
+  - Three Claude profiles on the one `anthropic` provider: `haiku` (the default), `sonnet` and `opus`. `SYNTH_MODEL_PROFILE` overrides the default. An agent may name its own profile.
+  - Each profile declares `tool_calling`. `pliny` has `false`, and startup refuses it for an agent with tools.
+  - Keys and the Pliny base URL come from environment variables. A missing one fails at startup, naming it.
+  - TLS verification stays on, with an optional internal CA bundle.
+- Bounded retries for rate limits, overload and timeouts. Every request has a timeout and honours cancellation.
+- Token and cost accounting per call, with prices from config.
 - A recorded-response provider in testkit, so CI never calls a live model.
 
-**Done when:** the adapter passes the `ModelProvider` contract suite against recorded responses.
+**Done when:** both adapters pass the `ModelProvider` contract suite against recorded responses, including a tool-call round trip for the Anthropic adapter, and startup refuses the Pliny profile (`tool_calling: false`) for an agent with tools.
 
 ### PR 10 — Context v0
 
@@ -279,7 +285,7 @@ The biggest risk is SDR v0 churning while the design workflow is still unsettled
 Increment 1 closes when every item below is ticked.
 
 - [ ] The six exit criteria in the scope section pass: in CI with recorded responses, and in `cargo xtask eval` with the live model.
-- [ ] The proposed ADRs (0015, 0016, 0020, 0021, 0022) are accepted, and decisions 3, 4 and 7 are recorded in the benchmark and config.
+- [ ] The proposed ADRs (0015, 0016, 0020, 0021, 0022, 0027) are accepted, and decisions 3, 4 and 7 are recorded in the benchmark and config.
 - [ ] Baseline results are committed to `evals/baselines/`.
 - [ ] A new team member can run the benchmark from a clean checkout using the developer guide.
 - [ ] Questions raised during the increment are logged for Increment 2 planning.

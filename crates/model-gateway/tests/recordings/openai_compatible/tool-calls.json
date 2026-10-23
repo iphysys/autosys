@@ -1,0 +1,51 @@
+{
+  "description": "Hand-written from the OpenAI chat-completions format, not captured: a tool call, then the answer after the tool result. Pliny does not return tool calls yet; this checks the adapter mapping for when it does.",
+  "replies": [
+    {
+      "status": 200,
+      "headers": [],
+      "body": {
+        "id": "chatcmpl-test-tool-1",
+        "object": "chat.completion",
+        "created": 1793000000,
+        "model": "snps-provider/nemotron-3-ultra-550b-a55",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": null,
+              "tool_calls": [
+                {
+                  "id": "call_test_01",
+                  "type": "function",
+                  "function": { "name": "create_plate", "arguments": "{\"length_mm\": 100}" }
+                }
+              ]
+            },
+            "finish_reason": "tool_calls"
+          }
+        ],
+        "usage": { "prompt_tokens": 150, "completion_tokens": 20, "total_tokens": 170 }
+      }
+    },
+    {
+      "status": 200,
+      "headers": [],
+      "body": {
+        "id": "chatcmpl-test-tool-2",
+        "object": "chat.completion",
+        "created": 1793000001,
+        "model": "snps-provider/nemotron-3-ultra-550b-a55",
+        "choices": [
+          {
+            "index": 0,
+            "message": { "role": "assistant", "content": "The plate is created." },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": { "prompt_tokens": 190, "completion_tokens": 6, "total_tokens": 196 }
+      }
+    }
+  ]
+}

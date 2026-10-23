@@ -1,0 +1,88 @@
+//! Cost of a call from the prices in `config/models/routing.yaml`.
+
+use crate::providers::ModelUsage;
+use crate::routing::Routing;
+
+const TOKENS_PER_MTOK: f64 = 1_000_000.0;
+
+/// The cost in USD of the attempts in `usage`, each at its own model's price.
+/// `None` if any of those models has no price: an unknown cost is never
+/// reported as zero.
+pub fn cost_usd(routing: &Routing, usage: &[ModelUsage]) -> Option<f64> {
+    usage.iter().try_fold(0.0, |total, attempt| {
+        let price = routing.price(&attempt.model)?;
+        // Token counts stay far below 2^52, so the conversion is exact.
+        #[allow(clippy::cast_precision_loss)]
+        let (input, output) = (
+            attempt.usage.input_tokens as f64,
+            attempt.usage.output_tokens as f64,
+        );
+        Some(
+            total
+                + input * price.input_usd_per_mtok / TOKENS_PER_MTOK
+                + output * price.output_usd_per_mtok / TOKENS_PER_MTOK,
+        )
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use contracts::types::{ModelRouting, TokenUsage};
+    use serde_json::json;
+
+    use super::*;
+
+    fn routing() -> Routing {
+        let config: ModelRouting = serde_json::from_value(json!({
+            "schema_version": "0.1",
+            "default_profile": "claude",
+            "profiles": [{
+                "provider": "anthropic", "name": "claude", "model": "claude-opus-5-5",
+                "tool_calling": true, "base_url": "https://api.anthropic.com",
+                "api_key_env": "ANTHROPIC_API_KEY", "max_output_tokens": 1000,
+                "request_timeout_seconds": 60,
+                "retry": { "max_attempts": 1, "initial_backoff_ms": 0, "max_backoff_ms": 0 }
+            }],
+            "prices": [
+                { "model": "claude-opus-5-5", "input_usd_per_mtok": 4.0, "output_usd_per_mtok": 20.0 },
+                { "model": "claude-opus-4-8", "input_usd_per_mtok": 5.0, "output_usd_per_mtok": 25.0 }
+            ]
+        }))
+        .expect("valid routing");
+        Routing::new(config).expect("consistent routing")
+    }
+
+    fn usage(model: &str, input_tokens: u64, output_tokens: u64) -> ModelUsage {
+        ModelUsage {
+            model: model.to_owned(),
+            usage: TokenUsage {
+                input_tokens,
+                output_tokens,
+            },
+        }
+    }
+
+    #[test]
+    fn each_attempt_is_priced_at_its_own_model() {
+        let cost = cost_usd(
+            &routing(),
+            &[
+                usage("claude-opus-5-5", 1_000_000, 0),
+                usage("claude-opus-4-8", 0, 1_000_000),
+            ],
+        )
+        .expect("both models are priced");
+        assert!((cost - 29.0).abs() < 1e-9, "{cost}");
+    }
+
+    #[test]
+    fn an_unpriced_model_makes_the_cost_unknown() {
+        assert_eq!(
+            cost_usd(
+                &routing(),
+                &[usage("claude-opus-5-5", 10, 10), usage("unpriced", 10, 10)]
+            ),
+            None
+        );
+    }
+}

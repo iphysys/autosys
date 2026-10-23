@@ -11,7 +11,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use contracts::types::{AgentSpec, AutonomyPolicy, GatesPolicy, SCHEMA_FILES, ToolOverlay};
+use contracts::types::{
+    AgentSpec, AutonomyPolicy, GatesPolicy, ModelRouting, SCHEMA_FILES, ToolOverlay,
+};
 use contracts::{Error, ErrorCode, SchemaSet};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -39,6 +41,10 @@ impl ConfigFile for AgentSpec {
     const SCHEMA: &'static str = "config/agent.schema.json";
 }
 
+impl ConfigFile for ModelRouting {
+    const SCHEMA: &'static str = "config/model-routing.schema.json";
+}
+
 /// Validates and loads configuration files.
 pub struct ConfigLoader {
     schemas: SchemaSet,
@@ -52,6 +58,7 @@ impl ConfigLoader {
                 GatesPolicy::SCHEMA,
                 ToolOverlay::SCHEMA,
                 AgentSpec::SCHEMA,
+                ModelRouting::SCHEMA,
             ])?,
         })
     }
@@ -98,6 +105,7 @@ impl ConfigLoader {
             let checked = match relative.as_str() {
                 "policies/autonomy.yaml" => self.load::<AutonomyPolicy>(&path).map(|_| ()),
                 "policies/gates.yaml" => self.load::<GatesPolicy>(&path).map(|_| ()),
+                "models/routing.yaml" => self.load::<ModelRouting>(&path).map(|_| ()),
                 _ if in_dir(&relative, "tools") => self
                     .load::<ToolOverlay>(&path)
                     .and_then(|overlay| overlay_schemas_exist(&overlay, &path)),

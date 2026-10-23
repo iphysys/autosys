@@ -1,0 +1,23 @@
+{
+  "description": "Hand-written from the OpenAI chat-completions format, not captured from Pliny: a text answer.",
+  "replies": [
+    {
+      "status": 200,
+      "headers": [["x-request-id", "pliny-test-text"]],
+      "body": {
+        "id": "chatcmpl-test-text",
+        "object": "chat.completion",
+        "created": 1793000000,
+        "model": "snps-provider/nemotron-3-ultra-550b-a55",
+        "choices": [
+          {
+            "index": 0,
+            "message": { "role": "assistant", "content": "A plate 100 mm long meets the limit." },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": { "prompt_tokens": 80, "completion_tokens": 12, "total_tokens": 92 }
+      }
+    }
+  ]
+}

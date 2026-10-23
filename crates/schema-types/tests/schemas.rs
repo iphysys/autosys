@@ -47,6 +47,10 @@ const ROOT_TYPES: &[(&str, RoundTrip)] = &[
         round_trip::<schema_types::GatesPolicy>,
     ),
     (
+        "config/model-routing.schema.json",
+        round_trip::<schema_types::ModelRouting>,
+    ),
+    (
         "config/tool-overlay.schema.json",
         round_trip::<schema_types::ToolOverlay>,
     ),

@@ -15,7 +15,6 @@
     "role",
     "goal",
     "responsibilities",
-    "model_profile",
     "prompt",
     "result_schema",
     "skills",
@@ -47,7 +46,7 @@
       "items": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" }
     },
     "model_profile": {
-      "description": "A profile name in config/models/routing.yaml. Raw model ids are not allowed here.",
+      "description": "A profile name in config/models/routing.yaml. Raw model ids are not allowed here. When absent, the agent uses the routing default_profile, which SYNTH_MODEL_PROFILE overrides (ADR-0027).",
       "$ref": "../common/types.schema.json#/$defs/Identifier"
     },
     "prompt": {
