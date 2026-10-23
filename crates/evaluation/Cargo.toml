@@ -1,0 +1,28 @@
+[package]
+name = "synth-evaluation"
+version = "0.1.0"
+description = "Checks that produce evidence: schema, units and numeric requirement thresholds (ADR-0021)."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "evaluation"
+
+[dependencies]
+synth-contracts.workspace = true
+synth-sdr.workspace = true
+
+async-trait.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+synth-testkit.workspace = true
+
+tokio = { workspace = true, features = ["macros", "rt"] }
+
+[lints]
+workspace = true
