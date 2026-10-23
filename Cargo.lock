@@ -1702,6 +1702,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "chrono",
+ "jsonschema",
  "serde",
  "serde_json",
  "synth-schema-types",
@@ -1745,9 +1746,7 @@ dependencies = [
 name = "synth-sdr"
 version = "0.1.0"
 dependencies = [
- "jsonschema",
  "proptest",
- "serde",
  "serde_json",
  "sha2 0.11.0",
  "synth-contracts",

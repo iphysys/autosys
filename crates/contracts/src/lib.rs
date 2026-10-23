@@ -13,6 +13,7 @@ pub mod gate;
 pub mod hooks;
 pub mod ids;
 pub mod model;
+pub mod schema;
 pub mod storage;
 pub mod tool;
 
@@ -29,6 +30,7 @@ pub use model::{
     ContentBlock, Message, ModelProvider, ModelRequest, ModelResponse, ModelStopReason, Role,
     ToolSpec,
 };
+pub use schema::SchemaSet;
 pub use storage::{
     ArtifactStore, EventLog, EvidenceStore, JobStore, NewEvent, SdrRepository, WakeReason,
 };

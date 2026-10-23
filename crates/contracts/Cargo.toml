@@ -16,6 +16,8 @@ synth-schema-types.workspace = true
 async-trait.workspace = true
 # `clock` for SystemClock.
 chrono = { workspace = true, features = ["clock"] }
+# Validation against the canonical schemas (ADR-0024).
+jsonschema.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
