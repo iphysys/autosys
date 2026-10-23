@@ -1,0 +1,2 @@
+# HAProxy reads the forwarder configs from the working tree; keep LF on every OS.
+deploy/compose/*.cfg text eol=lf

@@ -6,7 +6,7 @@ The repository is built in increments. The current plan is [Increment 1: Executi
 
 ## Prerequisites
 
-- [rustup](https://rustup.rs). The toolchain version is pinned in `rust-toolchain.toml`, and rustup installs it on first use. On Windows, rustup also needs the MSVC C++ build tools.
+- [rustup](https://rustup.rs). The toolchain version is pinned in `rust-toolchain.toml`, and rustup installs it on first use. On Windows, rustup needs either the MSVC C++ build tools, or the `x86_64-pc-windows-gnu` host with a full MinGW-w64 toolchain on `PATH` (for example WinLibs: `winget install BrechtSanders.WinLibs.POSIX.UCRT`), because the toolchain's bundled `dlltool` cannot run alone.
 - [cargo-deny](https://github.com/EmbarkStudios/cargo-deny), installed with `cargo install --locked cargo-deny`.
 - [sqlx-cli](https://github.com/launchbadge/sqlx/tree/main/sqlx-cli) 0.9.0, installed with `cargo install --locked sqlx-cli --version 0.9.0 --no-default-features --features postgres`.
 - Docker with Compose, to run PostgreSQL (see [Database](#database)) and the tool servers (see [Tool servers](#tool-servers)).
@@ -36,7 +36,7 @@ It needs Postgres running and `DATABASE_URL` set (see [Database](#database)), uv
 7. `cargo sqlx database setup`, which creates the database at `DATABASE_URL` if needed and applies the migrations;
 8. `cargo sqlx prepare --check`, which fails if the query data in `.sqlx/` is out of date;
 9. `cargo test`;
-10. `cargo xtask test-tools`, which runs each tool server's tests in its container and checks its sandbox (see [Tool servers](#tool-servers));
+10. `cargo xtask test-tools`, which runs each tool server's tests in its container, checks its sandbox and its forwarder, and runs the tool gateway's tests against it (see [Tool servers](#tool-servers));
 11. `cargo deny check`.
 
 Clippy and the tests build with `SQLX_OFFLINE=true`, so they use the committed query data rather than the live database. CI starts Postgres from the same compose file and then runs only `cargo xtask ci`, so a local pass means a CI pass.
@@ -110,7 +110,24 @@ Engineering tools are MCP servers in `mcp_servers/`, one container each (bluepri
 - **[build123d](mcp_servers/build123d/README.md)** has two tools, `create_plate` and `measure`. Their request and result schemas are in `schemas/tools/build123d/`.
 - **Generated models.** `cargo xtask codegen` writes each server's Python models (pydantic) and self-contained copies of its schemas to `mcp_servers/<server>/models/`. Never edit them; change the schema and regenerate. The generator, datamodel-code-generator, is pinned in the server's `uv.lock`.
 - **Sandbox.** `deploy/compose/tools.yaml` runs the servers on an internal Docker network: no internet egress and no published ports. They run as non-root with a read-only root filesystem, no capabilities, and CPU, memory and process limits. MCP runs over streamable HTTP inside that network.
-- **`cargo xtask test-tools`** builds each server's images and starts it. It then checks the sandbox with `docker inspect` and runs an egress probe inside the server container, which must reach nothing on the internet. Last it runs the server's test container: tests, ruff and `mypy --strict`.
+- **Reaching a server from the host.** Each server has a forwarder, for example `build123d-forward`: a TCP relay (HAProxy) with one fixed backend. It is on the server's internal network and on `host_access`, and publishes one port on 127.0.0.1 only (`BUILD123D_HOST_PORT`, default 18123). The server's own networks do not change. Start it with `docker compose -f deploy/compose/tools.yaml up -d --wait build123d-forward`; the MCP endpoint is then `http://127.0.0.1:18123/mcp`.
+- **`cargo xtask test-tools`** builds each server's images and starts it, then:
+  1. checks the sandbox with `docker inspect`;
+  2. starts the forwarder and checks it: on the server's network and one other, one port on 127.0.0.1 only, the same hardening;
+  3. runs an egress probe inside the server container, with the forwarder up, which must reach nothing on the internet;
+  4. runs the server's test container: tests, ruff and `mypy --strict`;
+  5. runs the tool gateway's tests in `crates/tools/tests/` against the server, through the forwarder.
+
+## Tool gateway
+
+`crates/tools` is the harness side of every tool call (blueprint §14.2). `McpServer` connects with rmcp, pinned to MCP protocol 2026-07-28, and lists the server's tools. `ToolRegistry` keeps the tools that a `config/tools/` overlay lists. `ToolGateway` runs a call through these steps: replay from its step record, validation against the request schema, the tool permission and approval gates, execution with the overlay's timeout and the step's cancellation, validation of the result, evidence, and the step record. A tool error, timeout or invalid result comes back as `ToolObservation::Failed`, never as success. ADR-0026 has the replay rules.
+
+The gateway tests that need the real server are ignored by a plain `cargo test`; `cargo xtask test-tools` runs them. To run them by hand:
+
+```sh
+docker compose -f deploy/compose/tools.yaml up -d --wait build123d-forward
+BUILD123D_URL=http://127.0.0.1:18123/mcp cargo test -p synth-tools --test build123d -- --ignored
+```
 
 To work on a server without Docker, run its tests with uv from its directory:
 
@@ -170,6 +187,7 @@ A mass or other reference value is an arithmetic expression over parameter IDs. 
 | [0023](docs/adr/0023-lease-times-from-database-clock.md) | Lease times come from the database clock | Accepted |
 | [0024](docs/adr/0024-schema-validation-in-contracts.md) | Validation against the canonical schemas lives in contracts | Accepted |
 | [0025](docs/adr/0025-benchmark-problem-format.md) | Benchmark problem format v0 | Proposed |
+| [0026](docs/adr/0026-step-records-and-replay.md) | Step records and replay of tool calls | Proposed |
 
 ## License
 
