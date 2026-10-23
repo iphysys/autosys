@@ -1,0 +1,25 @@
+{
+  "schema_version": "0.1",
+  "idempotency_key": "run-0001:step-0008",
+  "run_id": "run-0001",
+  "step_id": "step-0008",
+  "tool": "measure",
+  "request_sha256": "sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
+  "started_at": "2026-10-23T10:00:01Z",
+  "completed_at": "2026-10-23T10:00:02Z",
+  "outcome": {
+    "kind": "succeeded",
+    "tool_version": "0.1.0",
+    "result": {
+      "part_id": "sha256:c184e3b64442c589f4fee88c0f62ec6e182cf4b5f0eed59e90cb693259dbf706",
+      "volume": { "value": 45403.60626231498, "unit": "mm3" },
+      "mass": { "value": 122.58973690825044, "unit": "g" },
+      "bounding_box": {
+        "length": { "value": 110, "unit": "mm" },
+        "width": { "value": 70, "unit": "mm" },
+        "height": { "value": 6, "unit": "mm" }
+      }
+    },
+    "evidence_ids": ["ev-3f9a0c1e7b2d4a6f8e1c3b5d7f9a1c3e"]
+  }
+}

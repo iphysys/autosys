@@ -1,6 +1,6 @@
-//! PostgreSQL persistence (ADR-0016) for jobs, events, SDR versions, evidence
-//! and artifact metadata. Artifact content is stored as files on a mounted
-//! volume.
+//! PostgreSQL persistence (ADR-0016) for jobs, events, SDR versions, evidence,
+//! step records and artifact metadata. Artifact content is stored as files on
+//! a mounted volume.
 //!
 //! Every timestamp a store sets, lease expiry included, comes from the
 //! database clock through the `autosys_now()` SQL function, so workers on
@@ -16,6 +16,7 @@ mod events;
 mod evidence;
 mod jobs;
 mod sdr;
+mod steps;
 
 use std::future::Future;
 use std::str::FromStr;
@@ -30,6 +31,7 @@ pub use events::PgEventLog;
 pub use evidence::PgEvidenceStore;
 pub use jobs::PgJobStore;
 pub use sdr::PgSdrRepository;
+pub use steps::PgStepStore;
 
 use error::db_error;
 

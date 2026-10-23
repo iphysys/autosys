@@ -1,0 +1,31 @@
+[package]
+name = "synth-tools"
+version = "0.1.0"
+description = "The tool gateway: MCP client, tool registry and the execution pipeline of every tool call (blueprint section 14.2)."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "tools"
+
+[dependencies]
+synth-contracts.workspace = true
+synth-governance.workspace = true
+
+async-trait.workspace = true
+rmcp.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio = { workspace = true, features = ["macros", "sync", "time"] }
+tracing.workspace = true
+
+[dev-dependencies]
+synth-testkit.workspace = true
+
+chrono.workspace = true
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }
+
+[lints]
+workspace = true

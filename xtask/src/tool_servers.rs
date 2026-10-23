@@ -11,9 +11,15 @@
 //! 2. pipes `tests/egress_probe.py` into the running server container, which
 //!    must reach nothing on the internet but must reach its own port, so a
 //!    probe that cannot connect at all does not pass;
-//! 3. runs the server's test container on the same network: tests (the same
+//! 3. starts the server's forwarder and checks it the same way: on the
+//!    server's internal network and on one other, publishing one port on
+//!    127.0.0.1 only, with the same hardening. The egress probe runs with
+//!    the forwarder up, so a forwarder that gave the server a way out fails;
+//! 4. runs the server's test container on the same network: tests (the same
 //!    probes from a sibling, with the server as the control), lint and
-//!    strict type check.
+//!    strict type check;
+//! 5. runs the tool gateway's tests against the server, from the host
+//!    through the forwarder (`crates/tools/tests/`).
 //!
 //! The stack is taken down afterwards, pass or fail.
 
@@ -29,17 +35,32 @@ const COMPOSE_FILE: &str = "deploy/compose/tools.yaml";
 struct ToolServer {
     service: &'static str,
     test_service: &'static str,
+    /// The relay that gives the host a way in (deploy/compose/tools.yaml).
+    forwarder: &'static str,
+    /// Environment variable that moves the forwarder's host port, and its
+    /// default.
+    host_port_env: &'static str,
+    host_port: &'static str,
     /// Workspace-relative path of the egress probe.
     probe: &'static str,
     /// Reachable from inside the server container: its own MCP port.
     control: &'static str,
+    /// The gateway test target for this server in `synth-tools`, and the
+    /// variable that tells it the server's URL.
+    gateway_test: &'static str,
+    url_env: &'static str,
 }
 
 const SERVERS: &[ToolServer] = &[ToolServer {
     service: "build123d",
     test_service: "build123d-test",
+    forwarder: "build123d-forward",
+    host_port_env: "BUILD123D_HOST_PORT",
+    host_port: "18123",
     probe: "mcp_servers/build123d/tests/egress_probe.py",
     control: "127.0.0.1:8000",
+    gateway_test: "build123d",
+    url_env: "BUILD123D_URL",
 }];
 
 pub fn run(root: &Path) -> Result<()> {
@@ -73,22 +94,31 @@ fn test_server(root: &Path, server: &ToolServer) -> Result<()> {
     )?;
 
     eprintln!("xtask: test-tools: {name}: sandbox configuration");
-    let id = stdout(compose(root).args(["ps", "--quiet", name]))?;
-    let id = id.trim();
-    if id.is_empty() {
-        bail!("{name} is not running");
-    }
-    let container = first(&stdout(docker().args(["inspect", id]))?)?;
-    let networks = attached_networks(&container);
-    let mut internal = Vec::new();
-    for network in &networks {
-        let inspected = first(&stdout(docker().args(["network", "inspect", network]))?)?;
-        internal.push((network.clone(), inspected["Internal"] == Value::Bool(true)));
-    }
-    let problems = sandbox_problems(&container, &internal);
+    let (container, networks) = inspect(root, name)?;
+    let problems = sandbox_problems(&container, &networks);
     if !problems.is_empty() {
         bail!(
             "{name} is not sandboxed as {COMPOSE_FILE} requires:\n  - {}",
+            problems.join("\n  - ")
+        );
+    }
+
+    let forwarder = server.forwarder;
+    step(
+        root,
+        &format!("{name}: start {forwarder}"),
+        &["up", "--detach", "--wait", forwarder],
+    )?;
+    eprintln!("xtask: test-tools: {forwarder}: sandbox configuration");
+    let (relay, relay_networks) = inspect(root, forwarder)?;
+    let server_network = networks
+        .first()
+        .map(|(n, _)| n.as_str())
+        .unwrap_or_default();
+    let problems = forwarder_problems(&relay, &relay_networks, server_network);
+    if !problems.is_empty() {
+        bail!(
+            "{forwarder} is not confined as {COMPOSE_FILE} requires:\n  - {}",
             problems.join("\n  - ")
         );
     }
@@ -116,7 +146,93 @@ fn test_server(root: &Path, server: &ToolServer) -> Result<()> {
         root,
         &format!("{name}: test suite in its container"),
         &["--profile", "test", "run", "--rm", server.test_service],
-    )
+    )?;
+
+    let port = std::env::var(server.host_port_env).unwrap_or_else(|_| server.host_port.to_owned());
+    let url = format!("http://127.0.0.1:{port}/mcp");
+    eprintln!("xtask: test-tools: {name}: tool gateway tests through {forwarder} ({url})");
+    let status = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
+        .current_dir(root)
+        .env(server.url_env, &url)
+        .args([
+            "test",
+            "--locked",
+            "-p",
+            "synth-tools",
+            "--test",
+            server.gateway_test,
+            "--",
+            "--ignored",
+        ])
+        .status()
+        .context("failed to run the tool gateway tests")?;
+    if !status.success() {
+        bail!("tool gateway tests against {name} failed ({status})");
+    }
+    Ok(())
+}
+
+/// The running container of a compose service, and each network it is
+/// attached to with whether that network is internal.
+fn inspect(root: &Path, service: &str) -> Result<(Value, Vec<(String, bool)>)> {
+    let id = stdout(compose(root).args(["ps", "--quiet", service]))?;
+    let id = id.trim();
+    if id.is_empty() {
+        bail!("{service} is not running");
+    }
+    let container = first(&stdout(docker().args(["inspect", id]))?)?;
+    let mut networks = Vec::new();
+    for network in attached_networks(&container) {
+        let inspected = first(&stdout(docker().args(["network", "inspect", &network]))?)?;
+        let internal = inspected["Internal"] == Value::Bool(true);
+        networks.push((network, internal));
+    }
+    Ok((container, networks))
+}
+
+/// Every way the inspected forwarder falls short: it must sit on the
+/// server's internal network and on exactly one other network, publish
+/// exactly one container port and only on 127.0.0.1, and be hardened like a
+/// server.
+fn forwarder_problems(
+    container: &Value,
+    networks: &[(String, bool)],
+    server_network: &str,
+) -> Vec<String> {
+    let mut problems = Vec::new();
+    let names: Vec<&str> = networks.iter().map(|(n, _)| n.as_str()).collect();
+    let on_server_network = networks
+        .iter()
+        .any(|(n, internal)| n == server_network && *internal);
+    let others = networks.iter().filter(|(n, _)| n != server_network).count();
+    if !on_server_network || others != 1 || networks.len() != 2 {
+        problems.push(format!(
+            "attached to {names:?}, not to {server_network} (internal) and one other network"
+        ));
+    }
+    let bindings = container["HostConfig"]["PortBindings"]
+        .as_object()
+        .cloned()
+        .unwrap_or_default();
+    if bindings.len() != 1 {
+        problems.push(format!(
+            "publishes {} container ports, not exactly one",
+            bindings.len()
+        ));
+    }
+    for (port, hosts) in &bindings {
+        let host_ips: Vec<&str> = hosts
+            .as_array()
+            .map(|h| h.iter().filter_map(|b| b["HostIp"].as_str()).collect())
+            .unwrap_or_default();
+        if host_ips.is_empty() || host_ips.iter().any(|ip| *ip != "127.0.0.1") {
+            problems.push(format!(
+                "publishes {port} on {host_ips:?}, not on 127.0.0.1 only"
+            ));
+        }
+    }
+    problems.extend(hardening_problems(container));
+    problems
 }
 
 /// Network names the container is attached to.
@@ -152,6 +268,15 @@ fn sandbox_problems(container: &Value, networks: &[(String, bool)]) -> Vec<Strin
     if published {
         problems.push("publishes a port".to_owned());
     }
+    problems.extend(hardening_problems(container));
+    problems
+}
+
+/// Resource limits, read-only root, no capabilities, no new privileges,
+/// non-root user.
+fn hardening_problems(container: &Value) -> Vec<String> {
+    let host = &container["HostConfig"];
+    let mut problems = Vec::new();
     for (field, what) in [
         ("Memory", "memory limit"),
         ("NanoCpus", "CPU limit"),
@@ -267,6 +392,62 @@ mod tests {
         assert_eq!(attached_networks(&container), ["autosys-tools_tools"]);
         let problems = sandbox_problems(&container, &[("autosys-tools_tools".to_owned(), true)]);
         assert!(problems.is_empty(), "{problems:?}");
+    }
+
+    fn forwarder(bindings: Value) -> Value {
+        let mut container = sandboxed();
+        container["HostConfig"]["PortBindings"] = bindings;
+        container
+    }
+
+    const TOOLS: &str = "autosys-tools_tools";
+
+    #[test]
+    fn a_loopback_forwarder_on_the_server_network_passes() {
+        let container =
+            forwarder(json!({ "8000/tcp": [{ "HostIp": "127.0.0.1", "HostPort": "18123" }] }));
+        let networks = [
+            (TOOLS.to_owned(), true),
+            ("autosys-tools_host_access".to_owned(), false),
+        ];
+        let problems = forwarder_problems(&container, &networks, TOOLS);
+        assert!(problems.is_empty(), "{problems:?}");
+    }
+
+    #[test]
+    fn a_forwarder_that_widens_access_is_reported() {
+        let all_interfaces =
+            forwarder(json!({ "8000/tcp": [{ "HostIp": "", "HostPort": "18123" }] }));
+        let networks = [
+            (TOOLS.to_owned(), true),
+            ("autosys-tools_host_access".to_owned(), false),
+        ];
+        let problems = forwarder_problems(&all_interfaces, &networks, TOOLS);
+        assert!(
+            problems.iter().any(|p| p.contains("127.0.0.1 only")),
+            "{problems:?}"
+        );
+
+        let two_ports = forwarder(json!({
+            "8000/tcp": [{ "HostIp": "127.0.0.1", "HostPort": "18123" }],
+            "9000/tcp": [{ "HostIp": "127.0.0.1", "HostPort": "19000" }]
+        }));
+        let problems = forwarder_problems(&two_ports, &networks, TOOLS);
+        assert!(
+            problems.iter().any(|p| p.contains("not exactly one")),
+            "{problems:?}"
+        );
+
+        let loopback =
+            forwarder(json!({ "8000/tcp": [{ "HostIp": "127.0.0.1", "HostPort": "18123" }] }));
+        let extra_network = [
+            (TOOLS.to_owned(), true),
+            ("autosys-tools_host_access".to_owned(), false),
+            ("bridge".to_owned(), false),
+        ];
+        assert!(!forwarder_problems(&loopback, &extra_network, TOOLS).is_empty());
+        let off_server_network = [("autosys-tools_host_access".to_owned(), false)];
+        assert!(!forwarder_problems(&loopback, &off_server_network, TOOLS).is_empty());
     }
 
     #[test]

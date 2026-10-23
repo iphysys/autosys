@@ -3,9 +3,10 @@
 
 use chrono::{DateTime, Utc};
 use contracts::types::{
-    ArtifactMetadata, Event, Evidence, Job, SdrDocument, SdrVersionRecord, Timestamp, Transition,
+    ArtifactMetadata, Event, Evidence, Job, SdrDocument, SdrVersionRecord, StepOutcome, Timestamp,
+    Transition,
 };
-use contracts::{ContentBlock, Message, ModelRequest, NewEvent, Role, ToolRequest};
+use contracts::{ContentBlock, Message, ModelRequest, NewEvent, NewStep, Role, ToolRequest};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -299,6 +300,36 @@ pub fn tool_request(tool: &str, step_id: &str, arguments: Value) -> ToolRequest 
             .cloned()
             .expect("tool arguments must be a JSON object"),
     }
+}
+
+/// A step about to run in run `run-1`, keyed `run-1:<step_id>`. `request`
+/// stands for the request's content; equal values give equal hashes.
+pub fn new_step(step_id: &str, tool: &str, request: &str) -> NewStep {
+    NewStep {
+        idempotency_key: id(&format!("run-1:{step_id}")),
+        run_id: id("run-1"),
+        step_id: id(step_id),
+        tool: id(tool),
+        request_sha256: id(&sha256_of(request.as_bytes())),
+    }
+}
+
+/// A succeeded step outcome with `result` and one evidence id.
+pub fn succeeded(result: Value) -> StepOutcome {
+    parse(json!({
+        "kind": "succeeded",
+        "tool_version": "0.1.0",
+        "result": result,
+        "evidence_ids": ["ev-step-1"]
+    }))
+}
+
+/// A failed step outcome with the given error code.
+pub fn failed(code: &str) -> StepOutcome {
+    parse(json!({
+        "kind": "failed",
+        "error": { "code": code, "message": format!("the step failed: {code}"), "retryable": false }
+    }))
 }
 
 /// A model request with one user message and no tools.

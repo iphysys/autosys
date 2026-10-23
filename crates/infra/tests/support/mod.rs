@@ -100,7 +100,7 @@ impl TestDb {
     /// Deletes every row, so the next store starts empty.
     pub async fn empty(&self) {
         self.sql(
-            "TRUNCATE jobs, events, event_sequences, sdr_versions, evidence, artifacts".into(),
+            "TRUNCATE jobs, events, event_sequences, sdr_versions, evidence, artifacts, step_records".into(),
         )
         .await;
     }

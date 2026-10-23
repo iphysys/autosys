@@ -1,0 +1,9 @@
+{
+  "schema_version": "0.1",
+  "idempotency_key": "run-0001:step-0007",
+  "run_id": "run-0001",
+  "step_id": "step-0007",
+  "tool": "create_plate",
+  "request_sha256": "sha256:5b0d6c1d2f6f1b9e4f7a8c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f",
+  "started_at": "2026-10-23T10:00:00Z"
+}

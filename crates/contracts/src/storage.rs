@@ -11,14 +11,14 @@ use std::time::Duration;
 use async_trait::async_trait;
 use schema_types::{
     Actor, ArtifactMetadata, Event, EventPayload, Evidence, Job, SdrDocument, SdrVersionRecord,
-    Timestamp,
+    Sha256, StepOutcome, StepRecord, Timestamp,
 };
 
 use crate::context::ExecutionContext;
 use crate::error::Error;
 use crate::ids::{
     ApprovalId, ArtifactId, CorrelationId, EvidenceId, Identifier, JobId, ProjectId, RunId,
-    SdrVersion,
+    SdrVersion, StepId, ToolName,
 };
 
 /// Why a waiting or suspended job should be looked at again.
@@ -135,6 +135,48 @@ pub trait EvidenceStore: Send + Sync {
 
     /// Ordered by `created_at`, then id.
     async fn list_for_run(&self, run_id: &RunId) -> Result<Vec<Evidence>, Error>;
+}
+
+/// A tool call about to run, before the store records it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NewStep {
+    pub idempotency_key: Identifier,
+    pub run_id: RunId,
+    pub step_id: StepId,
+    pub tool: ToolName,
+    /// sha256 of the canonical JSON of the tool name and arguments.
+    pub request_sha256: Sha256,
+}
+
+/// What [`StepStore::begin`] found.
+#[derive(Clone, Debug, PartialEq)]
+pub enum StepStart {
+    /// No record had the key; a started record is now stored and the caller
+    /// runs the step.
+    Started(StepRecord),
+    /// A record for the same request already exists: completed, so replay its
+    /// outcome, or still started, because an earlier attempt was interrupted
+    /// (ADR-0026).
+    Existing(StepRecord),
+}
+
+/// Step records keyed by idempotency key (blueprint section 6.3, ADR-0026).
+/// The store sets `started_at` and `completed_at` from its own clock
+/// (ADR-0023).
+#[async_trait]
+pub trait StepStore: Send + Sync {
+    /// Atomically stores a started record unless the key exists. Of
+    /// concurrent callers with one key, exactly one gets `Started`. Conflict
+    /// if the key exists for a different run, step, tool or request hash.
+    async fn begin(&self, step: &NewStep) -> Result<StepStart, Error>;
+
+    /// Stores the outcome of a started step. Completing again with the same
+    /// outcome is Ok and returns the stored record; a different outcome is
+    /// Conflict. NotFound if no step has the key.
+    async fn complete(&self, key: &Identifier, outcome: &StepOutcome) -> Result<StepRecord, Error>;
+
+    /// NotFound if no step has the key.
+    async fn get(&self, key: &Identifier) -> Result<StepRecord, Error>;
 }
 
 #[async_trait]

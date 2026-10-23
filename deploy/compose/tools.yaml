@@ -1,16 +1,21 @@
 # Tool servers (blueprint sections 3.2 and 17). From the repository root:
 #
-#   docker compose -f deploy/compose/tools.yaml up -d --wait build123d
+#   docker compose -f deploy/compose/tools.yaml up -d --wait build123d-forward
 #   docker compose -f deploy/compose/tools.yaml --profile test run --rm build123d-test
 #
 # `cargo xtask test-tools` runs both and checks the isolation from outside.
 #
 # Tool servers are attached only to the `tools` network, which is internal:
 # Docker gives it no route off the host, so nothing on it can reach the
-# internet, and no port is published. Containers run as a non-root user with
-# a read-only root filesystem, no capabilities, and CPU, memory and process
-# limits. Separate from compose.yaml so that running the tools does not need
-# the database password.
+# internet, and no server publishes a port. Containers run as a non-root user
+# with a read-only root filesystem, no capabilities, and CPU, memory and
+# process limits. Separate from compose.yaml so that running the tools does
+# not need the database password.
+#
+# A harness process on the host (the worker, the gateway tests) reaches a
+# server through its forwarder: a TCP relay on `tools` and on `host_access`
+# that publishes one port on 127.0.0.1 only and relays it to the server's
+# port. The server's own networks do not change.
 name: autosys-tools
 
 x-sandbox: &sandbox
@@ -64,6 +69,23 @@ services:
       build123d:
         condition: service_healthy
 
+  # The host's way in to build123d: http://127.0.0.1:18123/mcp by default.
+  # Fixed relay to build123d:8000 (build123d-forward.cfg); same sandbox as
+  # the servers.
+  build123d-forward:
+    <<: *sandbox
+    image: haproxy:3.2.25-alpine@sha256:5d97434a423c2533cfeb42874d45cf6d69a840b60334582dfbfd5008e94c80be
+    networks: [tools, host_access]
+    ports:
+      - "127.0.0.1:${BUILD123D_HOST_PORT:-18123}:8000"
+    volumes:
+      - ./build123d-forward.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      build123d:
+        condition: service_healthy
+
 networks:
   tools:
     internal: true
+  # Only the forwarders join it, to publish their loopback port.
+  host_access: {}

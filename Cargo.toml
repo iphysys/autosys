@@ -9,6 +9,7 @@ members = [
     "crates/schema-types",
     "crates/sdr",
     "crates/testkit",
+    "crates/tools",
     "xtask",
 ]
 
@@ -20,10 +21,12 @@ publish = false
 
 [workspace.dependencies]
 synth-contracts = { path = "crates/contracts" }
+synth-governance = { path = "crates/governance" }
 synth-infra = { path = "crates/infra" }
 synth-schema-types = { path = "crates/schema-types" }
 synth-sdr = { path = "crates/sdr" }
 synth-testkit = { path = "crates/testkit" }
+synth-tools = { path = "crates/tools" }
 
 anyhow = "1.0"
 # Object-safe async traits (ADR-0015).
@@ -35,6 +38,11 @@ prettyplease = "0.3"
 # Property tests; the fork and timeout runners are not needed.
 proptest = { version = "1.11", default-features = false, features = ["std"] }
 regress = "0.12"
+# MCP client for the tool gateway. Pinned exactly: 3.x changed its default
+# protocol within minor releases, and 3.7.0 is the version checked against the
+# build123d server (protocol 2026-07-28). No TLS feature: tool servers are
+# reached over plain HTTP, on the compose network or its loopback forwarder.
+rmcp = { version = "=3.7.0", default-features = false, features = ["client", "transport-streamable-http-client-reqwest"] }
 # typify 0.8 reads schemars 0.8 schema types.
 schemars = "0.8"
 serde = { version = "1.0", features = ["derive"] }

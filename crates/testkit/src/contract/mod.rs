@@ -25,6 +25,7 @@ mod gate;
 mod job_store;
 mod model_provider;
 mod sdr_repository;
+mod step_store;
 mod tool;
 
 pub use artifact_store::artifact_store;
@@ -36,6 +37,7 @@ pub use gate::gate;
 pub use job_store::job_store;
 pub use model_provider::model_provider;
 pub use sdr_repository::sdr_repository;
+pub use step_store::step_store;
 pub use tool::tool;
 
 use std::fmt::Debug;
