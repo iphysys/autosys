@@ -9,6 +9,7 @@ publish.workspace = true
 [dependencies]
 # Config and benchmark validation only: without the postgres feature,
 # building xtask needs no database.
+synth-context.workspace = true
 synth-contracts.workspace = true
 synth-infra = { workspace = true, default-features = false }
 # Model routing checks beyond the schema: the gateway's own (ADR-0027).

@@ -1,0 +1,36 @@
+[package]
+name = "synth-context"
+version = "0.1.0"
+description = "The context manager: what each model call sees, assembled per call within token budgets (blueprint section 8, ADR-0029)."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "context"
+
+[dependencies]
+synth-contracts.workspace = true
+synth-sdr.workspace = true
+
+serde.workspace = true
+serde_json.workspace = true
+# Prompt headers: the same parser and strictness as config/ (infra::config).
+serde-saphyr.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["macros", "time"] }
+tracing.workspace = true
+
+[dev-dependencies]
+synth-testkit.workspace = true
+
+async-trait.workspace = true
+proptest.workspace = true
+# Temporary prompt directories for the loader tests.
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "test-util", "time"] }
+
+[lints]
+workspace = true

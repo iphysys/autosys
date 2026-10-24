@@ -1,0 +1,116 @@
+{
+  "context_hash": "sha256:b50c0424d63102bcf17968711004e4affaefb91b62fdde6cfd1c2068c34f3c69",
+  "total_tokens": 3895,
+  "manifest": {
+    "profile": "default",
+    "sdr_version": 1,
+    "last_event_seq": 31,
+    "prompts": [
+      {
+        "id": "system.base",
+        "sha256": "sha256:b4f1521e44dc59b15bbda3b93442cd46cd5f0cc0d5b2246209cde7f6df3068cc",
+        "version": "0.1.0"
+      },
+      {
+        "id": "orchestrator.main",
+        "sha256": "sha256:c191808f2ff02aa2c47de53276addd4ed4f0121a2df259ece2f0aa2a08d1e243",
+        "version": "0.1.0"
+      }
+    ],
+    "reserved_tokens": 0,
+    "total_tokens": 3895,
+    "sections": [
+      {
+        "name": "instructions",
+        "trust": "instructions",
+        "tokens": 1276,
+        "cap": 2200,
+        "items": [
+          "prompt:system.base@0.1.0",
+          "prompt:orchestrator.main@0.1.0"
+        ]
+      },
+      {
+        "name": "task_contract",
+        "trust": "data",
+        "tokens": 147,
+        "cap": 400,
+        "items": [
+          "task:task-1"
+        ]
+      },
+      {
+        "name": "job_state",
+        "trust": "data",
+        "tokens": 86,
+        "cap": 200,
+        "items": [
+          "job:job-1"
+        ]
+      },
+      {
+        "name": "design_state",
+        "trust": "data",
+        "tokens": 140,
+        "cap": 400,
+        "items": [
+          "sdr:R-001@v1",
+          "sdr:part.mass@v1"
+        ]
+      },
+      {
+        "name": "run_history",
+        "trust": "data",
+        "tokens": 386,
+        "cap": 400,
+        "items": [
+          "event:22",
+          "event:23",
+          "event:24",
+          "event:25",
+          "event:26",
+          "event:27",
+          "event:28",
+          "event:29",
+          "event:30",
+          "event:31"
+        ],
+        "omitted": {
+          "items": 21,
+          "first_seq": 1,
+          "last_seq": 21
+        }
+      },
+      {
+        "name": "untrusted_content",
+        "trust": "untrusted",
+        "tokens": 352,
+        "cap": 500,
+        "items": [
+          "event:25/error.message",
+          "event:26/error.message",
+          "event:27/error.message",
+          "event:28/error.message",
+          "event:29/error.message",
+          "event:30/error.message",
+          "event:31/error.message"
+        ],
+        "omitted": {
+          "items": 23,
+          "first_seq": 2,
+          "last_seq": 24
+        }
+      },
+      {
+        "name": "open_turn",
+        "trust": "untrusted",
+        "tokens": 1508,
+        "cap": 700,
+        "items": [
+          "model:message0",
+          "tool:measure@call-1"
+        ]
+      }
+    ]
+  }
+}

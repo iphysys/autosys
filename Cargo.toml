@@ -2,6 +2,7 @@
 resolver = "3"
 # Crates are added when their component is first built (blueprint §10.1, §24).
 members = [
+    "crates/context",
     "crates/contracts",
     "crates/evaluation",
     "crates/governance",
@@ -21,6 +22,7 @@ license = "MIT"
 publish = false
 
 [workspace.dependencies]
+synth-context = { path = "crates/context" }
 synth-contracts = { path = "crates/contracts" }
 synth-governance = { path = "crates/governance" }
 synth-infra = { path = "crates/infra" }
