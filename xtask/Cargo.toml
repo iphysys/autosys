@@ -14,6 +14,8 @@ synth-contracts.workspace = true
 synth-infra = { workspace = true, default-features = false }
 # Model routing checks beyond the schema: the gateway's own (ADR-0027).
 synth-model-gateway.workspace = true
+# Agent spec checks: the runtime's own agent registry (ADR-0030).
+synth-runtime.workspace = true
 
 anyhow.workspace = true
 serde_json.workspace = true
