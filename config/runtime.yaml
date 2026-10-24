@@ -1,0 +1,11 @@
+# Settings of the query loop in crates/runtime (blueprint section 13.1,
+# ADR-0030). Schema: schemas/config/runtime.schema.json
+#
+# Budgets are not here: each task carries its own, within its agent's limits
+# in config/agents/.
+schema_version: "0.1"
+# Every read or write the loop itself makes (the SDR, the event log, and the
+# checks and gates of a proposal) fails with a timeout after this long. Tool
+# calls use their overlay's timeout_seconds, model calls their profile's
+# request_timeout_seconds.
+io_timeout_seconds: 10

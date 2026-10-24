@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use contracts::types::{
     AgentSpec, AutonomyPolicy, ContextBudgets, ContextPolicy, GatesPolicy, ModelRouting,
-    SCHEMA_FILES, ToolOverlay,
+    RuntimeSettings, SCHEMA_FILES, ToolOverlay,
 };
 use contracts::{Error, ErrorCode, SchemaSet};
 use serde::de::DeserializeOwned;
@@ -54,6 +54,10 @@ impl ConfigFile for ModelRouting {
     const SCHEMA: &'static str = "config/model-routing.schema.json";
 }
 
+impl ConfigFile for RuntimeSettings {
+    const SCHEMA: &'static str = "config/runtime.schema.json";
+}
+
 /// Validates and loads configuration files.
 pub struct ConfigLoader {
     schemas: SchemaSet,
@@ -70,6 +74,7 @@ impl ConfigLoader {
                 ToolOverlay::SCHEMA,
                 AgentSpec::SCHEMA,
                 ModelRouting::SCHEMA,
+                RuntimeSettings::SCHEMA,
             ])?,
         })
     }
@@ -119,6 +124,7 @@ impl ConfigLoader {
                 "policies/context.yaml" => self.load::<ContextPolicy>(&path).map(|_| ()),
                 "policies/gates.yaml" => self.load::<GatesPolicy>(&path).map(|_| ()),
                 "models/routing.yaml" => self.load::<ModelRouting>(&path).map(|_| ()),
+                "runtime.yaml" => self.load::<RuntimeSettings>(&path).map(|_| ()),
                 _ if in_dir(&relative, "tools") => self
                     .load::<ToolOverlay>(&path)
                     .and_then(|overlay| overlay_schemas_exist(&overlay, &path)),
