@@ -218,6 +218,19 @@ What each model call sees, assembled rather than accumulated.
 
 **Done when:** golden tests pin the assembled context for fixed inputs, the same inputs give the same hash, and an over-budget run rebuilds within budget without losing SDR facts.
 
+Settled while building, and recorded in [ADR-0029](../adr/0029-context-assembly-v0.md):
+- Sizes are estimated (`ceil(bytes / bytes_per_token)`, no tokenizer). Budgets are named profiles in `config/context.yaml` under a ceiling in `config/policies/context.yaml`.
+- `context_assembled` gains `sdr_version` and `last_event_seq`, and `ErrorCode` gains `context_overflow`.
+- The builder appends `context_assembled` itself; PR 11 must not.
+- `config/agents/main_orchestrator.yaml` (PR 11) names `prompt: orchestrator/main.md`.
+
+Follow-ups, not in this PR:
+- Model-gateway adapters map a provider's "prompt too long" to `context_overflow`.
+- A `context_window` per model in the routing schema, and a limit of `min(ceiling, window − max output − headroom)`.
+- Blueprint §9.1 (profiles may change within the ceiling) and §24 edits.
+- An optional `context_profile` in agent specs once a second agent exists.
+- `validate-config` checks that each agent's `prompt` names a loaded prompt, once `config/agents/` exists.
+
 ### PR 11 — Query loop and orchestrator
 
 One orchestrator that plans, calls tools and proposes design changes, with gates deciding what sticks.
