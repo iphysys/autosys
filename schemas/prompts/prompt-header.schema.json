@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PromptHeader",
+  "description": "The YAML header at the top of every prompt file in prompts/ (blueprint section 12, ADR-0029). It names the prompt, says what it is for and which context sections it expects, and records who owns it and where it came from. A header never grants permissions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "version", "purpose", "inputs", "owner", "origin"],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "id": {
+      "description": "Unique across prompts/, for example system.base. Recorded with the prompt's hash in run provenance.",
+      "$ref": "../common/types.schema.json#/$defs/Identifier"
+    },
+    "version": { "$ref": "../common/types.schema.json#/$defs/SemVer" },
+    "purpose": {
+      "description": "One clear purpose (blueprint section 12).",
+      "$ref": "../common/types.schema.json#/$defs/NonEmptyString"
+    },
+    "inputs": {
+      "description": "The context sections this prompt expects the model to be given. A name that is not a section is rejected.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "../common/types.schema.json#/$defs/ContextSectionName" }
+    },
+    "output_schema": {
+      "description": "The schema the model's output must satisfy, when the prompt asks for structured output.",
+      "$ref": "../common/types.schema.json#/$defs/SchemaPath"
+    },
+    "owner": { "$ref": "../common/types.schema.json#/$defs/Identifier" },
+    "origin": {
+      "description": "Who wrote this version: a person, or the improvement loop (blueprint section 9).",
+      "type": "string",
+      "enum": ["human", "improvement-loop"]
+    }
+  }
+}

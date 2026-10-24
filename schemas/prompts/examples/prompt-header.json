@@ -1,0 +1,10 @@
+{
+  "schema_version": "0.1",
+  "id": "orchestrator.main",
+  "version": "0.1.0",
+  "purpose": "Plan the design work, choose tools and propose design changes.",
+  "inputs": ["task_contract", "job_state", "design_state", "run_history", "untrusted_content"],
+  "output_schema": "results/result.schema.json",
+  "owner": "harness",
+  "origin": "human"
+}

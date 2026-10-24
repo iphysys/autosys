@@ -43,6 +43,14 @@ const ROOT_TYPES: &[(&str, RoundTrip)] = &[
         round_trip::<schema_types::AutonomyPolicy>,
     ),
     (
+        "config/context-budgets.schema.json",
+        round_trip::<schema_types::ContextBudgets>,
+    ),
+    (
+        "config/context-policy.schema.json",
+        round_trip::<schema_types::ContextPolicy>,
+    ),
+    (
         "config/gates-policy.schema.json",
         round_trip::<schema_types::GatesPolicy>,
     ),
@@ -70,6 +78,10 @@ const ROOT_TYPES: &[(&str, RoundTrip)] = &[
     (
         "jobs/step-record.schema.json",
         round_trip::<schema_types::StepRecord>,
+    ),
+    (
+        "prompts/prompt-header.schema.json",
+        round_trip::<schema_types::PromptHeader>,
     ),
     (
         "reports/run-report.schema.json",

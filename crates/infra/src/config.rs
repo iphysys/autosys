@@ -12,7 +12,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use contracts::types::{
-    AgentSpec, AutonomyPolicy, GatesPolicy, ModelRouting, SCHEMA_FILES, ToolOverlay,
+    AgentSpec, AutonomyPolicy, ContextBudgets, ContextPolicy, GatesPolicy, ModelRouting,
+    SCHEMA_FILES, ToolOverlay,
 };
 use contracts::{Error, ErrorCode, SchemaSet};
 use serde::de::DeserializeOwned;
@@ -27,6 +28,14 @@ pub trait ConfigFile: DeserializeOwned {
 
 impl ConfigFile for AutonomyPolicy {
     const SCHEMA: &'static str = "config/autonomy-policy.schema.json";
+}
+
+impl ConfigFile for ContextBudgets {
+    const SCHEMA: &'static str = "config/context-budgets.schema.json";
+}
+
+impl ConfigFile for ContextPolicy {
+    const SCHEMA: &'static str = "config/context-policy.schema.json";
 }
 
 impl ConfigFile for GatesPolicy {
@@ -55,6 +64,8 @@ impl ConfigLoader {
         Ok(Self {
             schemas: SchemaSet::compile(&[
                 AutonomyPolicy::SCHEMA,
+                ContextBudgets::SCHEMA,
+                ContextPolicy::SCHEMA,
                 GatesPolicy::SCHEMA,
                 ToolOverlay::SCHEMA,
                 AgentSpec::SCHEMA,
@@ -103,7 +114,9 @@ impl ConfigLoader {
         for path in files {
             let relative = relative_path(config_dir, &path);
             let checked = match relative.as_str() {
+                "context.yaml" => self.load::<ContextBudgets>(&path).map(|_| ()),
                 "policies/autonomy.yaml" => self.load::<AutonomyPolicy>(&path).map(|_| ()),
+                "policies/context.yaml" => self.load::<ContextPolicy>(&path).map(|_| ()),
                 "policies/gates.yaml" => self.load::<GatesPolicy>(&path).map(|_| ()),
                 "models/routing.yaml" => self.load::<ModelRouting>(&path).map(|_| ()),
                 _ if in_dir(&relative, "tools") => self

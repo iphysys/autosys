@@ -7,7 +7,9 @@ use std::fs;
 use std::path::PathBuf;
 
 use contracts::ErrorCode;
-use contracts::types::{ApprovalTrigger, AutonomyPolicy, GatesPolicy, ToolOverlay};
+use contracts::types::{
+    ApprovalTrigger, AutonomyPolicy, ContextBudgets, ContextPolicy, GatesPolicy, ToolOverlay,
+};
 use infra::config::ConfigLoader;
 
 fn config_dir() -> PathBuf {
@@ -57,6 +59,69 @@ fn the_gates_policy_requires_the_three_checks() {
         .map(|c| c.as_str())
         .collect();
     assert_eq!(checks, ["schema", "units", "requirement.numeric_threshold"]);
+}
+
+#[test]
+fn the_default_context_profile_total_equals_the_ceiling() {
+    let budgets: ContextBudgets = loader()
+        .load(&config_dir().join("context.yaml"))
+        .expect("context profiles");
+    let policy: ContextPolicy = loader()
+        .load(&config_dir().join("policies/context.yaml"))
+        .expect("context policy");
+    let default = budgets
+        .profiles
+        .iter()
+        .find(|p| p.name.as_str() == "default")
+        .expect("a profile named default");
+    // ADR-0029: the ceiling starts at the default profile's total. Whether
+    // every profile fits it is checked by `cargo xtask validate-config`.
+    assert_eq!(default.total_tokens, policy.max_total_tokens);
+}
+
+const CONTEXT_PROFILE: &str = r#"
+schema_version: "0.1"
+profiles:
+  - name: default
+    total_tokens: 24000
+    bytes_per_token: 3
+    history_window_events: 200
+    io_timeout_seconds: 10
+    sections:
+      instructions: 3000
+      task_contract: 1500
+      job_state: 500
+      design_state: 8000
+      run_history: 3000
+      untrusted_content: 6000
+      open_turn: 6000
+"#;
+
+#[test]
+fn a_context_profile_with_an_unknown_section_is_rejected() {
+    loader()
+        .parse::<ContextBudgets>(CONTEXT_PROFILE, "test.yaml")
+        .expect("the profile is valid as written");
+
+    let toolbox = CONTEXT_PROFILE.replace(
+        "      open_turn: 6000\n",
+        "      open_turn: 6000\n      toolbox: 2000\n",
+    );
+    let message = rejected::<ContextBudgets>(&toolbox);
+    assert!(message.starts_with("test.yaml: "), "{message}");
+    assert!(message.contains("toolbox"), "{message}");
+
+    let missing = CONTEXT_PROFILE.replace("      job_state: 500\n", "");
+    assert!(rejected::<ContextBudgets>(&missing).contains("job_state"));
+
+    let zero = CONTEXT_PROFILE.replace("bytes_per_token: 3", "bytes_per_token: 0");
+    assert!(rejected::<ContextBudgets>(&zero).contains("/profiles/0/bytes_per_token"));
+}
+
+#[test]
+fn a_context_policy_without_a_ceiling_is_rejected() {
+    let message = rejected::<ContextPolicy>("schema_version: \"0.1\"\n");
+    assert!(message.contains("max_total_tokens"), "{message}");
 }
 
 const OVERLAY: &str = r#"

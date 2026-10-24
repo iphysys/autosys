@@ -22,12 +22,16 @@ pub enum ErrorCode {
     Unavailable,
     /// The tool ran and reported a failure. Never turned into success.
     ToolFailed,
+    /// A model call's context does not fit its budget, or the provider
+    /// refused the prompt as too long. Repeating the same request cannot help:
+    /// the work has to shrink or the budget change (ADR-0029).
+    ContextOverflow,
     /// A bug or broken invariant.
     Internal,
 }
 
 impl ErrorCode {
-    pub const ALL: [ErrorCode; 9] = [
+    pub const ALL: [ErrorCode; 10] = [
         ErrorCode::InvalidInput,
         ErrorCode::NotFound,
         ErrorCode::Conflict,
@@ -36,6 +40,7 @@ impl ErrorCode {
         ErrorCode::Cancelled,
         ErrorCode::Unavailable,
         ErrorCode::ToolFailed,
+        ErrorCode::ContextOverflow,
         ErrorCode::Internal,
     ];
 
@@ -49,6 +54,7 @@ impl ErrorCode {
             ErrorCode::Cancelled => "cancelled",
             ErrorCode::Unavailable => "unavailable",
             ErrorCode::ToolFailed => "tool_failed",
+            ErrorCode::ContextOverflow => "context_overflow",
             ErrorCode::Internal => "internal",
         }
     }
@@ -166,6 +172,24 @@ mod tests {
             .filter(|c| c.is_retryable())
             .collect();
         assert_eq!(retryable, [ErrorCode::Timeout, ErrorCode::Unavailable]);
+    }
+
+    #[test]
+    fn context_overflow_has_a_stable_string_and_is_not_retryable() {
+        assert_eq!(ErrorCode::ContextOverflow.as_str(), "context_overflow");
+        assert!(!ErrorCode::ContextOverflow.is_retryable());
+        let info =
+            Error::new(ErrorCode::ContextOverflow, "design_state needs 9000 tokens").to_info();
+        assert_eq!(info.code.as_str(), "context_overflow");
+        assert!(!info.retryable);
+    }
+
+    #[test]
+    fn code_strings_are_unique() {
+        let mut strings: Vec<&str> = ErrorCode::ALL.into_iter().map(ErrorCode::as_str).collect();
+        strings.sort_unstable();
+        strings.dedup();
+        assert_eq!(strings.len(), ErrorCode::ALL.len());
     }
 
     #[test]

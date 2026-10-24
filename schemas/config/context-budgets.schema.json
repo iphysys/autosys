@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ContextBudgets",
+  "description": "Context profiles in config/context.yaml (blueprint section 8, ADR-0029). A profile fixes how many tokens each section of a model call's context may use. A profile named default is required. cargo xtask validate-config checks each profile against the ceiling in config/policies/context.yaml: the fixed caps must fit within the total, and the total may not exceed the ceiling.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "profiles"],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "profiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/ContextProfile" }
+    }
+  },
+  "$defs": {
+    "ContextProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "total_tokens",
+        "bytes_per_token",
+        "history_window_events",
+        "io_timeout_seconds",
+        "sections"
+      ],
+      "properties": {
+        "name": { "$ref": "../common/types.schema.json#/$defs/Identifier" },
+        "total_tokens": {
+          "description": "Upper limit for the whole assembled context, tool definitions included. Estimated, not counted by a tokenizer.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "bytes_per_token": {
+          "description": "The estimate divides UTF-8 bytes by this, rounding up. Smaller is more cautious. Tune it from the context_assembled and model_call_completed events.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "history_window_events": {
+          "description": "How many of the run's latest events are considered for the run history.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "io_timeout_seconds": {
+          "description": "Timeout for each read of the SDR or the event log, and for the append of context_assembled.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "sections": { "$ref": "#/$defs/ContextSectionBudgets" }
+      }
+    },
+    "ContextSectionBudgets": {
+      "description": "The most tokens each section may use. instructions, task_contract, job_state, design_state and open_turn are fixed: one that does not fit fails the build and is never cut. run_history and untrusted_content are trimmed, oldest first. These are limits, not reservations: the trimmable sections also give way when the fixed ones leave less room.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "instructions",
+        "task_contract",
+        "job_state",
+        "design_state",
+        "run_history",
+        "untrusted_content",
+        "open_turn"
+      ],
+      "properties": {
+        "instructions": { "type": "integer", "minimum": 1 },
+        "task_contract": { "type": "integer", "minimum": 1 },
+        "job_state": { "type": "integer", "minimum": 1 },
+        "design_state": { "type": "integer", "minimum": 1 },
+        "run_history": { "type": "integer", "minimum": 1 },
+        "untrusted_content": { "type": "integer", "minimum": 1 },
+        "open_turn": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

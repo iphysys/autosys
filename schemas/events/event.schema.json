@@ -53,13 +53,24 @@
           }
         },
         {
+          "description": "A model call's context was assembled (blueprint section 8, ADR-0029). The hash covers what the model sees. sdr_version and last_event_seq are the snapshot it was built from, so the same context can be rebuilt.",
           "type": "object",
           "additionalProperties": false,
-          "required": ["type", "context_hash", "total_tokens"],
+          "required": ["type", "context_hash", "total_tokens", "sdr_version", "last_event_seq"],
           "properties": {
             "type": { "const": "context_assembled" },
             "context_hash": { "$ref": "../common/types.schema.json#/$defs/Sha256" },
-            "total_tokens": { "type": "integer", "minimum": 0 }
+            "total_tokens": {
+              "description": "The estimated size of the context, tool definitions included.",
+              "type": "integer",
+              "minimum": 0
+            },
+            "sdr_version": { "$ref": "../common/types.schema.json#/$defs/SdrVersion" },
+            "last_event_seq": {
+              "description": "The last event of the run that the assembly could see; 0 before the first.",
+              "type": "integer",
+              "minimum": 0
+            }
           }
         },
         {
