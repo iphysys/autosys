@@ -2,6 +2,11 @@
 //! replay server, and a fake provider so tests of the gateway itself depend
 //! on no real provider.
 
+#![allow(
+    dead_code,
+    reason = "shared by the providers' tests; which helpers are used depends on which providers are registered"
+)]
+
 pub(crate) mod replay;
 
 use std::collections::HashMap;

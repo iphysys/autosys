@@ -106,14 +106,16 @@ pub(crate) fn header_pairs(headers: Option<&ModelHeaders>) -> Vec<(String, Strin
 }
 
 /// Reads a profile's environment variables, collecting every missing one so
-/// a single error names them all.
-pub(crate) struct EnvReader<'a> {
+/// a single error names them all. Public, like [`CaBundle`], as part of the
+/// toolkit provider modules build on, so it does not depend on which
+/// providers use which method.
+pub struct EnvReader<'a> {
     env: &'a dyn Env,
     missing: Vec<String>,
 }
 
 impl<'a> EnvReader<'a> {
-    pub(crate) fn new(env: &'a dyn Env) -> Self {
+    pub fn new(env: &'a dyn Env) -> Self {
         Self {
             env,
             missing: Vec::new(),
@@ -121,7 +123,7 @@ impl<'a> EnvReader<'a> {
     }
 
     /// The variable's value; recorded as missing when unset or blank.
-    pub(crate) fn required(&mut self, var: &EnvVarName) -> Option<String> {
+    pub fn required(&mut self, var: &EnvVarName) -> Option<String> {
         let value = self.env.var(var.as_str());
         if value.is_none() {
             self.missing.push(var.as_str().to_owned());
@@ -129,12 +131,13 @@ impl<'a> EnvReader<'a> {
         value
     }
 
-    pub(crate) fn optional(&self, var: Option<&EnvVarName>) -> Option<String> {
+    /// The variable's value, if it is named and set.
+    pub fn optional(&self, var: Option<&EnvVarName>) -> Option<String> {
         var.and_then(|v| self.env.var(v.as_str()))
     }
 
     /// The CA bundle the variable names, if the variable is set.
-    pub(crate) fn ca_bundle(&self, var: Option<&EnvVarName>) -> Option<CaBundle> {
+    pub fn ca_bundle(&self, var: Option<&EnvVarName>) -> Option<CaBundle> {
         var.and_then(|var| {
             self.env.var(var.as_str()).map(|path| CaBundle {
                 var: var.as_str().to_owned(),
@@ -144,7 +147,7 @@ impl<'a> EnvReader<'a> {
     }
 
     /// `Err` naming every missing variable, if any.
-    pub(crate) fn finish(self) -> Result<(), Error> {
+    pub fn finish(self) -> Result<(), Error> {
         if self.missing.is_empty() {
             return Ok(());
         }
