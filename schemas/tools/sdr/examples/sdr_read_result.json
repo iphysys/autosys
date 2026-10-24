@@ -1,0 +1,32 @@
+{
+  "document": {
+    "schema_version": "0.1",
+    "project_id": "example-project",
+    "version": 2,
+    "parent_version": 1,
+    "requirements": [
+      {
+        "id": "req-mass",
+        "text": "The part mass shall not exceed 0.25 kg.",
+        "priority": "must",
+        "numeric": {
+          "parameter_id": "part.mass",
+          "criterion": { "comparator": "le", "limit": { "value": 0.25, "unit": "kg" } }
+        },
+        "evidence_ids": []
+      }
+    ],
+    "design": {
+      "parameters": [
+        {
+          "id": "part.mass",
+          "value": { "value": 0.212, "unit": "kg" },
+          "source": { "kind": "tool_result", "evidence_id": "ev-tool-measure-1" },
+          "evidence_ids": ["ev-tool-measure-1"]
+        }
+      ],
+      "decisions": [],
+      "assumptions": []
+    }
+  }
+}

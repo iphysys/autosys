@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SdrProposeRequest",
+  "description": "Proposes one change to the committed design. Checks run on the design the change would produce, and gates decide whether it commits; until it commits, nothing has changed. The harness records you as its author and bases it on the design version you were shown. A value that a tool measured names that tool result's evidence id as its source.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["reason", "final", "operations"],
+  "properties": {
+    "reason": {
+      "description": "Why the design changes this way.",
+      "$ref": "../../common/types.schema.json#/$defs/NonEmptyString"
+    },
+    "final": {
+      "description": "True only for the design you intend to stop on. The task can succeed only when a final change commits and every requirement it must satisfy has passing checks on that change. A final change may need a human's approval before it commits. A final change that commits without every check passing does not end the task.",
+      "type": "boolean"
+    },
+    "operations": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "../../sdr/transition.schema.json#/$defs/Operation" }
+    }
+  }
+}

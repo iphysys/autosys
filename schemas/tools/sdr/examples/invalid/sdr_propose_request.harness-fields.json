@@ -1,0 +1,8 @@
+{
+  "id": "tr-chosen-by-the-model",
+  "base_version": 7,
+  "actor": { "kind": "user", "user_id": "someone-else" },
+  "reason": "Sets fields only the harness may set.",
+  "final": false,
+  "operations": [{ "op": "link_evidence", "element_id": "req-mass", "evidence_id": "ev-1" }]
+}

@@ -1,0 +1,23 @@
+{
+  "transition_id": "tr-4f0c2a1e9b7d6c5a4f0c2a1e9b7d6c5a",
+  "outcome": "committed",
+  "base_version": 1,
+  "new_version": 2,
+  "reasons": [],
+  "checks": [
+    {
+      "evidence_id": "ev-0a1b2c3d4e5f60718293a4b5c6d7e8f9",
+      "check_id": "schema",
+      "verdict": "pass",
+      "subject_ids": [],
+      "message": "satisfies sdr/system.schema.json"
+    },
+    {
+      "evidence_id": "ev-1a1b2c3d4e5f60718293a4b5c6d7e8f9",
+      "check_id": "requirement.numeric_threshold",
+      "verdict": "pass",
+      "subject_ids": ["req-mass", "part.mass"],
+      "message": "req-mass: part.mass = 0.212 kg <= 0.25 kg"
+    }
+  ]
+}
