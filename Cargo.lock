@@ -2356,14 +2356,22 @@ dependencies = [
 name = "synth-runtime"
 version = "0.1.0"
 dependencies = [
+ "jsonschema",
  "serde",
  "serde-saphyr",
  "serde_json",
  "sha2 0.11.0",
  "synth-context",
  "synth-contracts",
+ "synth-evaluation",
+ "synth-governance",
+ "synth-model-gateway",
+ "synth-sdr",
  "synth-testkit",
+ "synth-tools",
  "thiserror",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

@@ -13,17 +13,27 @@ name = "runtime"
 [dependencies]
 synth-context.workspace = true
 synth-contracts.workspace = true
+synth-evaluation.workspace = true
+synth-governance.workspace = true
+synth-model-gateway.workspace = true
+synth-sdr.workspace = true
+synth-tools.workspace = true
 
+serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
+tokio = { workspace = true, features = ["macros", "sync", "time"] }
+tracing.workspace = true
 
 [dev-dependencies]
 synth-testkit.workspace = true
 
-serde.workspace = true
+# Checks that a bundled tool definition compiles on its own.
+jsonschema.workspace = true
 # Reads the committed config/ in tests, as crates/context does.
 serde-saphyr.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "test-util", "time"] }
 
 [lints]
 workspace = true

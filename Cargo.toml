@@ -25,6 +25,7 @@ publish = false
 [workspace.dependencies]
 synth-context = { path = "crates/context" }
 synth-contracts = { path = "crates/contracts" }
+synth-evaluation = { path = "crates/evaluation" }
 synth-governance = { path = "crates/governance" }
 synth-infra = { path = "crates/infra" }
 synth-model-gateway = { path = "crates/model-gateway" }

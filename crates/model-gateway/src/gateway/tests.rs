@@ -92,6 +92,18 @@ fn an_agent_without_tools_may_use_a_profile_without_tool_calling() {
 }
 
 #[test]
+fn the_routing_is_readable_after_start() {
+    let gateway = ModelGateway::start(routing(), &[agent("writer", None, &[])], &env(&key()))
+        .expect("starts");
+    let profile = gateway
+        .routing()
+        .profile(gateway.default_profile().as_str())
+        .expect("the default profile");
+    assert_eq!(profile.name.as_str(), "main");
+    assert_eq!(profile.max_output_tokens.get(), 1000);
+}
+
+#[test]
 fn agents_without_a_profile_get_the_default_and_others_keep_theirs() {
     let gateway = ModelGateway::start(
         routing(),

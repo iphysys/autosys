@@ -1,10 +1,52 @@
-//! What a task may ask of its agent (blueprint sections 2.6 and 14.3). The
-//! agent spec is the ceiling; a task can narrow it, never widen it.
+//! What a task may ask of its agent (blueprint sections 2.6 and 14.3), and
+//! which model the agent runs on. The agent spec is the ceiling; a task can
+//! narrow it, never widen it.
 
+use contracts::ids::Identifier;
 use contracts::types::{Budget, Task};
+use model_gateway::ModelGateway;
 
 use crate::agents::registry::{AgentDefinition, AgentRegistry, TASK_SCHEMA};
 use crate::error::RuntimeError;
+
+/// The model profile an agent runs on, and the most output a call with it
+/// may ask for.
+#[allow(dead_code, reason = "called by the query loop, added next")]
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ModelChoice {
+    pub(crate) profile: Identifier,
+    pub(crate) max_output_tokens: u64,
+}
+
+#[allow(dead_code, reason = "called by the query loop, added next")]
+impl AgentDefinition {
+    /// The profile the model gateway resolved for this agent at startup,
+    /// where a profile without tool calling was already refused for an agent
+    /// with tools (ADR-0027).
+    pub(crate) fn model(&self, models: &ModelGateway) -> Result<ModelChoice, RuntimeError> {
+        let profile = models
+            .agent_profile(&self.spec().id)
+            .map_err(|source| RuntimeError::Component {
+                operation: "resolving the agent's model profile",
+                source,
+            })?
+            .clone();
+        let max_output_tokens = models
+            .routing()
+            .profile(profile.as_str())
+            .map(|p| p.max_output_tokens.get())
+            .ok_or_else(|| {
+                RuntimeError::Internal(format!(
+                    "model profile `{}` was resolved but is not in the routing",
+                    profile.as_str()
+                ))
+            })?;
+        Ok(ModelChoice {
+            profile,
+            max_output_tokens,
+        })
+    }
+}
 
 impl AgentRegistry {
     /// The agent `task` names, once the task has passed every check:
