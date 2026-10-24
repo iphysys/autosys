@@ -1,5 +1,6 @@
 //! Profile resolution at startup, and model calls with token and cost
-//! accounting.
+//! accounting. Nothing here names a provider: adapters are built by the
+//! provider each profile names (ADR-0028).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -9,16 +10,10 @@ use contracts::ids::{AgentId, Identifier};
 use contracts::types::{AgentSpec, ModelProfile};
 use contracts::{Error, ErrorCode, ExecutionContext, ModelRequest, ModelResponse};
 
-use crate::env::{Env, Secret};
+use crate::env::Env;
 use crate::pricing::cost_usd;
-use crate::providers::{
-    AnthropicProvider, AnthropicSettings, CaBundle, ModelUsage, OpenAiCompatibleProvider,
-    OpenAiCompatibleSettings, ProviderAdapter,
-};
-use crate::routing::{
-    Routing, header_pairs, profile_max_output_tokens, profile_model, profile_name, profile_retry,
-    profile_timeout,
-};
+use crate::providers::{ModelUsage, ProviderAdapter};
+use crate::routing::Routing;
 
 /// One completed model call.
 #[derive(Clone, Debug)]
@@ -57,7 +52,7 @@ impl ModelGateway {
             let Some(profile) = routing.profile(name) else {
                 continue;
             };
-            match build_provider(profile, env) {
+            match build_provider(&routing, profile, env) {
                 Ok(provider) => {
                     providers.insert(name.clone(), provider);
                 }
@@ -161,7 +156,7 @@ impl ModelGateway {
                 ),
             ));
         };
-        let limit = profile_max_output_tokens(config);
+        let limit = config.max_output_tokens.get();
         if u64::from(request.max_output_tokens) > limit {
             return Err(Error::new(
                 ErrorCode::InvalidInput,
@@ -172,7 +167,7 @@ impl ModelGateway {
                 ),
             ));
         }
-        profile_model(config).clone_into(&mut request.model_id);
+        config.model.as_str().clone_into(&mut request.model_id);
 
         let started = Instant::now();
         let result = provider.call(&request, ctx).await;
@@ -218,6 +213,9 @@ impl ModelGateway {
     }
 }
 
+#[cfg(test)]
+mod tests;
+
 /// Which profile everything uses.
 struct Plan {
     default_profile: Identifier,
@@ -228,14 +226,14 @@ struct Plan {
 impl Plan {
     fn resolve(routing: &Routing, agents: &[AgentSpec], env: &dyn Env) -> Result<Self, Error> {
         let default = routing.resolve_default(env)?;
-        let default_profile = profile_name(default).clone();
+        let default_profile = default.name.clone();
         let mut in_use = BTreeSet::from([default_profile.as_str().to_owned()]);
         let mut agent_profiles = BTreeMap::new();
         let mut problems = Vec::new();
         for agent in agents {
             match routing.profile_for_agent(agent, default) {
                 Ok(profile) => {
-                    let name = profile_name(profile);
+                    let name = &profile.name;
                     in_use.insert(name.as_str().to_owned());
                     agent_profiles.insert(agent.id.as_str().to_owned(), name.clone());
                 }
@@ -256,94 +254,22 @@ impl Plan {
     }
 }
 
-/// The adapter for `profile`, with its credentials and endpoint read from
-/// the environment. The error lists every missing variable.
+/// The adapter for `profile`, built by its registered provider, which reads
+/// the profile's environment variables.
 fn build_provider(
+    routing: &Routing,
     profile: &ModelProfile,
     env: &dyn Env,
 ) -> Result<Arc<dyn ProviderAdapter>, Error> {
-    let name = profile_name(profile).as_str();
-    let mut missing = Vec::new();
-    let mut required = |var: &str| {
-        let value = env.var(var);
-        if value.is_none() {
-            missing.push(var.to_owned());
-        }
-        value
-    };
-    let ca_bundle = |var: Option<&contracts::types::EnvVarName>| {
-        var.and_then(|var| {
-            env.var(var.as_str()).map(|path| CaBundle {
-                var: var.as_str().to_owned(),
-                path,
-            })
+    routing
+        .registry()
+        .factory(profile.provider.as_str())
+        .and_then(|factory| factory.build(profile, env))
+        .map_err(|e| {
+            Error::new(
+                e.code(),
+                format!("model profile `{}`: {}", profile.name.as_str(), e.message()),
+            )
+            .with_source(e)
         })
-    };
-    let provider: Result<Arc<dyn ProviderAdapter>, Error> = match profile {
-        ModelProfile::Anthropic {
-            api_key_env,
-            base_url,
-            workspace_id_env,
-            ca_bundle_env,
-            effort,
-            refusal_fallback,
-            ..
-        } => {
-            let Some(api_key) = required(api_key_env.as_str()) else {
-                return Err(missing_vars(name, &missing));
-            };
-            AnthropicProvider::new(AnthropicSettings {
-                base_url: base_url.as_str().to_owned(),
-                api_key: Secret::new(api_key),
-                workspace_id: workspace_id_env.as_ref().and_then(|v| env.var(v.as_str())),
-                effort: *effort,
-                refusal_fallback: refusal_fallback.is_some(),
-                headers: header_pairs(profile),
-                timeout: profile_timeout(profile),
-                retry: profile_retry(profile).clone(),
-                ca_bundle: ca_bundle(ca_bundle_env.as_ref()),
-            })
-            .map(|p| Arc::new(p) as Arc<dyn ProviderAdapter>)
-        }
-        ModelProfile::OpenaiCompatible {
-            api_key_env,
-            base_url_env,
-            ca_bundle_env,
-            ..
-        } => {
-            let api_key = required(api_key_env.as_str());
-            let base_url = required(base_url_env.as_str());
-            let (Some(api_key), Some(base_url)) = (api_key, base_url) else {
-                return Err(missing_vars(name, &missing));
-            };
-            OpenAiCompatibleProvider::new(OpenAiCompatibleSettings {
-                base_url,
-                base_url_origin: base_url_env.as_str().to_owned(),
-                api_key: Secret::new(api_key),
-                headers: header_pairs(profile),
-                timeout: profile_timeout(profile),
-                retry: profile_retry(profile).clone(),
-                ca_bundle: ca_bundle(ca_bundle_env.as_ref()),
-            })
-            .map(|p| Arc::new(p) as Arc<dyn ProviderAdapter>)
-        }
-    };
-    provider.map_err(|e| {
-        Error::new(e.code(), format!("model profile `{name}`: {}", e.message())).with_source(e)
-    })
-}
-
-fn missing_vars(profile: &str, vars: &[String]) -> Error {
-    let (noun, verb) = if vars.len() == 1 {
-        ("variable", "is")
-    } else {
-        ("variables", "are")
-    };
-    Error::new(
-        ErrorCode::InvalidInput,
-        format!(
-            "model profile `{profile}`: environment {noun} {} {verb} not set",
-            vars.join(", ")
-        ),
-    )
 }

@@ -1,25 +1,170 @@
-//! Provider adapters (blueprint section 14.4). Each turns the neutral
-//! `contracts::model` types into one provider's wire format and back; its
-//! wire types stay private to its module.
+//! Provider adapters (blueprint section 14.4, ADR-0028). Each provider is one
+//! module: its adapter, which turns the neutral `contracts::model` types into
+//! its wire format and back, its [`ProviderFactory`], its tests and its
+//! recordings. Its settings schema is
+//! `schemas/config/model-providers/<provider>.schema.json`.
+//!
+//! This file holds what every provider shares, and [`default_registry`], the
+//! one list of registered providers. Removing a provider is: delete its
+//! module and its settings schema, and remove its two lines here and its line
+//! in `crates/schema-types/tests/schemas.rs`.
 
-mod anthropic;
-mod openai_compatible;
+pub mod anthropic;
+pub mod openai_compatible;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use contracts::types::TokenUsage;
+use contracts::types::{EnvVarName, ModelHeaders, TokenUsage};
 use contracts::{Error, ErrorCode, ExecutionContext, ModelProvider, ModelRequest, ModelResponse};
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use reqwest::{StatusCode, Url};
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::env::Env;
+use crate::registry::{ProviderFactory, ProviderRegistry};
 use crate::retry::AttemptError;
 
 pub use crate::http::CaBundle;
-pub use anthropic::{ANTHROPIC_VERSION, AnthropicProvider, AnthropicSettings, FALLBACK_BETA};
-pub use openai_compatible::{OpenAiCompatibleProvider, OpenAiCompatibleSettings};
+
+/// The providers the harness ships with, in registration order.
+pub fn default_registry() -> Result<ProviderRegistry, Error> {
+    let factories: Vec<Arc<dyn ProviderFactory>> = vec![
+        Arc::new(anthropic::Factory),
+        Arc::new(openai_compatible::Factory),
+    ];
+    ProviderRegistry::new(factories)
+}
+
+/// Headers the gateway sets itself, or that carry credentials. A profile may
+/// not configure them: credentials come from environment variables only.
+const RESERVED_HEADERS: &[&str] = &[
+    "authorization",
+    "proxy-authorization",
+    "x-api-key",
+    "api-key",
+    "cookie",
+    "host",
+    "content-type",
+    "content-length",
+    "transfer-encoding",
+    "connection",
+];
+
+/// Problems with configured headers: invalid names or values, reserved
+/// names, and names starting with one of the provider's `reserved_prefixes`.
+pub(crate) fn header_problems(
+    headers: Option<&ModelHeaders>,
+    reserved_prefixes: &[&str],
+) -> Vec<String> {
+    let Some(headers) = headers else {
+        return Vec::new();
+    };
+    let mut sorted: Vec<_> = headers.iter().collect();
+    sorted.sort_by(|a, b| a.0.cmp(b.0));
+    let mut problems = Vec::new();
+    for (header, value) in sorted {
+        let lower = header.to_ascii_lowercase();
+        if HeaderName::from_bytes(header.as_bytes()).is_err() {
+            problems.push(format!("`{header}` is not a valid header name"));
+        } else if RESERVED_HEADERS.contains(&lower.as_str())
+            || reserved_prefixes.iter().any(|p| lower.starts_with(p))
+        {
+            problems.push(format!(
+                "header `{header}` is set by the gateway or carries credentials, and may not be configured"
+            ));
+        }
+        if HeaderValue::from_str(value.as_str()).is_err() {
+            problems.push(format!("header `{header}` has an invalid value"));
+        }
+    }
+    problems
+}
+
+/// `Ok` if `problems` is empty, else one `InvalidInput` error listing them.
+pub(crate) fn no_problems(problems: Vec<String>) -> Result<(), Error> {
+    if problems.is_empty() {
+        Ok(())
+    } else {
+        Err(Error::new(ErrorCode::InvalidInput, problems.join("; ")))
+    }
+}
+
+/// The configured headers as name and value pairs, sorted by name.
+pub(crate) fn header_pairs(headers: Option<&ModelHeaders>) -> Vec<(String, String)> {
+    let mut pairs: Vec<(String, String)> = headers
+        .map(|h| {
+            h.iter()
+                .map(|(k, v)| (k.clone(), v.as_str().to_owned()))
+                .collect()
+        })
+        .unwrap_or_default();
+    pairs.sort();
+    pairs
+}
+
+/// Reads a profile's environment variables, collecting every missing one so
+/// a single error names them all. Public, like [`CaBundle`], as part of the
+/// toolkit provider modules build on, so it does not depend on which
+/// providers use which method.
+pub struct EnvReader<'a> {
+    env: &'a dyn Env,
+    missing: Vec<String>,
+}
+
+impl<'a> EnvReader<'a> {
+    pub fn new(env: &'a dyn Env) -> Self {
+        Self {
+            env,
+            missing: Vec::new(),
+        }
+    }
+
+    /// The variable's value; recorded as missing when unset or blank.
+    pub fn required(&mut self, var: &EnvVarName) -> Option<String> {
+        let value = self.env.var(var.as_str());
+        if value.is_none() {
+            self.missing.push(var.as_str().to_owned());
+        }
+        value
+    }
+
+    /// The variable's value, if it is named and set.
+    pub fn optional(&self, var: Option<&EnvVarName>) -> Option<String> {
+        var.and_then(|v| self.env.var(v.as_str()))
+    }
+
+    /// The CA bundle the variable names, if the variable is set.
+    pub fn ca_bundle(&self, var: Option<&EnvVarName>) -> Option<CaBundle> {
+        var.and_then(|var| {
+            self.env.var(var.as_str()).map(|path| CaBundle {
+                var: var.as_str().to_owned(),
+                path,
+            })
+        })
+    }
+
+    /// `Err` naming every missing variable, if any.
+    pub fn finish(self) -> Result<(), Error> {
+        if self.missing.is_empty() {
+            return Ok(());
+        }
+        let (noun, verb) = if self.missing.len() == 1 {
+            ("variable", "is")
+        } else {
+            ("variables", "are")
+        };
+        Err(Error::new(
+            ErrorCode::InvalidInput,
+            format!(
+                "environment {noun} {} {verb} not set",
+                self.missing.join(", ")
+            ),
+        ))
+    }
+}
 
 /// The tokens one attempt used on one model.
 #[derive(Clone, Debug, PartialEq)]

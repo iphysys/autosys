@@ -1,12 +1,19 @@
 //! Claude through the Messages API (`POST /v1/messages`, API version
-//! 2026-10-21), without streaming. The mapping to the neutral contract is
-//! tabled in ADR-0027.
+//! 2026-10-21), without streaming: the `anthropic` provider. The mapping to
+//! the neutral contract is tabled in ADR-0027; its profile settings follow
+//! `schemas/config/model-providers/anthropic.schema.json`.
 
+#[cfg(test)]
+mod replay_tests;
+
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use contracts::ids::{Identifier, ToolName};
-use contracts::types::{ModelEffort, ModelRetryPolicy, TokenUsage};
+use contracts::types::{
+    AnthropicProviderSettings, ModelEffort, ModelProfile, ModelRetryPolicy, TokenUsage,
+};
 use contracts::{
     ContentBlock, Error, ErrorCode, ExecutionContext, Message, ModelProvider, ModelRequest,
     ModelResponse, ModelStopReason, Role,
@@ -17,12 +24,58 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use super::{
-    ModelUsage, ProviderAdapter, ProviderCall, insert_header, malformed, post_json,
-    sensitive_header,
+    EnvReader, ModelUsage, ProviderAdapter, ProviderCall, header_pairs, header_problems,
+    insert_header, malformed, no_problems, post_json, sensitive_header,
 };
-use crate::env::Secret;
+use crate::env::{Env, Secret};
 use crate::http::{self, CaBundle};
+use crate::registry::{self, ProviderFactory};
 use crate::retry::with_retries;
+
+/// Builds the adapter of profiles with `provider: anthropic`.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Factory;
+
+impl ProviderFactory for Factory {
+    fn name(&self) -> &'static str {
+        PROVIDER
+    }
+
+    fn settings_schema(&self) -> Option<&'static str> {
+        Some("config/model-providers/anthropic.schema.json")
+    }
+
+    fn check(&self, profile: &ModelProfile) -> Result<(), Error> {
+        let settings: AnthropicProviderSettings = registry::settings(profile)?;
+        // The gateway sets the anthropic-* headers itself.
+        no_problems(header_problems(settings.headers.as_ref(), &["anthropic-"]))
+    }
+
+    fn build(
+        &self,
+        profile: &ModelProfile,
+        env: &dyn Env,
+    ) -> Result<Arc<dyn ProviderAdapter>, Error> {
+        let settings: AnthropicProviderSettings = registry::settings(profile)?;
+        let mut vars = EnvReader::new(env);
+        let api_key = vars.required(&settings.api_key_env);
+        let workspace_id = vars.optional(settings.workspace_id_env.as_ref());
+        let ca_bundle = vars.ca_bundle(settings.ca_bundle_env.as_ref());
+        vars.finish()?;
+        let provider = AnthropicProvider::new(AnthropicSettings {
+            base_url: settings.base_url.as_str().to_owned(),
+            api_key: Secret::new(api_key.unwrap_or_default()),
+            workspace_id,
+            effort: settings.effort,
+            refusal_fallback: settings.refusal_fallback.is_some(),
+            headers: header_pairs(settings.headers.as_ref()),
+            timeout: Duration::from_secs(profile.request_timeout_seconds.get()),
+            retry: profile.retry.clone(),
+            ca_bundle,
+        })?;
+        Ok(Arc::new(provider))
+    }
+}
 
 /// The API version this adapter's wire format follows.
 pub const ANTHROPIC_VERSION: &str = "2026-10-21";

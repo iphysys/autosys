@@ -1,16 +1,15 @@
 {
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "default_profile": "unclear",
   "profiles": [
     {
-      "provider": "openai_compatible",
       "name": "unclear",
+      "provider": "openai_compatible",
       "model": "example-provider/example-model",
-      "base_url_env": "EXAMPLE_BASE_URL",
-      "api_key_env": "EXAMPLE_API_KEY",
       "max_output_tokens": 4096,
       "request_timeout_seconds": 120,
-      "retry": { "max_attempts": 2, "initial_backoff_ms": 500, "max_backoff_ms": 5000 }
+      "retry": { "max_attempts": 2, "initial_backoff_ms": 500, "max_backoff_ms": 5000 },
+      "settings": { "base_url_env": "EXAMPLE_BASE_URL", "api_key_env": "EXAMPLE_API_KEY" }
     }
   ],
   "prices": []

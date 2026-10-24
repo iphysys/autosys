@@ -1,6 +1,6 @@
 # ADR-0027: Model gateway with two providers, Claude by default
 
-- Status: Proposed
+- Status: Proposed; its profile format is superseded by ADR-0028
 - Date: 2026-10-24
 
 ## Context
@@ -28,7 +28,7 @@ Several other questions were open when PR 9 started:
 - `anthropic`: Messages API, `anthropic-version: 2026-10-21`, without streaming.
 - `openai_compatible`: `POST {base}/chat/completions` with `stream: false`, used for Pliny.
 
-**Profiles** live in `config/models/routing.yaml` (schema `schemas/config/model-routing.schema.json`). Each profile names:
+**Profiles** (format superseded by ADR-0028: provider-specific fields moved into `settings`) live in `config/models/routing.yaml` (schema `schemas/config/model-routing.schema.json`). Each profile names:
 
 - its provider and model;
 - `tool_calling`;

@@ -1,36 +1,36 @@
 {
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "default_profile": "example_claude",
   "profiles": [
     {
-      "provider": "anthropic",
       "name": "example_claude",
-      "model": "claude-opus-5-5",
+      "provider": "anthropic",
+      "model": "claude-haiku-5-5",
       "tool_calling": true,
-      "base_url": "https://api.anthropic.com",
-      "api_key_env": "ANTHROPIC_API_KEY",
-      "workspace_id_env": "ANTHROPIC_WORKSPACE_ID",
-      "effort": "high",
-      "refusal_fallback": "default",
       "max_output_tokens": 16000,
       "request_timeout_seconds": 600,
-      "retry": { "max_attempts": 3, "initial_backoff_ms": 1000, "max_backoff_ms": 30000 }
+      "retry": { "max_attempts": 3, "initial_backoff_ms": 1000, "max_backoff_ms": 30000 },
+      "settings": {
+        "base_url": "https://api.anthropic.com",
+        "api_key_env": "ANTHROPIC_API_KEY",
+        "effort": "high"
+      }
     },
     {
-      "provider": "openai_compatible",
       "name": "example_internal",
+      "provider": "openai_compatible",
       "model": "example-provider/example-model",
       "tool_calling": false,
-      "base_url_env": "EXAMPLE_BASE_URL",
-      "api_key_env": "EXAMPLE_API_KEY",
-      "ca_bundle_env": "EXAMPLE_CA_BUNDLE",
-      "headers": { "X-Example-Logging": "{\"enabled\":true}" },
       "max_output_tokens": 4096,
       "request_timeout_seconds": 120,
-      "retry": { "max_attempts": 2, "initial_backoff_ms": 500, "max_backoff_ms": 5000 }
+      "retry": { "max_attempts": 2, "initial_backoff_ms": 500, "max_backoff_ms": 5000 },
+      "settings": {
+        "base_url_env": "EXAMPLE_BASE_URL",
+        "api_key_env": "EXAMPLE_API_KEY"
+      }
     }
   ],
   "prices": [
-    { "model": "claude-opus-5-5", "input_usd_per_mtok": 4.0, "output_usd_per_mtok": 20.0 }
+    { "model": "claude-haiku-5-5", "input_usd_per_mtok": 0.1, "output_usd_per_mtok": 0.5 }
   ]
 }

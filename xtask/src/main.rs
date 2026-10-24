@@ -219,10 +219,13 @@ fn validate_config(root: &Path) -> Result<()> {
 /// that exists and, if the agent has tools, supports tool calling.
 fn model_routing_problems(loader: &infra::config::ConfigLoader, config: &Path) -> Vec<String> {
     let routing_path = config.join("models/routing.yaml");
-    let routing = match loader
-        .load::<contracts::types::ModelRouting>(&routing_path)
-        .and_then(model_gateway::Routing::new)
-    {
+    // The providers the harness ships with check each profile's provider and
+    // settings (ADR-0028).
+    let routing = match model_gateway::providers::default_registry().and_then(|registry| {
+        loader
+            .load::<contracts::types::ModelRouting>(&routing_path)
+            .and_then(|config| model_gateway::Routing::new(config, std::sync::Arc::new(registry)))
+    }) {
         Ok(routing) => routing,
         Err(e) => return vec![format!("{}: {}", routing_path.display(), e.message())],
     };

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AnthropicProviderSettings",
+  "description": "The settings of a model profile whose provider is anthropic: Claude through the Messages API (ADR-0027, ADR-0028).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["base_url", "api_key_env"],
+  "properties": {
+    "base_url": { "$ref": "#/$defs/HttpsUrl" },
+    "api_key_env": { "$ref": "../model-routing.schema.json#/$defs/EnvVarName" },
+    "workspace_id_env": {
+      "description": "When this variable is set, its value is sent as the anthropic-workspace-id header.",
+      "$ref": "../model-routing.schema.json#/$defs/EnvVarName"
+    },
+    "ca_bundle_env": { "$ref": "../model-routing.schema.json#/$defs/EnvVarName" },
+    "effort": { "$ref": "#/$defs/ModelEffort" },
+    "refusal_fallback": { "$ref": "#/$defs/RefusalFallback" },
+    "headers": { "$ref": "../model-routing.schema.json#/$defs/ModelHeaders" }
+  },
+  "$defs": {
+    "HttpsUrl": {
+      "type": "string",
+      "pattern": "^https://[^\\s]+$"
+    },
+    "ModelEffort": {
+      "description": "How much the model thinks before answering.",
+      "type": "string",
+      "enum": ["low", "medium", "high", "xhigh", "max"]
+    },
+    "RefusalFallback": {
+      "description": "Anthropic's server-side refusal fallback: a declined request is run again on the model the API picks for the refusal category. Not available for every model.",
+      "type": "string",
+      "enum": ["default"]
+    }
+  }
+}

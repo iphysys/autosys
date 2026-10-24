@@ -1,0 +1,4 @@
+{
+  "base_url_env": "EXAMPLE_BASE_URL",
+  "api_key": "a key value never belongs in configuration"
+}

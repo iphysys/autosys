@@ -186,6 +186,26 @@ Two providers behind a provider-neutral contract (ADR-0027).
 
 **Done when:** both adapters pass the `ModelProvider` contract suite against recorded responses, including a tool-call round trip for the Anthropic adapter, and startup refuses the Pliny profile (`tool_calling: false`) for an agent with tools.
 
+### PR 9.1 — Pluggable model providers
+
+Added after PR 9; not on the critical path (ADR-0028). Each provider becomes one self-contained unit, so it can be removed or added without touching the rest of the gateway.
+
+- Profiles keep the fields every provider shares, plus `settings` that follow the provider's own schema in `schemas/config/model-providers/`. `routing.yaml` moves to schema version 0.2, with the same profiles.
+- `ProviderFactory` and `ProviderRegistry` in `crates/model-gateway`. `providers::default_registry()` is the one list of registered providers. An unregistered provider, or invalid settings, fails at startup and in `validate-config`.
+- One module per provider holds its adapter, factory, tests, recordings and live smoke test. The gateway's own tests run over fake providers.
+
+**Done when:** every PR 9 test still passes, and the live Claude round trip still passes. Removing either provider by the four-step checklist in ADR-0028 leaves `cargo build`, the gateway and schema tests, `validate-config` and clippy passing, with no other edit.
+
+### PR 9.2 — Tool calling on Pliny
+
+Not scheduled; not on the critical path. It starts once Pliny returns tool calls. The full plan, with its entry gate and stop conditions, is in [pliny-tool-calling.md](pliny-tool-calling.md).
+
+- Capture a real Pliny tool round trip as a scrubbed recording, and replay it in CI.
+- Set `tool_calling: true` on the `pliny` profile, and update the tests that pin the refusal.
+- Add an ignored live test, `live_pliny_tool_round_trip`.
+
+**Done when:** the live Pliny tool round trip passes, the captured one replays in CI, and agents with tools may use `pliny`, while profiles with `tool_calling: false` are still refused.
+
 ### PR 10 — Context v0
 
 What each model call sees, assembled rather than accumulated.

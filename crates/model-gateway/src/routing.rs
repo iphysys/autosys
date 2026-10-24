@@ -1,63 +1,47 @@
 //! Model profiles from `config/models/routing.yaml`, after the checks its
-//! schema cannot express (ADR-0027).
+//! schema cannot express (ADR-0027, ADR-0028). Nothing here names a
+//! provider: each profile's provider and settings are checked by the
+//! registered provider.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::time::Duration;
+use std::collections::BTreeSet;
+use std::sync::Arc;
 
-use contracts::ids::Identifier;
-use contracts::types::{
-    AgentSpec, ModelHeaders, ModelPrice, ModelProfile, ModelRetryPolicy, ModelRouting,
-};
+use contracts::types::{AgentSpec, ModelPrice, ModelProfile, ModelRouting};
 use contracts::{Error, ErrorCode};
-use reqwest::header::{HeaderName, HeaderValue};
 
 use crate::env::Env;
+use crate::registry::ProviderRegistry;
 
 /// Replaces `default_profile` for a run when set.
 pub const PROFILE_OVERRIDE_ENV: &str = "SYNTH_MODEL_PROFILE";
 
-/// Headers the gateway sets itself, or that carry credentials. A profile may
-/// not set them: credentials come from environment variables only.
-const RESERVED_HEADERS: &[&str] = &[
-    "authorization",
-    "proxy-authorization",
-    "x-api-key",
-    "api-key",
-    "cookie",
-    "host",
-    "content-type",
-    "content-length",
-    "transfer-encoding",
-    "connection",
-];
-const RESERVED_HEADER_PREFIX: &str = "anthropic-";
-
 /// The validated routing configuration: profile names are unique, the default
-/// profile exists, each priced model is priced once, and every header is
-/// valid and not reserved.
+/// profile exists, each priced model is priced once, and every profile's
+/// provider is registered and accepts its settings.
 #[derive(Clone, Debug)]
 pub struct Routing {
     config: ModelRouting,
+    registry: Arc<ProviderRegistry>,
 }
 
 impl Routing {
     /// `InvalidInput` listing every problem found.
-    pub fn new(config: ModelRouting) -> Result<Self, Error> {
+    pub fn new(config: ModelRouting, registry: Arc<ProviderRegistry>) -> Result<Self, Error> {
         let mut problems = Vec::new();
 
         let mut names = BTreeSet::new();
         for profile in &config.profiles {
-            let name = profile_name(profile);
-            if !names.insert(name.as_str()) {
-                problems.push(format!("profile `{}` is defined twice", name.as_str()));
+            let name = profile.name.as_str();
+            if !names.insert(name) {
+                problems.push(format!("profile `{name}` is defined twice"));
             }
-            problems.extend(header_problems(profile));
-            let retry = profile_retry(profile);
-            if retry.initial_backoff_ms > retry.max_backoff_ms {
+            if profile.retry.initial_backoff_ms > profile.retry.max_backoff_ms {
                 problems.push(format!(
-                    "profile `{}`: retry.initial_backoff_ms exceeds retry.max_backoff_ms",
-                    name.as_str()
+                    "profile `{name}`: retry.initial_backoff_ms exceeds retry.max_backoff_ms"
                 ));
+            }
+            if let Err(e) = registry.check_profile(profile) {
+                problems.push(format!("profile `{name}`: {}", e.message()));
             }
         }
         if !names.contains(config.default_profile.as_str()) {
@@ -76,7 +60,7 @@ impl Routing {
         }
 
         if problems.is_empty() {
-            Ok(Self { config })
+            Ok(Self { config, registry })
         } else {
             Err(Error::new(
                 ErrorCode::InvalidInput,
@@ -89,11 +73,15 @@ impl Routing {
         &self.config
     }
 
+    pub fn registry(&self) -> &ProviderRegistry {
+        &self.registry
+    }
+
     pub fn profile(&self, name: &str) -> Option<&ModelProfile> {
         self.config
             .profiles
             .iter()
-            .find(|p| profile_name(p).as_str() == name)
+            .find(|p| p.name.as_str() == name)
     }
 
     pub fn price(&self, model: &str) -> Option<&ModelPrice> {
@@ -115,9 +103,7 @@ impl Routing {
                     ),
                 )
             }),
-            None => self.profile(self.config.default_profile.as_str()).ok_or_else(|| {
-                Error::new(ErrorCode::Internal, "the default profile was checked to exist")
-            }),
+            None => self.configured_default(),
         }
     }
 
@@ -142,13 +128,13 @@ impl Routing {
             })?,
             None => default,
         };
-        if !agent.tools.is_empty() && !profile_tool_calling(profile) {
+        if !agent.tools.is_empty() && !profile.tool_calling {
             return Err(Error::new(
                 ErrorCode::InvalidInput,
                 format!(
                     "agent `{}` has tools, but its model profile `{}` has tool_calling: false; give the agent a profile with tool calling",
                     agent.id.as_str(),
-                    profile_name(profile).as_str()
+                    profile.name.as_str()
                 ),
             ));
         }
@@ -158,128 +144,25 @@ impl Routing {
     /// The checks of [`Routing::profile_for_agent`] against the configured
     /// default, without `SYNTH_MODEL_PROFILE`. For `cargo xtask validate-config`.
     pub fn check_agent(&self, agent: &AgentSpec) -> Result<(), Error> {
-        let default = self
-            .profile(self.config.default_profile.as_str())
+        self.profile_for_agent(agent, self.configured_default()?)
+            .map(|_| ())
+    }
+
+    fn configured_default(&self) -> Result<&ModelProfile, Error> {
+        self.profile(self.config.default_profile.as_str())
             .ok_or_else(|| {
                 Error::new(
                     ErrorCode::Internal,
                     "the default profile was checked to exist",
                 )
-            })?;
-        self.profile_for_agent(agent, default).map(|_| ())
+            })
     }
 
     fn profile_list(&self) -> String {
-        join(
-            self.config
-                .profiles
-                .iter()
-                .map(|p| profile_name(p).as_str()),
-        )
+        join(self.config.profiles.iter().map(|p| p.name.as_str()))
     }
 }
 
 fn join<'a>(names: impl Iterator<Item = &'a str>) -> String {
     names.collect::<Vec<_>>().join(", ")
-}
-
-fn header_problems(profile: &ModelProfile) -> Vec<String> {
-    let name = profile_name(profile).as_str();
-    let Some(headers) = profile_headers(profile) else {
-        return Vec::new();
-    };
-    let mut problems = Vec::new();
-    for (header, value) in headers.iter() {
-        let lower = header.to_ascii_lowercase();
-        if HeaderName::from_bytes(header.as_bytes()).is_err() {
-            problems.push(format!(
-                "profile `{name}`: `{header}` is not a valid header name"
-            ));
-        } else if RESERVED_HEADERS.contains(&lower.as_str())
-            || lower.starts_with(RESERVED_HEADER_PREFIX)
-        {
-            problems.push(format!(
-                "profile `{name}`: header `{header}` is set by the gateway or carries credentials, and may not be configured"
-            ));
-        }
-        if HeaderValue::from_str(value.as_str()).is_err() {
-            problems.push(format!(
-                "profile `{name}`: header `{header}` has an invalid value"
-            ));
-        }
-    }
-    problems
-}
-
-// Fields every profile has, whatever its provider.
-
-pub(crate) fn profile_name(profile: &ModelProfile) -> &Identifier {
-    match profile {
-        ModelProfile::Anthropic { name, .. } | ModelProfile::OpenaiCompatible { name, .. } => name,
-    }
-}
-
-pub(crate) fn profile_model(profile: &ModelProfile) -> &str {
-    match profile {
-        ModelProfile::Anthropic { model, .. } | ModelProfile::OpenaiCompatible { model, .. } => {
-            model.as_str()
-        }
-    }
-}
-
-pub(crate) fn profile_tool_calling(profile: &ModelProfile) -> bool {
-    match profile {
-        ModelProfile::Anthropic { tool_calling, .. }
-        | ModelProfile::OpenaiCompatible { tool_calling, .. } => *tool_calling,
-    }
-}
-
-pub(crate) fn profile_headers(profile: &ModelProfile) -> Option<&ModelHeaders> {
-    match profile {
-        ModelProfile::Anthropic { headers, .. }
-        | ModelProfile::OpenaiCompatible { headers, .. } => headers.as_ref(),
-    }
-}
-
-pub(crate) fn profile_retry(profile: &ModelProfile) -> &ModelRetryPolicy {
-    match profile {
-        ModelProfile::Anthropic { retry, .. } | ModelProfile::OpenaiCompatible { retry, .. } => {
-            retry
-        }
-    }
-}
-
-pub(crate) fn profile_max_output_tokens(profile: &ModelProfile) -> u64 {
-    match profile {
-        ModelProfile::Anthropic {
-            max_output_tokens, ..
-        }
-        | ModelProfile::OpenaiCompatible {
-            max_output_tokens, ..
-        } => max_output_tokens.get(),
-    }
-}
-
-pub(crate) fn profile_timeout(profile: &ModelProfile) -> Duration {
-    match profile {
-        ModelProfile::Anthropic {
-            request_timeout_seconds,
-            ..
-        }
-        | ModelProfile::OpenaiCompatible {
-            request_timeout_seconds,
-            ..
-        } => Duration::from_secs(request_timeout_seconds.get()),
-    }
-}
-
-/// The profile's extra headers as name and value pairs, sorted by name.
-pub(crate) fn header_pairs(profile: &ModelProfile) -> Vec<(String, String)> {
-    let sorted: BTreeMap<&String, &str> = profile_headers(profile)
-        .map(|h| h.iter().map(|(k, v)| (k, v.as_str())).collect())
-        .unwrap_or_default();
-    sorted
-        .into_iter()
-        .map(|(k, v)| (k.clone(), v.to_owned()))
-        .collect()
 }

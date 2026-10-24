@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "ModelRouting",
-  "description": "Model profiles in config/models/routing.yaml (blueprint section 14.4, ADR-0027). Credentials and deployment endpoints are named by environment variable, never written here. Uniqueness and header rules are checked by the model gateway at startup and by cargo xtask validate-config.",
+  "description": "Model profiles in config/models/routing.yaml (blueprint section 14.4, ADR-0027, ADR-0028). A profile pairs a registered provider with one model; its provider-specific settings follow that provider's schema in schemas/config/model-providers/. Credentials and deployment endpoints are named by environment variable, never written here. The model gateway checks the provider, the settings and uniqueness at startup and in cargo xtask validate-config.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "default_profile", "profiles", "prices"],
   "properties": {
-    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "schema_version": { "type": "string", "enum": ["0.2"] },
     "default_profile": {
       "description": "The profile of agents that name none. SYNTH_MODEL_PROFILE overrides it.",
       "$ref": "../common/types.schema.json#/$defs/Identifier"
@@ -24,101 +24,43 @@
   },
   "$defs": {
     "ModelProfile": {
-      "description": "One model behind one provider adapter, selected by name.",
-      "oneOf": [
-        {
-          "description": "Claude through the Messages API.",
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "provider",
-            "name",
-            "model",
-            "tool_calling",
-            "base_url",
-            "api_key_env",
-            "max_output_tokens",
-            "request_timeout_seconds",
-            "retry"
-          ],
-          "properties": {
-            "provider": { "const": "anthropic" },
-            "name": { "$ref": "../common/types.schema.json#/$defs/Identifier" },
-            "model": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
-            "tool_calling": {
-              "description": "False if the provider cannot return tool calls. Such a profile is refused at startup for an agent that has tools.",
-              "type": "boolean"
-            },
-            "base_url": { "$ref": "#/$defs/HttpsUrl" },
-            "api_key_env": { "$ref": "#/$defs/EnvVarName" },
-            "workspace_id_env": {
-              "description": "When this variable is set, its value is sent as the anthropic-workspace-id header.",
-              "$ref": "#/$defs/EnvVarName"
-            },
-            "ca_bundle_env": { "$ref": "#/$defs/EnvVarName" },
-            "effort": { "$ref": "#/$defs/ModelEffort" },
-            "refusal_fallback": { "$ref": "#/$defs/RefusalFallback" },
-            "headers": { "$ref": "#/$defs/ModelHeaders" },
-            "max_output_tokens": { "type": "integer", "minimum": 1 },
-            "request_timeout_seconds": { "type": "integer", "minimum": 1 },
-            "retry": { "$ref": "#/$defs/ModelRetryPolicy" }
-          }
+      "description": "One model behind one provider, selected by name. Only the fields every provider shares are fixed here.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "provider",
+        "model",
+        "tool_calling",
+        "max_output_tokens",
+        "request_timeout_seconds",
+        "retry",
+        "settings"
+      ],
+      "properties": {
+        "name": { "$ref": "../common/types.schema.json#/$defs/Identifier" },
+        "provider": {
+          "description": "The name of a provider registered in the model gateway, such as anthropic or openai_compatible.",
+          "$ref": "../common/types.schema.json#/$defs/Identifier"
         },
-        {
-          "description": "A model behind an OpenAI-compatible chat-completions endpoint.",
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "provider",
-            "name",
-            "model",
-            "tool_calling",
-            "base_url_env",
-            "api_key_env",
-            "max_output_tokens",
-            "request_timeout_seconds",
-            "retry"
-          ],
-          "properties": {
-            "provider": { "const": "openai_compatible" },
-            "name": { "$ref": "../common/types.schema.json#/$defs/Identifier" },
-            "model": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
-            "tool_calling": {
-              "description": "False if the provider cannot return tool calls. Such a profile is refused at startup for an agent that has tools.",
-              "type": "boolean"
-            },
-            "base_url_env": {
-              "description": "The variable holding the base URL, up to and excluding /chat/completions.",
-              "$ref": "#/$defs/EnvVarName"
-            },
-            "api_key_env": { "$ref": "#/$defs/EnvVarName" },
-            "ca_bundle_env": { "$ref": "#/$defs/EnvVarName" },
-            "headers": { "$ref": "#/$defs/ModelHeaders" },
-            "max_output_tokens": { "type": "integer", "minimum": 1 },
-            "request_timeout_seconds": { "type": "integer", "minimum": 1 },
-            "retry": { "$ref": "#/$defs/ModelRetryPolicy" }
-          }
+        "model": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+        "tool_calling": {
+          "description": "False if the provider cannot return tool calls. Such a profile is refused at startup for an agent that has tools.",
+          "type": "boolean"
+        },
+        "max_output_tokens": { "type": "integer", "minimum": 1 },
+        "request_timeout_seconds": { "type": "integer", "minimum": 1 },
+        "retry": { "$ref": "#/$defs/ModelRetryPolicy" },
+        "settings": {
+          "description": "Provider-specific settings, checked against the provider's schema in schemas/config/model-providers/.",
+          "type": "object"
         }
-      ]
+      }
     },
     "EnvVarName": {
       "description": "The name of an environment variable. Its value is read at startup and never logged.",
       "type": "string",
       "pattern": "^[A-Z][A-Z0-9_]*$"
-    },
-    "HttpsUrl": {
-      "type": "string",
-      "pattern": "^https://[^\\s]+$"
-    },
-    "ModelEffort": {
-      "description": "How much the model thinks before answering.",
-      "type": "string",
-      "enum": ["low", "medium", "high", "xhigh", "max"]
-    },
-    "RefusalFallback": {
-      "description": "Anthropic's server-side refusal fallback: a declined request is run again on the model the API picks for the refusal category.",
-      "type": "string",
-      "enum": ["default"]
     },
     "ModelHeaders": {
       "description": "Extra request headers. Values are configuration, not secrets: credential and protocol headers are rejected.",
