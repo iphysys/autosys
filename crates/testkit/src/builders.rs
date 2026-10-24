@@ -3,8 +3,8 @@
 
 use chrono::{DateTime, Utc};
 use contracts::types::{
-    ArtifactMetadata, Event, Evidence, Job, SdrDocument, SdrVersionRecord, StepOutcome, Timestamp,
-    Transition,
+    AgentSpec, ArtifactMetadata, Event, Evidence, Job, SdrDocument, SdrVersionRecord, StepOutcome,
+    Timestamp, Transition,
 };
 use contracts::{ContentBlock, Message, ModelRequest, NewEvent, NewStep, Role, ToolRequest};
 use serde::de::DeserializeOwned;
@@ -346,6 +346,40 @@ pub fn model_request(text: &str) -> ModelRequest {
         tools: Vec::new(),
         max_output_tokens: 100,
     }
+}
+
+/// An agent spec with the given tools; `model_profile` is left out when
+/// `None`, so the agent gets the routing default.
+pub fn agent_spec(id: &str, model_profile: Option<&str>, tools: &[&str]) -> AgentSpec {
+    let mut spec = json!({
+        "schema_version": "0.1",
+        "id": id,
+        "version": "0.1.0",
+        "kind": "agent",
+        "implementation": "bounded_worker",
+        "name": "Test agent",
+        "description": "An agent for tests.",
+        "role": "Tester",
+        "goal": "Be resolved.",
+        "responsibilities": ["Be resolved."],
+        "prompt": "agents/test.md",
+        "result_schema": "results/result.schema.json",
+        "skills": [],
+        "tools": tools,
+        "sdr": { "read_slice": "from_task", "write_scope": "from_task" },
+        "limits": {
+            "max_tokens": 1000,
+            "max_tool_calls": 10,
+            "max_steps": 10,
+            "max_wall_time_seconds": 60,
+            "max_repair_attempts": 1
+        },
+        "on_repair_exhausted": "fail"
+    });
+    if let Some(profile) = model_profile {
+        spec["model_profile"] = json!(profile);
+    }
+    parse(spec)
 }
 
 /// A check evidence record; `verdict` is one of pass, fail, unverified, error.

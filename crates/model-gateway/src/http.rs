@@ -186,7 +186,7 @@ mod tests {
         assert!(client(Duration::from_secs(5), Vec::new()).is_ok());
         let pem = std::fs::read(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/tests/fixtures/test-ca.pem"
+            "/src/test_support/fixtures/test-ca.pem"
         ))
         .expect("test CA");
         let roots = CertificateDer::pem_slice_iter(&pem)

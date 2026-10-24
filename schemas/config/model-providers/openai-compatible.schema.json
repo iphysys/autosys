@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OpenAiCompatibleProviderSettings",
+  "description": "The settings of a model profile whose provider is openai_compatible: a model behind an OpenAI-compatible chat-completions endpoint, such as the internal Pliny platform (ADR-0027, ADR-0028).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["base_url_env", "api_key_env"],
+  "properties": {
+    "base_url_env": {
+      "description": "The variable holding the base URL, up to and excluding /chat/completions.",
+      "$ref": "../model-routing.schema.json#/$defs/EnvVarName"
+    },
+    "api_key_env": { "$ref": "../model-routing.schema.json#/$defs/EnvVarName" },
+    "ca_bundle_env": { "$ref": "../model-routing.schema.json#/$defs/EnvVarName" },
+    "headers": { "$ref": "../model-routing.schema.json#/$defs/ModelHeaders" }
+  }
+}

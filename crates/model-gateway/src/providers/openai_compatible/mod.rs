@@ -1,12 +1,20 @@
 //! A model behind an OpenAI-compatible chat-completions endpoint
-//! (`POST {base}/chat/completions`), without streaming: the internal Pliny
-//! platform. The mapping to the neutral contract is tabled in ADR-0027.
+//! (`POST {base}/chat/completions`), without streaming: the
+//! `openai_compatible` provider, used for the internal Pliny platform. The
+//! mapping to the neutral contract is tabled in ADR-0027; its profile
+//! settings follow `schemas/config/model-providers/openai-compatible.schema.json`.
 
+#[cfg(test)]
+mod replay_tests;
+
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use contracts::ids::{Identifier, ToolName};
-use contracts::types::{ModelRetryPolicy, TokenUsage};
+use contracts::types::{
+    ModelProfile, ModelRetryPolicy, OpenAiCompatibleProviderSettings, TokenUsage,
+};
 use contracts::{
     ContentBlock, Error, ErrorCode, ExecutionContext, Message, ModelProvider, ModelRequest,
     ModelResponse, ModelStopReason, Role,
@@ -17,12 +25,55 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use super::{
-    ModelUsage, ProviderAdapter, ProviderCall, insert_header, malformed, post_json,
-    sensitive_header,
+    EnvReader, ModelUsage, ProviderAdapter, ProviderCall, header_pairs, header_problems,
+    insert_header, malformed, no_problems, post_json, sensitive_header,
 };
-use crate::env::Secret;
+use crate::env::{Env, Secret};
 use crate::http::{self, CaBundle};
+use crate::registry::{self, ProviderFactory};
 use crate::retry::with_retries;
+
+/// Builds the adapter of profiles with `provider: openai_compatible`.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Factory;
+
+impl ProviderFactory for Factory {
+    fn name(&self) -> &'static str {
+        PROVIDER
+    }
+
+    fn settings_schema(&self) -> Option<&'static str> {
+        Some("config/model-providers/openai-compatible.schema.json")
+    }
+
+    fn check(&self, profile: &ModelProfile) -> Result<(), Error> {
+        let settings: OpenAiCompatibleProviderSettings = registry::settings(profile)?;
+        no_problems(header_problems(settings.headers.as_ref(), &[]))
+    }
+
+    fn build(
+        &self,
+        profile: &ModelProfile,
+        env: &dyn Env,
+    ) -> Result<Arc<dyn ProviderAdapter>, Error> {
+        let settings: OpenAiCompatibleProviderSettings = registry::settings(profile)?;
+        let mut vars = EnvReader::new(env);
+        let api_key = vars.required(&settings.api_key_env);
+        let base_url = vars.required(&settings.base_url_env);
+        let ca_bundle = vars.ca_bundle(settings.ca_bundle_env.as_ref());
+        vars.finish()?;
+        let provider = OpenAiCompatibleProvider::new(OpenAiCompatibleSettings {
+            base_url: base_url.unwrap_or_default(),
+            base_url_origin: settings.base_url_env.as_str().to_owned(),
+            api_key: Secret::new(api_key.unwrap_or_default()),
+            headers: header_pairs(settings.headers.as_ref()),
+            timeout: Duration::from_secs(profile.request_timeout_seconds.get()),
+            retry: profile.retry.clone(),
+            ca_bundle,
+        })?;
+        Ok(Arc::new(provider))
+    }
+}
 
 const PROVIDER: &str = "openai_compatible";
 const COMPLETIONS_PATH: &str = "chat/completions";

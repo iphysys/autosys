@@ -27,29 +27,21 @@ pub fn cost_usd(routing: &Routing, usage: &[ModelUsage]) -> Option<f64> {
 
 #[cfg(test)]
 mod tests {
-    use contracts::types::{ModelRouting, TokenUsage};
+    use contracts::types::TokenUsage;
     use serde_json::json;
 
     use super::*;
+    use crate::test_support::{fake_profile, fake_routing};
 
     fn routing() -> Routing {
-        let config: ModelRouting = serde_json::from_value(json!({
-            "schema_version": "0.1",
-            "default_profile": "claude",
-            "profiles": [{
-                "provider": "anthropic", "name": "claude", "model": "claude-opus-5-5",
-                "tool_calling": true, "base_url": "https://api.anthropic.com",
-                "api_key_env": "ANTHROPIC_API_KEY", "max_output_tokens": 1000,
-                "request_timeout_seconds": 60,
-                "retry": { "max_attempts": 1, "initial_backoff_ms": 0, "max_backoff_ms": 0 }
-            }],
-            "prices": [
+        fake_routing(
+            "main",
+            vec![fake_profile("main", true)],
+            json!([
                 { "model": "claude-opus-5-5", "input_usd_per_mtok": 4.0, "output_usd_per_mtok": 20.0 },
                 { "model": "claude-opus-4-8", "input_usd_per_mtok": 5.0, "output_usd_per_mtok": 25.0 }
-            ]
-        }))
-        .expect("valid routing");
-        Routing::new(config).expect("consistent routing")
+            ]),
+        )
     }
 
     fn usage(model: &str, input_tokens: u64, output_tokens: u64) -> ModelUsage {

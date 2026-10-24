@@ -1,0 +1,6 @@
+{
+  "base_url_env": "EXAMPLE_BASE_URL",
+  "api_key_env": "EXAMPLE_API_KEY",
+  "ca_bundle_env": "EXAMPLE_CA_BUNDLE",
+  "headers": { "X-Example-Logging": "{\"enabled\":true}" }
+}

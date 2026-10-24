@@ -17,18 +17,18 @@ use tokio::task::JoinHandle;
 /// One reply as a recording stores it.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Reply {
-    pub status: u16,
+pub(crate) struct Reply {
+    pub(crate) status: u16,
     #[serde(default)]
-    pub headers: Vec<(String, String)>,
-    pub body: Value,
+    pub(crate) headers: Vec<(String, String)>,
+    pub(crate) body: Value,
     /// Held back this long before replying.
     #[serde(skip)]
-    pub delay: Duration,
+    pub(crate) delay: Duration,
 }
 
 impl Reply {
-    pub fn json(status: u16, body: Value) -> Self {
+    pub(crate) fn json(status: u16, body: Value) -> Self {
         Self {
             status,
             headers: Vec::new(),
@@ -37,13 +37,8 @@ impl Reply {
         }
     }
 
-    pub fn with_header(mut self, name: &str, value: &str) -> Self {
+    pub(crate) fn with_header(mut self, name: &str, value: &str) -> Self {
         self.headers.push((name.to_owned(), value.to_owned()));
-        self
-    }
-
-    pub fn delayed(mut self, delay: Duration) -> Self {
-        self.delay = delay;
         self
     }
 }
@@ -56,11 +51,10 @@ struct Recording {
     replies: Vec<Reply>,
 }
 
-/// The replies of the recording at `tests/recordings/<name>`.
-pub fn recording(name: &str) -> Vec<Reply> {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/recordings")
-        .join(name);
+/// The replies of the recording at `path`, relative to the crate directory,
+/// for example `src/providers/anthropic/recordings/text.json`.
+pub(crate) fn recording(path: &str) -> Vec<Reply> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(path);
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("{}: cannot read: {e}", path.display()));
     let recording: Recording = serde_json::from_str(&text)
@@ -70,16 +64,16 @@ pub fn recording(name: &str) -> Vec<Reply> {
 
 /// A request the server received.
 #[derive(Clone, Debug)]
-pub struct Captured {
-    pub method: String,
-    pub path: String,
+pub(crate) struct Captured {
+    pub(crate) method: String,
+    pub(crate) path: String,
     /// Header names in lowercase.
-    pub headers: Vec<(String, String)>,
-    pub body: Value,
+    pub(crate) headers: Vec<(String, String)>,
+    pub(crate) body: Value,
 }
 
 impl Captured {
-    pub fn header(&self, name: &str) -> Option<&str> {
+    pub(crate) fn header(&self, name: &str) -> Option<&str> {
         self.headers
             .iter()
             .find(|(n, _)| n == name)
@@ -93,7 +87,7 @@ struct State {
     captured: Vec<Captured>,
 }
 
-pub struct Replay {
+pub(crate) struct Replay {
     addr: SocketAddr,
     state: Arc<Mutex<State>>,
     accepting: JoinHandle<()>,
@@ -102,7 +96,7 @@ pub struct Replay {
 impl Replay {
     /// Listens on a free loopback port and answers with `replies` in order.
     /// A request past the last reply gets a 500.
-    pub async fn start(replies: Vec<Reply>) -> Self {
+    pub(crate) async fn start(replies: Vec<Reply>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind replay server");
@@ -126,17 +120,17 @@ impl Replay {
         }
     }
 
-    pub fn base_url(&self) -> String {
+    pub(crate) fn base_url(&self) -> String {
         format!("http://{}", self.addr)
     }
 
     /// Requests received so far, in order.
-    pub fn captured(&self) -> Vec<Captured> {
+    pub(crate) fn captured(&self) -> Vec<Captured> {
         self.state.lock().expect("replay state").captured.clone()
     }
 
     /// Replies not yet sent.
-    pub fn remaining(&self) -> usize {
+    pub(crate) fn remaining(&self) -> usize {
         self.state.lock().expect("replay state").replies.len()
     }
 }
