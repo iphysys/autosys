@@ -2,15 +2,17 @@
 
 use std::time::Duration;
 
+use contracts::ids::{ProjectId, SdrVersion};
 use contracts::types::{ApprovalAnswer, GateDecision};
 use contracts::{
     ErrorCode, ExecutionContext, Gate, GateRequest, GateSubject, GateSubjectKind, ModelProvider,
-    Tool,
+    SdrRepository, Tool,
 };
 use serde_json::json;
 use testkit::builders::{id, model_request, sdr_document, tool_request, transition};
 use testkit::fakes::{
-    FakeGate, FakeTool, RecordedModelProvider, ScriptedModelProvider, text_response,
+    FakeGate, FakeTool, Fault, FaultySdrRepository, RecordedModelProvider, ScriptedModelProvider,
+    text_response,
 };
 
 fn ctx() -> ExecutionContext {
@@ -140,4 +142,59 @@ async fn slow_tool_stops_when_cancelled() {
         .expect("cancellation interrupted the delay");
     assert_eq!(result.map_err(|e| e.code()), Err(ErrorCode::Cancelled));
     assert_eq!(tool.calls(), 1, "the started call is counted");
+}
+
+#[tokio::test]
+async fn faulty_sdr_storage_fails_every_call_with_its_code() {
+    let project: ProjectId = id("p1");
+    let version = SdrVersion(0);
+    let storage = FaultySdrRepository::new(Fault::Fail(ErrorCode::Unavailable));
+    let codes = [
+        storage
+            .head(&project)
+            .await
+            .map(|_| ())
+            .map_err(|e| e.code()),
+        storage
+            .document(&project, &version)
+            .await
+            .map(|_| ())
+            .map_err(|e| e.code()),
+        storage
+            .version_record(&project, &version)
+            .await
+            .map(|_| ())
+            .map_err(|e| e.code()),
+        storage
+            .append_version(
+                &sdr_document("p1", 0, None),
+                &testkit::builders::version_record("p1", 0, None, chrono::Utc::now()),
+            )
+            .await
+            .map_err(|e| e.code()),
+    ];
+    assert_eq!(codes, [Err(ErrorCode::Unavailable); 4]);
+}
+
+#[tokio::test]
+async fn faulty_sdr_storage_after_head_answers_the_head_and_fails_the_rest() {
+    let project: ProjectId = id("p1");
+    let storage = FaultySdrRepository::after_head(3, Fault::Fail(ErrorCode::Internal));
+    assert_eq!(
+        storage.head(&project).await.expect("head"),
+        Some(SdrVersion(3))
+    );
+    let document = storage.document(&project, &SdrVersion(3)).await;
+    assert_eq!(document.map_err(|e| e.code()), Err(ErrorCode::Internal));
+}
+
+#[tokio::test]
+async fn a_hanging_sdr_storage_never_finishes() {
+    let project: ProjectId = id("p1");
+    let storage = FaultySdrRepository::new(Fault::Hang);
+    let finished = tokio::time::timeout(Duration::from_millis(50), storage.head(&project)).await;
+    assert!(
+        finished.is_err(),
+        "head returned although the storage hangs"
+    );
 }

@@ -1,2 +1,7 @@
 # HAProxy reads the forwarder configs from the working tree; keep LF on every OS.
 deploy/compose/*.cfg text eol=lf
+
+# Prompts and golden files are hashed and compared byte for byte; keep LF on
+# every OS. A CRLF checkout would change every context hash.
+prompts/** text eol=lf
+tests/golden/** text eol=lf

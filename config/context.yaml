@@ -1,0 +1,33 @@
+# Context profiles: how many tokens each section of a model call's context may
+# use (blueprint section 8, ADR-0029). Schema: schemas/config/context-budgets.schema.json
+#
+# Every call's context is assembled fresh from the task, the job, the SDR and
+# the event log; nothing accumulates. A profile only bounds that assembly.
+# `cargo xtask validate-config` checks each profile against the ceiling in
+# config/policies/context.yaml.
+#
+# - A profile named `default` is required. A call that names no profile uses it.
+# - instructions, task_contract, job_state, design_state and open_turn are fixed
+#   sections. One that exceeds its cap fails the build with context_overflow;
+#   nothing is cut. Their caps together must fit within total_tokens.
+# - run_history and untrusted_content are trimmed, oldest first. Their caps are
+#   limits, not reservations: they also give way when the fixed sections leave
+#   less room, so the total always holds.
+# - Tokens are estimated as ceil(utf8 bytes / bytes_per_token), not counted by
+#   a tokenizer. 3 is cautious for English and JSON. Tune it from the
+#   context_assembled and model_call_completed events of real runs.
+schema_version: "0.1"
+profiles:
+  - name: default
+    total_tokens: 24000
+    bytes_per_token: 3
+    history_window_events: 200
+    io_timeout_seconds: 10
+    sections:
+      instructions: 3000
+      task_contract: 1500
+      job_state: 500
+      design_state: 8000
+      run_history: 3000
+      untrusted_content: 6000
+      open_turn: 6000

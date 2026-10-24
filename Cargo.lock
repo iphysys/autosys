@@ -2255,6 +2255,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "synth-context"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "proptest",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "sha2 0.11.0",
+ "synth-contracts",
+ "synth-sdr",
+ "synth-testkit",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "synth-contracts"
 version = "0.1.0"
 dependencies = [
@@ -3010,6 +3029,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "serde_json",
+ "synth-context",
  "synth-contracts",
  "synth-infra",
  "synth-model-gateway",

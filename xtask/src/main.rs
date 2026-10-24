@@ -24,9 +24,10 @@ Tasks:
                 servers, cargo-deny
   arch-check    Allowed crate dependencies (blueprint 10.3) and the SDR single-writer rule (7.2)
   validate-config
-                Every file in config/ against its schema (blueprint 11.2), and the model
+                Every file in config/ against its schema (blueprint 11.2), the model
                 routing checks of the gateway: unique profiles, headers, agent profiles
-                and tool calling (ADR-0027)
+                and tool calling (ADR-0027), the context profiles against their ceiling,
+                and every prompt header in prompts/ (ADR-0029)
   validate-benchmarks
                 Every problem in evals/benchmarks/ against its schema (blueprint 14.7)
   codegen [--check]
@@ -206,12 +207,41 @@ fn validate_config(root: &Path) -> Result<()> {
     let mut problems = loader.validate_dir(&config).context("reading config/")?;
     if problems.is_empty() {
         problems.extend(model_routing_problems(&loader, &config));
+        problems.extend(context_problems(&loader, root));
     }
     if !problems.is_empty() {
         bail!("invalid configuration:\n  - {}", problems.join("\n  - "));
     }
     eprintln!("xtask: validate-config: passed");
     Ok(())
+}
+
+/// The checks of the context manager that a schema cannot make: every
+/// profile in `config/context.yaml` fits its own total and the ceiling in
+/// `config/policies/context.yaml`, a `default` profile exists, and every
+/// prompt under `prompts/` has a valid header and a unique id (ADR-0029).
+fn context_problems(loader: &infra::config::ConfigLoader, root: &Path) -> Vec<String> {
+    let config = root.join("config");
+    let mut problems = Vec::new();
+    let loaded = loader
+        .load::<contracts::types::ContextBudgets>(&config.join("context.yaml"))
+        .and_then(|budgets| {
+            loader
+                .load::<contracts::types::ContextPolicy>(&config.join("policies/context.yaml"))
+                .map(|policy| (budgets, policy))
+        });
+    match loaded {
+        Ok((budgets, policy)) => {
+            if let Err(e) = context::ContextProfiles::new(budgets, &policy) {
+                problems.push(format!("config/context.yaml: {e}"));
+            }
+        }
+        Err(e) => problems.push(e.message().to_owned()),
+    }
+    if let Err(e) = context::PromptLibrary::load_dir(&root.join("prompts")) {
+        problems.push(format!("prompts/: {e}"));
+    }
+    problems
 }
 
 /// The checks `ModelGateway::start` makes that need no environment: the
@@ -311,4 +341,79 @@ fn workspace_root() -> Result<PathBuf> {
         .parent()
         .map(Path::to_path_buf)
         .context("xtask manifest directory has no parent")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::*;
+
+    fn loader() -> infra::config::ConfigLoader {
+        infra::config::ConfigLoader::new().expect("config schemas compile")
+    }
+
+    #[test]
+    fn the_repository_passes_the_context_checks() {
+        let problems = context_problems(&loader(), &workspace_root().expect("root"));
+        assert!(problems.is_empty(), "{problems:#?}");
+    }
+
+    /// The committed config and prompts in a temporary root, to break one file at a time.
+    fn copy_of_the_repository() -> tempfile::TempDir {
+        let root = workspace_root().expect("root");
+        let dir = tempfile::tempdir().expect("temp dir");
+        for file in [
+            "config/context.yaml",
+            "config/policies/context.yaml",
+            "prompts/system/base.md",
+            "prompts/orchestrator/main.md",
+        ] {
+            let target = dir.path().join(file);
+            fs::create_dir_all(target.parent().expect("parent")).expect("mkdir");
+            fs::copy(root.join(file), target).expect("copy");
+        }
+        dir
+    }
+
+    #[test]
+    fn a_profile_above_the_ceiling_is_a_problem() {
+        let dir = copy_of_the_repository();
+        fs::write(
+            dir.path().join("config/policies/context.yaml"),
+            "schema_version: \"0.1\"\nmax_total_tokens: 20000\n",
+        )
+        .expect("write");
+        let problems = context_problems(&loader(), dir.path());
+        assert_eq!(problems.len(), 1, "{problems:#?}");
+        assert!(problems[0].contains("ceiling 20000"), "{problems:#?}");
+    }
+
+    #[test]
+    fn a_broken_prompt_header_is_a_problem() {
+        let dir = copy_of_the_repository();
+        let path = dir.path().join("prompts/orchestrator/main.md");
+        let text = fs::read_to_string(&path).expect("read");
+        assert!(text.contains("  - run_history\n"), "the fixture changed");
+        fs::write(
+            &path,
+            text.replace("  - run_history\n", "  - allowed_capabilities\n"),
+        )
+        .expect("write");
+        let problems = context_problems(&loader(), dir.path());
+        assert_eq!(problems.len(), 1, "{problems:#?}");
+        assert!(
+            problems[0].contains("allowed_capabilities"),
+            "{problems:#?}"
+        );
+    }
+
+    #[test]
+    fn a_missing_context_file_is_a_problem() {
+        let dir = copy_of_the_repository();
+        fs::remove_file(dir.path().join("config/context.yaml")).expect("remove");
+        let problems = context_problems(&loader(), dir.path());
+        assert_eq!(problems.len(), 1, "{problems:#?}");
+        assert!(problems[0].contains("context.yaml"), "{problems:#?}");
+    }
 }

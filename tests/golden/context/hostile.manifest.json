@@ -1,0 +1,99 @@
+{
+  "context_hash": "sha256:7b40824d361c251b3556caa6e67ad22d2f8b633cfa0eb28287faf8f07db8ad8a",
+  "total_tokens": 2223,
+  "manifest": {
+    "profile": "default",
+    "sdr_version": 2,
+    "last_event_seq": 5,
+    "prompts": [
+      {
+        "id": "system.base",
+        "sha256": "sha256:b4f1521e44dc59b15bbda3b93442cd46cd5f0cc0d5b2246209cde7f6df3068cc",
+        "version": "0.1.0"
+      },
+      {
+        "id": "orchestrator.main",
+        "sha256": "sha256:c191808f2ff02aa2c47de53276addd4ed4f0121a2df259ece2f0aa2a08d1e243",
+        "version": "0.1.0"
+      }
+    ],
+    "reserved_tokens": 0,
+    "total_tokens": 2223,
+    "sections": [
+      {
+        "name": "instructions",
+        "trust": "instructions",
+        "tokens": 1276,
+        "cap": 3000,
+        "items": [
+          "prompt:system.base@0.1.0",
+          "prompt:orchestrator.main@0.1.0"
+        ]
+      },
+      {
+        "name": "task_contract",
+        "trust": "data",
+        "tokens": 168,
+        "cap": 1500,
+        "items": [
+          "task:task-1"
+        ]
+      },
+      {
+        "name": "job_state",
+        "trust": "data",
+        "tokens": 86,
+        "cap": 500,
+        "items": [
+          "job:job-1"
+        ]
+      },
+      {
+        "name": "design_state",
+        "trust": "data",
+        "tokens": 238,
+        "cap": 8000,
+        "items": [
+          "sdr:R-001@v2",
+          "sdr:R-002@v2",
+          "sdr:A-001@v2"
+        ]
+      },
+      {
+        "name": "run_history",
+        "trust": "data",
+        "tokens": 122,
+        "cap": 3000,
+        "items": [
+          "event:1",
+          "event:2",
+          "event:3",
+          "event:4",
+          "event:5"
+        ]
+      },
+      {
+        "name": "untrusted_content",
+        "trust": "untrusted",
+        "tokens": 189,
+        "cap": 6000,
+        "items": [
+          "event:2/error.message",
+          "event:3/comment",
+          "event:4/reasons[0]",
+          "event:5/reason"
+        ]
+      },
+      {
+        "name": "open_turn",
+        "trust": "untrusted",
+        "tokens": 144,
+        "cap": 6000,
+        "items": [
+          "model:message0",
+          "tool:measure@toolu_01\"<x>"
+        ]
+      }
+    ]
+  }
+}

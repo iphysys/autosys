@@ -106,7 +106,9 @@ Run `cargo xtask validate-config` to check `config/` without starting anything. 
 - a file in a location with no schema;
 - a tool overlay whose `request_schema` or `result_schema` names no file in `schemas/`;
 - a model routing file the gateway would reject;
-- an agent whose model profile is missing, or has no tool calling while the agent has tools.
+- an agent whose model profile is missing, or has no tool calling while the agent has tools;
+- a context profile whose total is above the ceiling in `config/policies/context.yaml`, whose fixed sections are capped above its own total, or a missing `default` profile;
+- a prompt in `prompts/` with no header, an invalid header, or an id another prompt has.
 
 ## Tool servers
 
@@ -176,6 +178,18 @@ The tests replay hand-written provider responses from a loopback server, so CI n
 cargo test -p synth-model-gateway --lib -- --ignored --test-threads=1
 ```
 
+## Context
+
+`crates/context` decides what each model call sees (blueprint §8, [ADR-0029](docs/adr/0029-context-assembly-v0.md)). A context is built fresh for every call from the task contract, the job's state, the SDR slice and the run's recent events. Nothing accumulates, and no model summarises anything. It reads the SDR only through `SdrManager::head` and `SdrManager::read`.
+
+- **Sections.** Seven, always in this order: `instructions` (the system prompt: `prompts/system/base.md`, then the agent's prompt), `task_contract`, `job_state`, `design_state`, `run_history`, `untrusted_content` and `open_turn`.
+- **Trust.** Text that did not come from `prompts/` is escaped, so no input can close a section or forge a label. Records the harness built are labelled `data`. Free text from events and tool results is labelled `untrusted` and wrapped in `<untrusted>` envelopes. Only `ToolResult` content is wrapped; the model's own blocks, thinking included, pass through unchanged.
+- **Budgets.** `config/context.yaml` holds named profiles: a total, a cap per section, and `bytes_per_token`, the divisor of the size estimate (there is no tokenizer). `config/policies/context.yaml` holds the ceiling no profile may exceed. The improvement loop may rebalance or lower profiles within it, never raise it.
+- **When it does not fit.** The task, the job state, the design and the open turn are never cut: one that does not fit fails the build with `context_overflow`. Run history and untrusted text are trimmed, untrusted first, oldest first, and a line says what was left out.
+- **The hash.** `AssembledContext::hash` covers exactly what the model sees. `ContextBuilder::build` records it in a `context_assembled` event with the SDR version and the last event it saw, so the same context can be rebuilt with `BuildRequest::at`. The caller must not append that event itself.
+- **Prompts.** Static Markdown with a YAML header, in [prompts/](prompts/README.md). Each header is checked against `schemas/prompts/prompt-header.schema.json`. A run records each prompt's id, version and hash.
+- **Golden tests.** `tests/golden/context/` pins the assembled context for fixed inputs, so a change to a prompt shows up as a diff. After an intended change, run `UPDATE_GOLDEN=1 cargo test -p synth-context --test golden` and read each changed file before committing it.
+
 ## Benchmarks
 
 Benchmark problems live in `evals/benchmarks/<split>/<id>/problem.yaml` and follow `schemas/benchmarks/benchmark-problem.schema.json` ([ADR-0025](docs/adr/0025-benchmark-problem-format.md)). Only `dev` problems are stored in the repository. The team writes them; values come from the specification each file cites in `source`, unchanged.
@@ -227,6 +241,7 @@ A mass or other reference value is an arithmetic expression over parameter IDs. 
 | [0026](docs/adr/0026-step-records-and-replay.md) | Step records and replay of tool calls | Proposed |
 | [0027](docs/adr/0027-model-gateway-providers.md) | Model gateway with two providers, Claude by default | Proposed; profile format superseded by 0028 |
 | [0028](docs/adr/0028-pluggable-model-providers.md) | Pluggable model providers | Proposed |
+| [0029](docs/adr/0029-context-assembly-v0.md) | Context assembly v0 | Proposed |
 
 ## License
 

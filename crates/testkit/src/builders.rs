@@ -120,7 +120,9 @@ pub fn every_event_payload() -> Vec<Value> {
         json!({
             "type": "context_assembled",
             "context_hash": sha256_of(b"context"),
-            "total_tokens": 10
+            "total_tokens": 10,
+            "sdr_version": 1,
+            "last_event_seq": 2
         }),
         json!({
             "type": "model_call_completed",

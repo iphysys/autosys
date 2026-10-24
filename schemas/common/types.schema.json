@@ -202,6 +202,19 @@
         }
       }
     },
+    "ContextSectionName": {
+      "description": "A section of an assembled model context (blueprint section 8), listed in the order the model sees them.",
+      "type": "string",
+      "enum": [
+        "instructions",
+        "task_contract",
+        "job_state",
+        "design_state",
+        "run_history",
+        "untrusted_content",
+        "open_turn"
+      ]
+    },
     "Narrative": {
       "description": "Model-written text. Untrusted, and never the source of a number or status.",
       "type": "object",

@@ -1,0 +1,9 @@
+{
+  "schema_version": "0.1",
+  "id": "orchestrator.main",
+  "version": "1.0",
+  "purpose": "Plan the design work.",
+  "inputs": ["task_contract"],
+  "owner": "harness",
+  "origin": "human"
+}

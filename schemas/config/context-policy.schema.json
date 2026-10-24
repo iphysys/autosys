@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ContextPolicy",
+  "description": "config/policies/context.yaml: the hard ceiling on a model call's context (blueprint section 8, ADR-0029). The improvement loop may rebalance or lower the profiles in config/context.yaml within this ceiling and never raise it; raising it is a reviewed change to this policy.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "max_total_tokens"],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "max_total_tokens": {
+      "description": "No profile's total_tokens may exceed this.",
+      "type": "integer",
+      "minimum": 1
+    }
+  }
+}

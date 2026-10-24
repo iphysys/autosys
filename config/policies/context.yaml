@@ -1,0 +1,8 @@
+# The hard ceiling on a model call's context (blueprint section 8, ADR-0029).
+# Schema: schemas/config/context-policy.schema.json
+#
+# No profile in config/context.yaml may have a total_tokens above this. The
+# improvement loop may rebalance or lower profiles within the ceiling and never
+# raise it; raising it is a reviewed change to this file (blueprint section 9.1).
+schema_version: "0.1"
+max_total_tokens: 24000

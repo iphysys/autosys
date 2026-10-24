@@ -1,0 +1,22 @@
+{
+  "schema_version": "0.1",
+  "profiles": [
+    {
+      "name": "default",
+      "total_tokens": 24000,
+      "bytes_per_token": 3,
+      "history_window_events": 200,
+      "io_timeout_seconds": 10,
+      "sections": {
+        "instructions": 3000,
+        "task_contract": 1500,
+        "job_state": 500,
+        "design_state": 8000,
+        "run_history": 3000,
+        "untrusted_content": 6000,
+        "open_turn": 6000,
+        "toolbox": 2000
+      }
+    }
+  ]
+}
