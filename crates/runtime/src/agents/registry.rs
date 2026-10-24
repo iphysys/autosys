@@ -7,8 +7,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use context::PromptLibrary;
-use contracts::SchemaSet;
 use contracts::types::{AgentSpec, AgentSpecOnRepairExhausted, Identifier, Sha256, VersionedHash};
+use contracts::{Error, SchemaSet};
+use serde::Serialize;
 use sha2::Digest;
 
 use crate::error::RuntimeError;
@@ -17,10 +18,12 @@ use crate::sdr_tools;
 /// The schema every task is checked against before it runs.
 pub(crate) const TASK_SCHEMA: &str = "tasks/task.schema.json";
 
-/// One registered agent: its spec and the spec's provenance.
+/// One registered agent: its spec, the spec's provenance, and its compiled
+/// result schema.
 pub struct AgentDefinition {
     spec: AgentSpec,
     provenance: VersionedHash,
+    result_schema: SchemaSet,
 }
 
 impl AgentDefinition {
@@ -33,6 +36,12 @@ impl AgentDefinition {
     /// compact JSON, which serde writes in a fixed field order.
     pub fn provenance(&self) -> &VersionedHash {
         &self.provenance
+    }
+
+    /// Every way `value` breaks the agent's result schema; empty when valid.
+    pub(crate) fn result_problems(&self, value: &impl Serialize) -> Result<Vec<String>, Error> {
+        self.result_schema
+            .errors_of(self.spec.result_schema.as_str(), value)
     }
 }
 
@@ -99,14 +108,26 @@ impl AgentRegistry {
                         .to_owned(),
                 );
             }
-            if let Err(e) = SchemaSet::compile(&[spec.result_schema.as_str()]) {
-                own.push(format!("result_schema: {}", e.message()));
-            }
-            if own.is_empty() {
-                let provenance = provenance(&spec)?;
-                agents.insert(id, AgentDefinition { spec, provenance });
-            } else {
-                problems.extend(own.into_iter().map(|p| format!("agent `{id}`: {p}")));
+            let result_schema = match SchemaSet::compile(&[spec.result_schema.as_str()]) {
+                Ok(schema) => Some(schema),
+                Err(e) => {
+                    own.push(format!("result_schema: {}", e.message()));
+                    None
+                }
+            };
+            match result_schema {
+                Some(result_schema) if own.is_empty() => {
+                    let provenance = provenance(&spec)?;
+                    agents.insert(
+                        id,
+                        AgentDefinition {
+                            spec,
+                            provenance,
+                            result_schema,
+                        },
+                    );
+                }
+                _ => problems.extend(own.into_iter().map(|p| format!("agent `{id}`: {p}"))),
             }
         }
         if !problems.is_empty() {

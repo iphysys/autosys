@@ -1,8 +1,9 @@
 //! Agents as configuration (blueprint section 14.3): the registry of specs,
-//! and the checks that fit a task to its agent. A specialist is a spec, not
-//! a new loop; `bounded_worker` is the one loop type.
+//! the checks that fit a task to its agent, and the one loop type every
+//! agent runs, `bounded_worker`. A specialist is a spec, not a new loop.
 
-mod factory;
-mod registry;
+pub(crate) mod bounded_worker;
+pub(crate) mod factory;
+pub(crate) mod registry;
 
 pub use registry::{AgentDefinition, AgentRegistry};

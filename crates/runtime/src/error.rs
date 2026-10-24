@@ -23,6 +23,11 @@ pub enum RuntimeError {
     #[error("task `{task}` cannot run: {}", .problems.join("; "))]
     InvalidTask { task: String, problems: Vec<String> },
 
+    /// Components that cannot run a task safely, such as commit gates
+    /// without the `sdr_commit` gate.
+    #[error("invalid runtime setup: {0}")]
+    InvalidSetup(String),
+
     /// A component the run depends on failed: a store, a gateway, the
     /// checks or the gates. The source keeps its own code.
     #[error("{operation} failed: {source}")]
@@ -54,7 +59,9 @@ impl RuntimeError {
     /// keep their own code.
     pub fn code(&self) -> ErrorCode {
         match self {
-            Self::InvalidAgents { .. } | Self::InvalidTask { .. } => ErrorCode::InvalidInput,
+            Self::InvalidAgents { .. } | Self::InvalidTask { .. } | Self::InvalidSetup(_) => {
+                ErrorCode::InvalidInput
+            }
             Self::UnknownAgent { .. } => ErrorCode::NotFound,
             Self::Component { source, .. } => source.code(),
             Self::Context(e) => e.code(),
@@ -106,6 +113,10 @@ mod tests {
                     task: "t".into(),
                     problems: vec!["x".into()],
                 },
+                ErrorCode::InvalidInput,
+            ),
+            (
+                RuntimeError::InvalidSetup("x".into()),
                 ErrorCode::InvalidInput,
             ),
             (

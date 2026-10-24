@@ -11,14 +11,12 @@ use crate::error::RuntimeError;
 
 /// The model profile an agent runs on, and the most output a call with it
 /// may ask for.
-#[allow(dead_code, reason = "called by the query loop, added next")]
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct ModelChoice {
     pub(crate) profile: Identifier,
     pub(crate) max_output_tokens: u64,
 }
 
-#[allow(dead_code, reason = "called by the query loop, added next")]
 impl AgentDefinition {
     /// The profile the model gateway resolved for this agent at startup,
     /// where a profile without tool calling was already refused for an agent

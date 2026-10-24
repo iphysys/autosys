@@ -19,6 +19,7 @@ synth-model-gateway.workspace = true
 synth-sdr.workspace = true
 synth-tools.workspace = true
 
+futures-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
@@ -29,6 +30,8 @@ tracing.workspace = true
 [dev-dependencies]
 synth-testkit.workspace = true
 
+# The scripted provider adapter of the tests (ADR-0015).
+async-trait.workspace = true
 # Checks that a bundled tool definition compiles on its own.
 jsonschema.workspace = true
 # Reads the committed config/ in tests, as crates/context does.

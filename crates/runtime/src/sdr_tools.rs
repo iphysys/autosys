@@ -353,6 +353,33 @@ pub(crate) fn transition_id(run: &RunId, call: &StepId) -> Result<TransitionId, 
 mod tests {
     use super::*;
 
+    fn versioned(id: &str) -> VersionedHash {
+        VersionedHash {
+            id: id.parse().expect("id"),
+            version: Some("0.1.0".parse().expect("version")),
+            sha256: format!("sha256:{}", "a".repeat(64)).parse().expect("hash"),
+        }
+    }
+
+    #[test]
+    fn a_commit_records_the_build_the_models_the_prompts_and_the_agent_spec() {
+        let build: NonEmptyString = "build-7".parse().expect("text");
+        let models: Vec<NonEmptyString> = vec!["claude-haiku-5-5".parse().expect("text")];
+        let prompts = [versioned("system.base"), versioned("orchestrator.main")];
+        let spec = versioned("main_orchestrator");
+        let recorded = harness(&Provenance {
+            harness_build: &build,
+            model_ids: &models,
+            prompts: &prompts,
+            agent_spec: &spec,
+        });
+        assert_eq!(recorded.harness_build, build);
+        assert_eq!(recorded.model_ids, models);
+        assert_eq!(recorded.prompts, prompts.to_vec());
+        assert_eq!(recorded.agent_specs, vec![spec]);
+        assert!(recorded.skills.is_empty());
+    }
+
     #[test]
     fn transition_ids_are_stable_per_run_and_call() {
         let run: RunId = "run-1".parse().expect("id");
