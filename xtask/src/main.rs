@@ -32,6 +32,9 @@ Tasks:
                 repair behavior (ADR-0030)
   validate-benchmarks
                 Every problem in evals/benchmarks/ against its schema (blueprint 14.7)
+  benchmark-request <problem-id> [--agent <agent-id>]
+                Prints the RunRequest that starts a run on a dev benchmark problem, for
+                `synth run start` (ADR-0034); the agent defaults to main_orchestrator
   codegen [--check]
                 Python models for the tool servers from schemas/tools/ (blueprint 7.1);
                 --check fails if the committed models differ
@@ -63,6 +66,10 @@ fn run() -> Result<()> {
             codegen::run(&workspace_root()?, check)
         }
         Some("validate-benchmarks") => validate_benchmarks(&workspace_root()?),
+        Some("benchmark-request") => {
+            let (problem, agent) = benchmark_request_args(std::env::args().skip(2))?;
+            benchmark_request(&workspace_root()?, &problem, &agent)
+        }
         Some("test-tools") => tool_servers::run(&workspace_root()?),
         Some("-h" | "--help") => {
             println!("{USAGE}");
@@ -406,6 +413,72 @@ fn validate_benchmarks(root: &Path) -> Result<()> {
         bail!("invalid benchmarks:\n  - {}", problems.join("\n  - "));
     }
     eprintln!("xtask: validate-benchmarks: passed");
+    Ok(())
+}
+
+/// The agent a benchmark request names unless `--agent` says otherwise.
+const DEFAULT_AGENT: &str = "main_orchestrator";
+
+/// The problem id and agent id of `benchmark-request`.
+fn benchmark_request_args(mut args: impl Iterator<Item = String>) -> Result<(String, String)> {
+    let mut problem = None;
+    let mut agent = DEFAULT_AGENT.to_owned();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--agent" => {
+                agent = args
+                    .next()
+                    .filter(|v| !v.starts_with("--"))
+                    .context("--agent needs a value")?;
+            }
+            other if other.starts_with("--") => bail!("unknown option `{other}`\n\n{USAGE}"),
+            other if problem.is_none() => problem = Some(other.to_owned()),
+            other => bail!("unexpected argument `{other}`\n\n{USAGE}"),
+        }
+    }
+    let problem = problem.with_context(|| format!("no problem id given\n\n{USAGE}"))?;
+    // Each id names one directory or file, never a path.
+    for id in [&problem, &agent] {
+        if id.contains(['/', '\\']) || id.starts_with('.') {
+            bail!("`{id}` is not an id");
+        }
+    }
+    Ok((problem, agent))
+}
+
+/// Prints the run request for a dev problem, built by the evaluation
+/// crate's own mapping and checked against the API's schema.
+fn benchmark_request(root: &Path, problem_id: &str, agent_id: &str) -> Result<()> {
+    let loader =
+        infra::benchmarks::BenchmarkLoader::new().context("loading the benchmark schema")?;
+    let problem_path = root
+        .join("evals/benchmarks/dev")
+        .join(problem_id)
+        .join(infra::benchmarks::PROBLEM_FILE);
+    let problem = loader
+        .load(&problem_path)
+        .with_context(|| format!("loading {}", problem_path.display()))?;
+    let config =
+        infra::config::ConfigLoader::new(environment()?).context("loading the config schemas")?;
+    let agent_path = root.join("config/agents").join(format!("{agent_id}.yaml"));
+    let agent: contracts::types::AgentSpec = config
+        .load(&agent_path)
+        .with_context(|| format!("loading {}", agent_path.display()))?;
+    let request = evaluation::benchmarks::run_request(&problem, &agent)
+        .with_context(|| format!("building the request for {problem_id}"))?;
+    let schema = "api/run-request.schema.json";
+    let problems = contracts::SchemaSet::compile(&[schema])
+        .context("loading the run request schema")?
+        .errors_of(schema, &request)
+        .context("checking the request")?;
+    if !problems.is_empty() {
+        bail!(
+            "the request does not satisfy schemas/{schema}:\n  - {}",
+            problems.join("\n  - ")
+        );
+    }
+    let json = serde_json::to_string_pretty(&request).context("serializing the request")?;
+    println!("{json}");
     Ok(())
 }
 
