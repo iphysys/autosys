@@ -59,6 +59,7 @@ async fn fixture_with(checks: Vec<Arc<dyn Check>>) -> Fixture {
                 actor: parse(json!({ "kind": "system", "component": "test" })),
                 reason: parse(json!("Start.")),
                 harness: harness(),
+                requirements: Vec::new(),
             },
             &ctx,
         )
