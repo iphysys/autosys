@@ -30,6 +30,7 @@ pub(crate) fn changed(from: Option<JobState>, to: JobStatus, reason: &str) -> Ev
         from,
         to,
         reason: reason.parse::<NonEmptyString>().ok(),
+        harness_build: None,
     }
 }
 
@@ -87,8 +88,15 @@ pub(crate) async fn last_change(
 ///
 /// A submit or a wake-up records itself after it acts, and a crash between
 /// the two loses the record; so does a claim. Whatever is missing on the
-/// way from the log's last state to this claim is written here.
-pub(crate) fn missing(last: Option<&JobStatus>, interrupted: bool) -> Vec<EventPayload> {
+/// way from the log's last state to this claim is written here. The claim's
+/// own record, the last, names `build`: the build that runs this segment
+/// (ADR-0033). A lost record of an earlier claim names none, since its build
+/// is not known.
+pub(crate) fn missing(
+    last: Option<&JobStatus>,
+    interrupted: bool,
+    build: &NonEmptyString,
+) -> Vec<EventPayload> {
     let mut records = Vec::new();
     let mut at = last.map(job_state);
     if at.is_none() {
@@ -130,6 +138,14 @@ pub(crate) fn missing(last: Option<&JobStatus>, interrupted: bool) -> Vec<EventP
         }
         None => {}
     }
+    if let Some(EventPayload::JobStateChanged {
+        to: JobStatus::Running,
+        harness_build,
+        ..
+    }) = records.last_mut()
+    {
+        *harness_build = Some(build.clone());
+    }
     records
 }
 
@@ -158,6 +174,23 @@ mod tests {
     }
 
     use JobState::{Queued, Running, Suspended};
+
+    fn missing(last: Option<&JobStatus>, interrupted: bool) -> Vec<EventPayload> {
+        let records = super::missing(last, interrupted, &"build-1".parse().expect("a build"));
+        let builds: Vec<Option<&str>> = records
+            .iter()
+            .map(|r| match r {
+                EventPayload::JobStateChanged { harness_build, .. } => {
+                    harness_build.as_ref().map(|b| b.as_str())
+                }
+                other => panic!("not a state change: {other:?}"),
+            })
+            .collect();
+        let (own, earlier) = builds.split_last().expect("a claim records itself");
+        assert_eq!(*own, Some("build-1"), "the claim names its build");
+        assert!(earlier.iter().all(Option::is_none), "{builds:?}");
+        records
+    }
 
     #[test]
     fn a_claim_records_itself_and_whatever_is_missing() {

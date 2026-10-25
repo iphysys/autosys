@@ -15,7 +15,7 @@
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use async_trait::async_trait;
 use context::{
@@ -25,7 +25,7 @@ use context::{
 use contracts::ids::{ProjectId, RunId};
 use contracts::types::{
     ContextBudgets, ContextPolicy, ContextProfile, Event, HarnessVersions, Job, Operation,
-    Transition,
+    Transition, VersionedHash,
 };
 use contracts::{
     Clock, ContentBlock, Error, ErrorCode, EventKind, EventLog, ExecutionContext, Message,
@@ -462,10 +462,20 @@ impl World {
     }
 }
 
+/// The agent spec every test context is built for.
+pub static AGENT_SPEC: LazyLock<VersionedHash> = LazyLock::new(|| {
+    parse(json!({
+        "id": "main_orchestrator", "version": "0.1.0",
+        "sha256": format!("sha256:{}", "e".repeat(64))
+    }))
+});
+
 pub fn request<'a>(job: &'a Job, open_turn: &'a [Message]) -> BuildRequest<'a> {
     BuildRequest {
         job,
         prompt: "orchestrator/main.md",
+        agent_spec: &AGENT_SPEC,
+        skills: &[],
         profile: None,
         open_turn,
         reserved_tokens: 0,

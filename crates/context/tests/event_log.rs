@@ -46,6 +46,9 @@ async fn one_build_records_exactly_one_matching_event() {
         total_tokens,
         sdr_version,
         last_event_seq,
+        prompts,
+        skills,
+        agent_spec,
     } = &event.payload
     else {
         panic!("not a context_assembled event");
@@ -57,6 +60,14 @@ async fn one_build_records_exactly_one_matching_event() {
     assert_eq!(context.event_seq(), Some(event.seq.get()));
     assert_eq!(context.manifest().sdr_version, 1);
     assert_eq!(context.manifest().last_event_seq, 2);
+    assert_eq!(prompts, &context.manifest().prompts, "the prompts by hash");
+    assert!(!prompts.is_empty());
+    assert!(skills.is_empty());
+    assert_eq!(
+        agent_spec.as_ref(),
+        Some(&*AGENT_SPEC),
+        "the agent spec by hash"
+    );
 
     assert_eq!(event.run_id.as_str(), RUN);
     assert_eq!(

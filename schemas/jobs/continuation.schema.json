@@ -9,13 +9,16 @@
     "checkpoint",
     "run_id",
     "failures",
-    "model_ids",
     "committed",
     "evidence_ids",
     "turn"
   ],
   "properties": {
-    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "schema_version": {
+      "description": "0.2 replaces model_ids with harness (ADR-0033). A 0.1 record is read as stored and never rewritten, since a job's status and the log name it by sha256; the next save writes 0.2.",
+      "type": "string",
+      "enum": ["0.1", "0.2"]
+    },
     "checkpoint": {
       "description": "Raised by one on every save while the job runs, so a status can name this record.",
       "type": "integer",
@@ -27,10 +30,13 @@
       "type": "integer",
       "minimum": 0
     },
+    "harness": {
+      "description": "Schema 0.2 only, and required there: what shaped the run so far, a cache of the projection of the session log (ADR-0033).",
+      "$ref": "../common/types.schema.json#/$defs/RunHarness"
+    },
     "model_ids": {
-      "description": "Every model that answered, for commit provenance.",
-      "type": "array",
-      "items": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" }
+      "description": "Schema 0.1 only, and required there: every model that answered.",
+      "$ref": "#/$defs/LegacyModelIds"
     },
     "committed": {
       "type": "array",
@@ -58,6 +64,11 @@
   },
   "dependentRequired": { "approval_id": ["open_step"] },
   "$defs": {
+    "LegacyModelIds": {
+      "description": "A named type, so a stored empty list serializes back as stored and the record's sha256 does not change.",
+      "type": "array",
+      "items": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" }
+    },
     "ContinuationCommit": {
       "description": "The run's latest commit. Its requirements and evidence are read back from the SDR and the evidence store.",
       "type": "object",

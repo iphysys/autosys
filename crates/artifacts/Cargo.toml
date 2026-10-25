@@ -1,0 +1,30 @@
+[package]
+name = "synth-artifacts"
+version = "0.1.0"
+description = "Artifact metadata and the run report, assembled on demand from durable records (blueprint sections 2.7 and 18.1, ADR-0033)."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "artifacts"
+
+[dependencies]
+synth-contracts.workspace = true
+synth-sdr.workspace = true
+
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["macros", "time"] }
+tracing.workspace = true
+
+[dev-dependencies]
+synth-testkit.workspace = true
+
+chrono.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "time"] }
+
+[lints]
+workspace = true

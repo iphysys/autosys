@@ -5,6 +5,7 @@
 #![allow(clippy::expect_used, clippy::unwrap_used, reason = "integration tests")]
 
 mod crash_points;
+mod report;
 mod scenarios;
 mod startup;
 mod support;

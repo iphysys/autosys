@@ -1,5 +1,5 @@
 {
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "run_id": "run-0001",
   "seq": 3,
   "occurred_at": "2026-10-22T09:00:02Z",
@@ -10,6 +10,18 @@
     "context_hash": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
     "total_tokens": 6120,
     "sdr_version": 2,
-    "last_event_seq": 2
+    "last_event_seq": 2,
+    "prompts": [
+      {
+        "id": "orchestrator.main",
+        "version": "0.1.0",
+        "sha256": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+      }
+    ],
+    "agent_spec": {
+      "id": "main_orchestrator",
+      "version": "0.1.0",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
   }
 }

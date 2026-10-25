@@ -18,8 +18,10 @@ pub mod hooks;
 pub mod ids;
 pub mod job;
 pub mod model;
+pub mod provenance;
 pub mod schema;
 pub mod spawn;
+pub mod status;
 pub mod storage;
 pub mod tool;
 
@@ -46,6 +48,7 @@ pub use model::{
 };
 pub use schema::SchemaSet;
 pub use spawn::{BackgroundTask, Spawner, TaskHandle};
+pub use status::{ConsideredFinding, requirement_status};
 pub use storage::{
     ArtifactStore, Claimed, EventLog, EvidenceStore, JobStore, JobWrite, NewEvent, NewStep, Parked,
     RecordWrite, SdrRepository, StepStart, StepStore, WakeReason,

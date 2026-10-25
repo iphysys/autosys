@@ -166,7 +166,7 @@ impl EventLog for PgEventLog {
                 let seq = NonZeroU64::new(from_bigint(seq, "sequence number")?)
                     .ok_or_else(|| corrupt("stored sequence number is 0"))?;
                 let stored = Event {
-                    schema_version: EventSchemaVersion::X01,
+                    schema_version: EventSchemaVersion::X02,
                     run_id: event.run_id,
                     seq,
                     occurred_at: event.occurred_at,

@@ -84,6 +84,12 @@ impl Orchestrator {
         })
     }
 
+    /// The build of the harness, which a claim records for its segment of a
+    /// run (ADR-0033).
+    pub fn harness_build(&self) -> &NonEmptyString {
+        &self.components.harness_build
+    }
+
     /// Runs `job` from its start: appends `run_started`, then steps until a
     /// stop reason. The stream yields the run's events, then how it stopped.
     /// `ctx` carries the correlation id and the cancellation; the job's ids

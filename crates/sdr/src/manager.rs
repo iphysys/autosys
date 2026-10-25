@@ -104,6 +104,17 @@ impl SdrManager {
         self.store.head(project_id, ctx).await
     }
 
+    /// The record of `version`: who committed it, why, on what evidence, and
+    /// with which harness. NotFound if it does not exist.
+    pub async fn version_record(
+        &self,
+        project_id: &ProjectId,
+        version: &SdrVersion,
+        ctx: &ExecutionContext,
+    ) -> Result<SdrVersionRecord, Error> {
+        self.store.version_record(project_id, version, ctx).await
+    }
+
     /// The document at `version`, keeping only the elements in `slice`: those
     /// of the listed kinds, plus the listed ids.
     pub async fn read(

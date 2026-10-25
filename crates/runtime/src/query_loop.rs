@@ -19,8 +19,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use contracts::ids::{ApprovalId, EvidenceId, RunId, SdrVersion, TransitionId};
 use contracts::types::{
-    ApprovalAnswer, ContinuationRecord, Event, Evidence, Job, NonEmptyString, Requirement,
-    StopReason, TaskResult, VersionedHash,
+    ApprovalAnswer, ContinuationRecord, Event, Evidence, Job, Requirement, RunHarness, StopReason,
+    TaskResult, VersionedHash,
 };
 use contracts::{ContentBlock, Error, EventLog, Message};
 use futures_core::Stream;
@@ -133,8 +133,8 @@ pub(crate) struct LoopState {
     pub(crate) job: Job,
     /// Failures since the last commit, toward the repair bound.
     pub(crate) failures: u64,
-    /// Every model that answered, for commit provenance.
-    pub(crate) model_ids: Vec<NonEmptyString>,
+    /// What shaped the run so far, for commit provenance (ADR-0033).
+    pub(crate) harness: RunHarness,
     pub(crate) committed: Vec<TransitionId>,
     pub(crate) evidence_ids: Vec<EvidenceId>,
     /// The latest SDR version the run has seen or made.
@@ -159,7 +159,7 @@ impl LoopState {
         Self {
             job,
             failures: 0,
-            model_ids: Vec::new(),
+            harness: contracts::provenance::empty(),
             committed: Vec::new(),
             evidence_ids: Vec::new(),
             head: None,
@@ -224,10 +224,26 @@ pub(crate) struct Forwarder<'a> {
 }
 
 impl Forwarder<'_> {
-    /// Sends every event after `job.progress.last_event_seq`, in order, and
-    /// moves the mark. Reads with the I/O timeout alone, so a cancelled run
-    /// still reports its last events.
-    pub(crate) async fn forward(&self, job: &mut Job) -> Result<(), RuntimeError> {
+    /// Sends every event after `state.job.progress.last_event_seq`, in
+    /// order, adds what each records about the harness to `state.harness`,
+    /// and moves the mark. The harness is so the projection of the log up to
+    /// the mark (ADR-0033), saved with it in every checkpoint. Reads with the
+    /// I/O timeout alone, so a cancelled run still reports its last events.
+    pub(crate) async fn forward(&self, state: &mut LoopState) -> Result<(), RuntimeError> {
+        self.send(&mut state.job, Some(&mut state.harness)).await
+    }
+
+    /// Like [`Forwarder::forward`], for a run that saves no further
+    /// checkpoint and so keeps no harness.
+    pub(crate) async fn forward_job(&self, job: &mut Job) -> Result<(), RuntimeError> {
+        self.send(job, None).await
+    }
+
+    async fn send(
+        &self,
+        job: &mut Job,
+        mut harness: Option<&mut RunHarness>,
+    ) -> Result<(), RuntimeError> {
         loop {
             let after = job.progress.last_event_seq;
             let page = timed(
@@ -248,6 +264,9 @@ impl Forwarder<'_> {
                     )));
                 }
                 job.progress.last_event_seq = seq;
+                if let Some(harness) = harness.as_deref_mut() {
+                    contracts::provenance::observe(harness, &event.payload);
+                }
                 self.sender.send(event).await.map_err(|_| {
                     RuntimeError::Internal("the run's stream was dropped".to_owned())
                 })?;

@@ -206,18 +206,12 @@ async fn recount(
     )
     .await?;
     for event in calls {
-        if let EventPayload::ModelCallCompleted {
-            usage, model_id, ..
-        } = event.payload
-        {
+        if let EventPayload::ModelCallCompleted { usage, .. } = event.payload {
             let used = &mut state.job.budget_used;
             used.input_tokens = used.input_tokens.saturating_add(usage.input_tokens);
             used.output_tokens = used.output_tokens.saturating_add(usage.output_tokens);
             used.steps += 1;
             state.job.progress.steps_completed += 1;
-            if !state.model_ids.contains(&model_id) {
-                state.model_ids.push(model_id);
-            }
         }
     }
     Ok(())
@@ -331,7 +325,7 @@ async fn failed(
     if let Err(e) = recorder.error(info, ctx).await {
         tracing::warn!(error = %e, "the harness failure could not be recorded");
     }
-    if let Err(e) = forwarder.forward(job).await {
+    if let Err(e) = forwarder.forward_job(job).await {
         tracing::warn!(error = %e, "the run's last events could not be forwarded");
     }
     tracing::error!(code = %error.code(), error = %error, "run failed");
@@ -449,7 +443,7 @@ impl Worker<'_> {
         resumed: Option<(OpenStep, Option<ApprovalAnswer>)>,
     ) -> Result<RunOutcome, RuntimeError> {
         let stopped = async {
-            self.forwarder.forward(&mut state.job).await?;
+            self.forwarder.forward(&mut state).await?;
             self.steps(&mut state, &mut turn, resumed).await
         }
         .await;
@@ -510,6 +504,8 @@ impl Worker<'_> {
                         BuildRequest {
                             job: &state.job,
                             prompt: self.agent.spec().prompt.as_str(),
+                            agent_spec: self.agent.provenance(),
+                            skills: &[],
                             profile: None,
                             open_turn: turn,
                             reserved_tokens: self.reserved_tokens,
@@ -536,7 +532,7 @@ impl Worker<'_> {
                 Err(e) => return Err(RuntimeError::Context(e)),
             };
             state.head = Some(SdrVersion(assembled.manifest().sdr_version));
-            self.forwarder.forward(&mut state.job).await?;
+            self.forwarder.forward(state).await?;
 
             let Some(max_output) = budget::output_limit(
                 budget,
@@ -576,9 +572,9 @@ impl Worker<'_> {
                     });
                 }
             };
-            self.account(state, &call)?;
+            self.account(state, &call);
             self.model_call_completed(&assembled, &call).await?;
-            self.forwarder.forward(&mut state.job).await?;
+            self.forwarder.forward(state).await?;
 
             let calls = tool_calls(&call.response.content);
             if calls.is_empty() {
@@ -653,7 +649,7 @@ impl Worker<'_> {
                     sdr_version: step.sdr_version.clone(),
                     provenance: Provenance {
                         harness_build: &self.components.harness_build,
-                        model_ids: &state.model_ids,
+                        model_ids: &state.harness.model_ids,
                         prompts: &step.prompts,
                         agent_spec: self.agent.provenance(),
                     },
@@ -670,12 +666,12 @@ impl Worker<'_> {
             let routed = match routed {
                 Ok(routed) => routed,
                 Err(e) if e.code() == ErrorCode::Cancelled => {
-                    self.forwarder.forward(&mut state.job).await?;
+                    self.forwarder.forward(state).await?;
                     return self.interruption().map(Calls::Stop).ok_or(e);
                 }
                 Err(e) => return Err(e),
             };
-            self.forwarder.forward(&mut state.job).await?;
+            self.forwarder.forward(state).await?;
 
             let answered = match routed {
                 Routed::Ask {
@@ -704,6 +700,7 @@ impl Worker<'_> {
                         evidence: commit.evidence,
                     };
                     let unmet = stop::unmet(
+                        &view.requirements,
                         &stop::required(&view.requirements, &self.task.requirement_ids),
                         &view.evidence,
                     );
@@ -777,7 +774,9 @@ impl Worker<'_> {
     }
 
     /// Adds a model call to the job's usage.
-    fn account(&self, state: &mut LoopState, call: &ModelCall) -> Result<(), RuntimeError> {
+    /// Counts a model call's usage. Its model reaches the harness from the
+    /// log, when `model_call_completed` is forwarded.
+    fn account(&self, state: &mut LoopState, call: &ModelCall) {
         let used = &mut state.job.budget_used;
         used.input_tokens = used
             .input_tokens
@@ -787,13 +786,6 @@ impl Worker<'_> {
             .saturating_add(call.response.usage.output_tokens);
         used.steps += 1;
         state.job.progress.steps_completed += 1;
-        let model_id: NonEmptyString = call.response.model_id.parse().map_err(|_| {
-            RuntimeError::Internal("the model gateway returned an empty model id".to_owned())
-        })?;
-        if !state.model_ids.contains(&model_id) {
-            state.model_ids.push(model_id);
-        }
-        Ok(())
     }
 
     /// Appends `model_call_completed`, then compares the context's size
@@ -834,6 +826,7 @@ impl Worker<'_> {
             _ => (self.requirements_at(&head).await?, Vec::new(), false),
         };
         let unmet = stop::unmet(
+            &requirements,
             &stop::required(&requirements, &self.task.requirement_ids),
             &evidence,
         );
@@ -931,7 +924,7 @@ impl Worker<'_> {
                 self.ctx,
             )
             .await?;
-        self.forwarder.forward(&mut state.job).await?;
+        self.forwarder.forward(state).await?;
         tracing::info!(
             stop_reason = %stop_reason,
             steps = state.job.budget_used.steps,

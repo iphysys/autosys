@@ -10,7 +10,7 @@ use std::time::Duration;
 use contracts::ids::{ApprovalId, ProjectId};
 use contracts::types::{
     CheckpointRef, ContinuationCommit, ContinuationRecord, ContinuationRecordSchemaVersion,
-    ContinuationStep, ElementKind, Job, SdrSlice,
+    ContinuationStep, ElementKind, Job, RunHarness, SdrSlice,
 };
 use contracts::{ContentBlock, Error, EvidenceStore, ExecutionContext, Message, canonical_sha256};
 use sdr::SdrManager;
@@ -46,11 +46,12 @@ pub(crate) fn record(
         })
         .transpose()?;
     Ok(ContinuationRecord {
-        schema_version: ContinuationRecordSchemaVersion::X01,
+        schema_version: ContinuationRecordSchemaVersion::X02,
         checkpoint,
         run_id: state.job.run_id.clone(),
         failures: state.failures,
-        model_ids: state.model_ids.clone(),
+        harness: Some(state.harness.clone()),
+        model_ids: None,
         committed: state.committed.clone(),
         evidence_ids: state.evidence_ids.clone(),
         head: state.head.clone(),
@@ -156,7 +157,7 @@ pub(crate) async fn load(
     let state = LoopState {
         job,
         failures: record.failures,
-        model_ids: record.model_ids.clone(),
+        harness: harness(record)?,
         committed: record.committed.clone(),
         evidence_ids: record.evidence_ids.clone(),
         head: record.head.clone(),
@@ -168,6 +169,26 @@ pub(crate) async fn load(
         turn: convert(&record.turn)?,
         step,
     })
+}
+
+/// What shaped the run so far, as `record` holds it: a 0.2 record's
+/// `harness`, or a 0.1 record's models (ADR-0033). The schema cannot tie a
+/// field to a version, so this does.
+fn harness(record: &ContinuationRecord) -> Result<RunHarness, RuntimeError> {
+    match (record.schema_version, &record.harness, &record.model_ids) {
+        (ContinuationRecordSchemaVersion::X02, Some(harness), None) => Ok(harness.clone()),
+        (ContinuationRecordSchemaVersion::X01, None, Some(models)) => Ok(RunHarness {
+            model_ids: models.0.clone(),
+            ..contracts::provenance::empty()
+        }),
+        (version, _, _) => Err(RuntimeError::Internal(format!(
+            "a continuation record of schema {version} needs {}",
+            match version {
+                ContinuationRecordSchemaVersion::X01 => "model_ids and no harness",
+                ContinuationRecordSchemaVersion::X02 => "harness and no model_ids",
+            }
+        ))),
+    }
 }
 
 /// How a job's status names `record`: its number and the sha256 of its
@@ -203,8 +224,10 @@ mod tests {
     #[test]
     fn a_record_read_back_with_other_key_order_has_the_same_reference() {
         let record: ContinuationRecord = serde_json::from_value(json!({
-            "schema_version": "0.1", "checkpoint": 4, "run_id": "run-1", "failures": 0,
-            "model_ids": [], "committed": [], "evidence_ids": [],
+            "schema_version": "0.2", "checkpoint": 4, "run_id": "run-1", "failures": 0,
+            "harness": { "harness_builds": ["b"], "model_ids": [], "prompts": [], "skills": [],
+                "agent_specs": [] },
+            "committed": [], "evidence_ids": [],
             "turn": [{ "role": "user", "content": [{ "type": "opaque", "provider": "anthropic",
                 "data": { "b": 1, "a": { "z": 2, "y": 3 } } }] }]
         }))
@@ -212,13 +235,59 @@ mod tests {
         let reordered: ContinuationRecord = serde_json::from_value(json!({
             "turn": [{ "content": [{ "data": { "a": { "y": 3, "z": 2 }, "b": 1 },
                 "provider": "anthropic", "type": "opaque" }], "role": "user" }],
-            "evidence_ids": [], "committed": [], "model_ids": [], "failures": 0,
-            "run_id": "run-1", "checkpoint": 4, "schema_version": "0.1"
+            "evidence_ids": [], "committed": [], "failures": 0,
+            "harness": { "skills": [], "prompts": [], "model_ids": [], "harness_builds": ["b"],
+                "agent_specs": [] },
+            "run_id": "run-1", "checkpoint": 4, "schema_version": "0.2"
         }))
         .expect("the same record");
         let reference = checkpoint_ref(&record).expect("a reference");
         assert_eq!(reference.version.get(), 4);
         assert_eq!(reference, checkpoint_ref(&reordered).expect("a reference"));
+    }
+
+    fn record_of(fields: serde_json::Value) -> ContinuationRecord {
+        let mut value = json!({
+            "checkpoint": 2, "run_id": "run-1", "failures": 0, "committed": [],
+            "evidence_ids": [], "turn": []
+        });
+        if let (Some(base), serde_json::Value::Object(extra)) = (value.as_object_mut(), fields) {
+            base.extend(extra);
+        }
+        serde_json::from_value(value).expect("a record")
+    }
+
+    #[test]
+    fn a_stored_0_1_record_keeps_its_reference_and_its_models() {
+        let stored = json!({
+            "schema_version": "0.1", "checkpoint": 2, "run_id": "run-1", "failures": 0,
+            "model_ids": [], "committed": [], "evidence_ids": [], "turn": []
+        });
+        let record: ContinuationRecord = serde_json::from_value(stored.clone()).expect("a record");
+        assert_eq!(
+            checkpoint_ref(&record).expect("a reference").sha256,
+            canonical_sha256(&stored).expect("a hash"),
+            "an empty model list must serialize back as stored"
+        );
+        let with_models = record_of(json!({ "schema_version": "0.1", "model_ids": ["m-1"] }));
+        let read = harness(&with_models).expect("a 0.1 harness");
+        assert_eq!(read.model_ids.len(), 1);
+        assert!(read.harness_builds.is_empty() && read.prompts.is_empty());
+    }
+
+    #[test]
+    fn a_record_with_the_other_versions_field_is_refused() {
+        let empty = json!({ "harness_builds": [], "model_ids": [], "prompts": [], "skills": [],
+            "agent_specs": [] });
+        for fields in [
+            json!({ "schema_version": "0.2" }),
+            json!({ "schema_version": "0.2", "harness": empty, "model_ids": [] }),
+            json!({ "schema_version": "0.1" }),
+            json!({ "schema_version": "0.1", "harness": empty, "model_ids": [] }),
+        ] {
+            let record = record_of(fields.clone());
+            assert!(harness(&record).is_err(), "{fields}");
+        }
     }
 
     #[test]

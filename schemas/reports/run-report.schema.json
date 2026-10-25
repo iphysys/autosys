@@ -1,11 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "RunReport",
-  "description": "The record of one synthesis run (blueprint section 18.1). Numbers and statuses come from evidence and the SDR; only narrative is model-written. Branches, fidelity and cost are added in later increments.",
+  "description": "The record of one synthesis run (blueprint section 18.1). Numbers and statuses come from evidence and the SDR; only narrative is model-written. It is assembled on demand from durable records (ADR-0033). Branches, required fidelity per row and cost are added in later increments.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schema_version",
+    "assembler_version",
+    "final",
     "run_id",
     "project_id",
     "objective",
@@ -24,6 +26,14 @@
   ],
   "properties": {
     "schema_version": { "type": "string", "enum": ["0.1"] },
+    "assembler_version": {
+      "description": "The version of the code that assembled this report, so each report is traceable to the logic that built it.",
+      "$ref": "../common/types.schema.json#/$defs/SemVer"
+    },
+    "final": {
+      "description": "False while the run can still continue (suspended on an approval); the report then reflects the run so far.",
+      "type": "boolean"
+    },
     "run_id": { "$ref": "../common/types.schema.json#/$defs/RunId" },
     "project_id": { "$ref": "../common/types.schema.json#/$defs/ProjectId" },
     "objective": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
@@ -59,7 +69,10 @@
       "type": "array",
       "items": { "$ref": "#/$defs/ReportEscalation" }
     },
-    "versions": { "$ref": "../common/types.schema.json#/$defs/HarnessVersions" },
+    "versions": {
+      "description": "Everything that shaped the run, folded from its session log.",
+      "$ref": "../common/types.schema.json#/$defs/RunHarness"
+    },
     "narrative": { "$ref": "#/$defs/ReportNarrative" }
   },
   "$defs": {
@@ -68,19 +81,47 @@
       "enum": ["pass", "fail", "unverified", "waived"]
     },
     "RequirementStatusRow": {
+      "description": "A requirement's status, derived from check findings by one rule shared with the success stop (ADR-0033).",
       "type": "object",
       "additionalProperties": false,
-      "required": ["requirement_id", "priority", "status", "evidence_ids"],
+      "required": ["requirement_id", "priority", "status", "evidence"],
       "properties": {
         "requirement_id": { "$ref": "../common/types.schema.json#/$defs/ElementId" },
         "priority": { "$ref": "../sdr/requirement.schema.json#/$defs/RequirementPriority" },
         "status": { "$ref": "#/$defs/RequirementStatus" },
-        "evidence_ids": {
-          "description": "The evidence the status was derived from.",
+        "reason": {
+          "description": "Why the status is unverified. Present exactly when it is.",
+          "$ref": "#/$defs/UnverifiedReason"
+        },
+        "evidence": {
+          "description": "Every check finding considered, with whether it counted.",
           "type": "array",
-          "items": { "$ref": "../common/types.schema.json#/$defs/EvidenceId" }
+          "items": { "$ref": "#/$defs/ReportFinding" }
         }
       }
+    },
+    "UnverifiedReason": {
+      "description": "no_evidence: no finding counted. check_error: a check failed to run. undecided: a check could not decide. below_fidelity and stale: every finding was ignored for that reason.",
+      "type": "string",
+      "enum": ["no_evidence", "check_error", "undecided", "below_fidelity", "stale"]
+    },
+    "ReportFinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence_id", "verdict", "used"],
+      "properties": {
+        "evidence_id": { "$ref": "../common/types.schema.json#/$defs/EvidenceId" },
+        "verdict": { "$ref": "../sdr/evidence.schema.json#/$defs/Verdict" },
+        "used": { "type": "boolean" },
+        "ignored_reason": {
+          "description": "Why the finding did not count. Present exactly when used is false.",
+          "$ref": "#/$defs/IgnoredReason"
+        }
+      }
+    },
+    "IgnoredReason": {
+      "type": "string",
+      "enum": ["below_fidelity", "stale"]
     },
     "ReportDecision": {
       "type": "object",

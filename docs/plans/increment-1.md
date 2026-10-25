@@ -264,7 +264,7 @@ Follow-ups, not in this PR:
 - PR 12 accounts for the `tool_call_completed` a replay does not write (ADR-0026).
 - PR 12 adds job states, `job_state_changed`, waking on an answered approval or a cancel, and bootstrap.
 - A provenance check in `evaluation`: a parameter's value and source must match the evidence it cites. Until then the benchmark's `parameter_matches_reference` outcome catches a fabricated value (PR 15).
-- PR 13 decides where the result's narrative `summary` comes from.
+- PR 13 decides where the result's narrative `summary` comes from. Settled in [ADR-0033](../adr/0033-run-report-v0.md): none in v0, later the finish call's own `summary`.
 
 ### PR 12a — Lease fencing
 
@@ -331,6 +331,21 @@ The record of what a run produced and why.
 - Run report assembly from the SDR, evidence, job record and harness-data hashes, validated against `schemas/reports/`. Only the narrative field is model-written.
 
 **Done when:** the report for a fixture run validates, every requirement status links to evidence, and every number in it matches the evidence store.
+
+Settled while building, and recorded in [ADR-0033](../adr/0033-run-report-v0.md):
+- **No narrative in v0.** Its later source is an optional `summary` on the finish call, checked by the agent's result schema. The report path makes no model call.
+- **Provenance is in the log.** Event schema 0.2: `context_assembled` names prompts, skills and the agent spec by hash, and a claim's `{→ running}` names the build. `RunHarness` is the log's projection, `contracts::provenance::fold`.
+- **The continuation caches it.** Continuation schema 0.2 replaces `model_ids` with `harness`, kept up to date by the forwarder. 0.1 records are read as stored and never rewritten, since their sha256 is referenced.
+- **On demand.** `artifacts::ReportAssembler` reads only, as of the final SDR version. A suspended run's report is not final; a run that has not stopped has none. The report carries `assembler_version`, and its `versions` are folded from the log, which also holds builds of recovery-only segments.
+- **One status rule.** `contracts::requirement_status` serves the success stop and the report. `error` is unverified, never fail. `Fidelity` (L0–L4) exists, but no evidence carries one yet. A row lists every finding considered, in place of `evidence_ids`.
+- **Tests.** `artifacts` tests the assembler on in-memory stores. The done-when test is `tests/system/report.rs` on Postgres.
+
+Follow-ups, not in this PR:
+- An optional `summary` on the finish call, and copying it into the report's narrative.
+- A fidelity on evidence and a required fidelity per requirement row (Increment 2), and staleness from dependency invalidation.
+- `waived`, from an approval-gate record naming the requirement and the version.
+- Reading child jobs into the parent's report, when jobs gain a parent (Increment 3).
+- PR 14 serves the report: `api` reaches the assembler through `runtime`, and bootstrap builds it with the Postgres artifact store.
 
 ### PR 14 — API v0 and api-server
 
