@@ -2255,6 +2255,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "synth-bootstrap"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "rustls",
+ "serde_json",
+ "sqlx",
+ "synth-context",
+ "synth-contracts",
+ "synth-evaluation",
+ "synth-governance",
+ "synth-infra",
+ "synth-model-gateway",
+ "synth-runtime",
+ "synth-sdr",
+ "synth-testkit",
+ "synth-tools",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "synth-context"
 version = "0.1.0"
 dependencies = [
@@ -2540,6 +2565,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]
