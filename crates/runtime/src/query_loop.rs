@@ -19,8 +19,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use contracts::ids::{ApprovalId, EvidenceId, RunId, SdrVersion, TransitionId};
 use contracts::types::{
-    ApprovalAnswer, ContinuationRecord, Event, Evidence, Job, NonEmptyString, Requirement,
-    StopReason, TaskResult, VersionedHash,
+    ApprovalAnswer, ContinuationRecord, Event, Evidence, Job, Requirement, RunHarness, StopReason,
+    TaskResult, VersionedHash,
 };
 use contracts::{ContentBlock, Error, EventLog, Message};
 use futures_core::Stream;
@@ -133,8 +133,8 @@ pub(crate) struct LoopState {
     pub(crate) job: Job,
     /// Failures since the last commit, toward the repair bound.
     pub(crate) failures: u64,
-    /// Every model that answered, for commit provenance.
-    pub(crate) model_ids: Vec<NonEmptyString>,
+    /// What shaped the run so far, for commit provenance (ADR-0033).
+    pub(crate) harness: RunHarness,
     pub(crate) committed: Vec<TransitionId>,
     pub(crate) evidence_ids: Vec<EvidenceId>,
     /// The latest SDR version the run has seen or made.
@@ -159,7 +159,13 @@ impl LoopState {
         Self {
             job,
             failures: 0,
-            model_ids: Vec::new(),
+            harness: RunHarness {
+                harness_builds: Vec::new(),
+                model_ids: Vec::new(),
+                prompts: Vec::new(),
+                skills: Vec::new(),
+                agent_specs: Vec::new(),
+            },
             committed: Vec::new(),
             evidence_ids: Vec::new(),
             head: None,

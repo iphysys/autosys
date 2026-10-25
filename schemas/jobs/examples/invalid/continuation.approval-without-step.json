@@ -1,11 +1,27 @@
 {
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "checkpoint": 7,
   "run_id": "run-0001",
   "failures": 1,
-  "model_ids": [
-    "claude-haiku-4-5"
-  ],
+  "harness": {
+    "harness_builds": ["synth 0.1.0 (example)"],
+    "model_ids": ["claude-haiku-4-5"],
+    "prompts": [
+      {
+        "id": "orchestrator.main",
+        "version": "0.1.0",
+        "sha256": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+      }
+    ],
+    "skills": [],
+    "agent_specs": [
+      {
+        "id": "main_orchestrator",
+        "version": "0.1.0",
+        "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ]
+  },
   "committed": [
     "tr-5f0e3c2a9b8d7e6f5a4b3c2d1e0f9a8b"
   ],

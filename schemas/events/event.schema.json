@@ -6,7 +6,11 @@
   "additionalProperties": false,
   "required": ["schema_version", "run_id", "seq", "occurred_at", "correlation_id", "actor", "payload"],
   "properties": {
-    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "schema_version": {
+      "description": "0.2 adds the provenance fields of context_assembled and job_state_changed (ADR-0033). Events written as 0.1 stay valid.",
+      "type": "string",
+      "enum": ["0.1", "0.2"]
+    },
     "run_id": { "$ref": "../common/types.schema.json#/$defs/RunId" },
     "seq": {
       "description": "Per-run sequence number, starting at 1 with no gaps.",
@@ -50,7 +54,11 @@
             "type": { "const": "job_state_changed" },
             "from": { "$ref": "../jobs/job.schema.json#/$defs/JobState" },
             "to": { "$ref": "../jobs/job.schema.json#/$defs/JobStatus" },
-            "reason": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" }
+            "reason": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+            "harness_build": {
+              "description": "Set by a claim, `to` running: the build of the worker that runs this segment of the run (ADR-0033).",
+              "$ref": "../common/types.schema.json#/$defs/NonEmptyString"
+            }
           }
         },
         {
@@ -71,6 +79,20 @@
               "description": "The last event of the run that the assembly could see; 0 before the first.",
               "type": "integer",
               "minimum": 0
+            },
+            "prompts": {
+              "description": "The prompts in the context, by hash (ADR-0033).",
+              "type": "array",
+              "items": { "$ref": "../common/types.schema.json#/$defs/VersionedHash" }
+            },
+            "skills": {
+              "description": "The skills in the context, by hash.",
+              "type": "array",
+              "items": { "$ref": "../common/types.schema.json#/$defs/VersionedHash" }
+            },
+            "agent_spec": {
+              "description": "The spec of the agent the context was built for, by hash.",
+              "$ref": "../common/types.schema.json#/$defs/VersionedHash"
             }
           }
         },

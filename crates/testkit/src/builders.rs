@@ -109,11 +109,17 @@ pub fn checkpoint(version: u64) -> CheckpointRef {
 /// come back unchanged.
 pub fn continuation(run_id: &str, version: u64) -> ContinuationRecord {
     parse(json!({
-        "schema_version": "0.1",
+        "schema_version": "0.2",
         "checkpoint": version,
         "run_id": run_id,
         "failures": 0,
-        "model_ids": ["test-model"],
+        "harness": {
+            "harness_builds": ["testkit"],
+            "model_ids": ["test-model"],
+            "prompts": [],
+            "skills": [],
+            "agent_specs": []
+        },
         "committed": [],
         "evidence_ids": [],
         "head": 1,

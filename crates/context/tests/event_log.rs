@@ -46,6 +46,7 @@ async fn one_build_records_exactly_one_matching_event() {
         total_tokens,
         sdr_version,
         last_event_seq,
+        ..
     } = &event.payload
     else {
         panic!("not a context_assembled event");

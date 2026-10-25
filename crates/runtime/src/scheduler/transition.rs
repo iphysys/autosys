@@ -30,6 +30,7 @@ pub(crate) fn changed(from: Option<JobState>, to: JobStatus, reason: &str) -> Ev
         from,
         to,
         reason: reason.parse::<NonEmptyString>().ok(),
+        harness_build: None,
     }
 }
 

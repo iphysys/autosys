@@ -1,5 +1,7 @@
 {
   "schema_version": "0.1",
+  "assembler_version": "0.1.0",
+  "final": true,
   "run_id": "run-0001",
   "project_id": "example-project",
   "objective": "Design the example bracket",
@@ -12,13 +14,14 @@
       "requirement_id": "req-mass",
       "priority": "must",
       "status": "pass",
-      "evidence_ids": ["ev-check-mass-1"]
+      "evidence": [{ "evidence_id": "ev-check-mass-1", "verdict": "pass", "used": true }]
     },
     {
       "requirement_id": "req-finish",
       "priority": "should",
       "status": "unverified",
-      "evidence_ids": ["ev-check-finish-1"]
+      "reason": "undecided",
+      "evidence": [{ "evidence_id": "ev-check-finish-1", "verdict": "unverified", "used": true }]
     }
   ],
   "decisions": [
@@ -63,7 +66,7 @@
   ],
   "escalations": [],
   "versions": {
-    "harness_build": "synth 0.1.0 (example)",
+    "harness_builds": ["synth 0.1.0 (example)"],
     "model_ids": ["example-model-1"],
     "prompts": [
       {

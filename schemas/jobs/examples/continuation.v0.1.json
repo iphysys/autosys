@@ -1,0 +1,43 @@
+{
+  "schema_version": "0.1",
+  "checkpoint": 6,
+  "run_id": "run-0001",
+  "failures": 1,
+  "model_ids": [],
+  "committed": ["tr-5f0e3c2a9b8d7e6f5a4b3c2d1e0f9a8b"],
+  "evidence_ids": ["ev-run-0001-step-2.1", "ev-run-0001-step-2.2"],
+  "head": 2,
+  "last_commit": {
+    "transition_id": "tr-5f0e3c2a9b8d7e6f5a4b3c2d1e0f9a8b",
+    "version": 2,
+    "final": false,
+    "evidence_ids": ["ev-run-0001-step-2.2"]
+  },
+  "turn": [
+    { "role": "user", "content": [{ "type": "text", "text": "Size the bracket." }] }
+  ],
+  "open_step": {
+    "number": 3,
+    "sdr_version": 2,
+    "prompts": [
+      {
+        "id": "orchestrator.main",
+        "version": "0.1.0",
+        "sha256": "sha256:9a1c4e2b7d0f3a6c8e1b4d7f0a3c6e9b2d5f8a1c4e7b0d3f6a9c2e5b8d1f4a7c"
+      }
+    ],
+    "assistant": {
+      "role": "assistant",
+      "content": [
+        { "type": "opaque", "provider": "anthropic", "data": { "type": "thinking", "thinking": "Measure first.", "signature": "c2lnbmF0dXJl" } },
+        { "type": "text", "text": "I will build the plate, then measure it." },
+        { "type": "tool_call", "id": "call-1", "name": "create_plate", "arguments": { "length_mm": 80, "width_mm": 40, "thickness_mm": 4 } },
+        { "type": "tool_call", "id": "call-2", "name": "measure", "arguments": { "part_id": "part-step-3.1" } }
+      ]
+    },
+    "results": [
+      { "type": "tool_result", "call_id": "call-1", "content": "{\"status\":\"ok\"}", "is_error": false }
+    ],
+    "next": 1
+  }
+}

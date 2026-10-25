@@ -202,6 +202,44 @@
         }
       }
     },
+    "RunHarness": {
+      "description": "Everything that shaped one run's behavior, across all of its segments (ADR-0033). The session log is the source: builds from each claim's job_state_changed, prompts, skills and agent specs from context_assembled, models from model_call_completed. The continuation keeps it as a cache.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["harness_builds", "model_ids", "prompts", "skills", "agent_specs"],
+      "properties": {
+        "harness_builds": {
+          "description": "One entry per run segment, in the order the segments ran.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/NonEmptyString" }
+        },
+        "model_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/NonEmptyString" }
+        },
+        "prompts": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/VersionedHash" }
+        },
+        "skills": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/VersionedHash" }
+        },
+        "agent_specs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/VersionedHash" }
+        }
+      }
+    },
+    "Fidelity": {
+      "description": "A fidelity level of the synthesis process (blueprint section 5.1): L0 requirements, L1 concept and architecture, L2 sizing and performance, L3 detailed analysis, L4 embodiment and artifacts.",
+      "type": "string",
+      "enum": ["L0", "L1", "L2", "L3", "L4"]
+    },
     "ContextSectionName": {
       "description": "A section of an assembled model context (blueprint section 8), listed in the order the model sees them.",
       "type": "string",

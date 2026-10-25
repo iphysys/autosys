@@ -215,8 +215,8 @@ async fn recount(
             used.output_tokens = used.output_tokens.saturating_add(usage.output_tokens);
             used.steps += 1;
             state.job.progress.steps_completed += 1;
-            if !state.model_ids.contains(&model_id) {
-                state.model_ids.push(model_id);
+            if !state.harness.model_ids.contains(&model_id) {
+                state.harness.model_ids.push(model_id);
             }
         }
     }
@@ -653,7 +653,7 @@ impl Worker<'_> {
                     sdr_version: step.sdr_version.clone(),
                     provenance: Provenance {
                         harness_build: &self.components.harness_build,
-                        model_ids: &state.model_ids,
+                        model_ids: &state.harness.model_ids,
                         prompts: &step.prompts,
                         agent_spec: self.agent.provenance(),
                     },
@@ -790,8 +790,8 @@ impl Worker<'_> {
         let model_id: NonEmptyString = call.response.model_id.parse().map_err(|_| {
             RuntimeError::Internal("the model gateway returned an empty model id".to_owned())
         })?;
-        if !state.model_ids.contains(&model_id) {
-            state.model_ids.push(model_id);
+        if !state.harness.model_ids.contains(&model_id) {
+            state.harness.model_ids.push(model_id);
         }
         Ok(())
     }
