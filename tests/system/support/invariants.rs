@@ -10,7 +10,7 @@ use contracts::{SchemaSet, job_state};
 use serde_json::Value;
 use testkit::fakes::KeyedEffects;
 
-use super::{head, logged};
+use super::{head_of, logged};
 
 const EVENT_SCHEMA: &str = "events/event.schema.json";
 
@@ -93,7 +93,11 @@ pub async fn hold(worker: &Worker, job: &Job, effects: Option<&KeyedEffects>) {
         "two commits made one version"
     );
     if let Some(last) = committed.iter().max() {
-        assert_eq!(head(worker).await, *last, "the head is not the last commit");
+        assert_eq!(
+            head_of(worker, &job.project_id).await,
+            *last,
+            "the head is not the last commit"
+        );
     }
 
     // One effect per idempotency key.

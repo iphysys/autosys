@@ -15,8 +15,7 @@ use std::time::Duration;
 
 use bootstrap::{Overrides, WorkerSetup, build_worker};
 use contracts::types::JobState;
-use serde_json::{Value, json};
-use testkit::fakes::{FakeClaudeServer, message};
+use testkit::fakes::FakeClaudeServer;
 
 use crate::support::db::TestDb;
 use crate::support::*;
@@ -30,7 +29,7 @@ async fn a_killed_worker_process_is_recovered_by_the_next() {
     let tools = std::env::var("BUILD123D_URL")
         .expect("BUILD123D_URL must point at the build123d forwarder (cargo xtask test-tools)");
     let binary = worker_binary();
-    let server = FakeClaudeServer::start(answer, Some(2)).await;
+    let server = FakeClaudeServer::start(plate_script::mass_only, Some(2)).await;
     let db = TestDb::create().await;
     let worker_yaml = TEST_WORKER_YAML
         .replace("http://127.0.0.1:9/mcp", &tools)
@@ -128,27 +127,33 @@ async fn a_killed_worker_process_is_recovered_by_the_next() {
 /// The `worker` binary next to this test's directory in the target
 /// directory, as `cargo build -p synth-worker` leaves it.
 fn worker_binary() -> PathBuf {
+    binary("worker", "synth-worker")
+}
+
+/// The binary `name` of `package`, next to this test's directory in the
+/// target directory, as `cargo build -p <package>` leaves it.
+pub(crate) fn binary(name: &str, package: &str) -> PathBuf {
     let exe = std::env::current_exe().expect("the test's own path");
     let binary = exe
         .parent()
         .and_then(Path::parent)
         .expect("the target directory")
-        .join(format!("worker{}", std::env::consts::EXE_SUFFIX));
+        .join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
     assert!(
         binary.exists(),
-        "{} is missing: run cargo build -p synth-worker first (cargo xtask test-tools does)",
+        "{} is missing: run cargo build -p {package} first (cargo xtask test-tools does)",
         binary.display()
     );
     binary
 }
 
-/// What the worker `id` logged.
-fn log_of(logs: &Path, id: &str) -> String {
+/// What the process `id` logged.
+pub(crate) fn log_of(logs: &Path, id: &str) -> String {
     std::fs::read_to_string(logs.join(format!("{id}.log"))).unwrap_or_default()
 }
 
 /// Starts the worker binary as `id` on `config`, logging to `<logs>/<id>.log`.
-fn spawn(
+pub(crate) fn spawn(
     binary: &Path,
     config: &Path,
     logs: &Path,
@@ -168,68 +173,4 @@ fn spawn(
         .stderr(log)
         .spawn()
         .expect("start the worker binary")
-}
-
-/// The policy model's answer, over the Messages API: create the plate,
-/// measure the part it returned, then propose the measured mass.
-fn answer(request: &Value) -> Value {
-    let mut tools: HashMap<String, String> = HashMap::new();
-    let mut results: HashMap<String, Value> = HashMap::new();
-    let mut calls = 0;
-    let blocks = request["messages"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .flat_map(|m| m["content"].as_array().into_iter().flatten());
-    for block in blocks {
-        match block["type"].as_str() {
-            Some("tool_use") => {
-                let id = block["id"].as_str().unwrap_or_default().to_owned();
-                tools.insert(id, block["name"].as_str().unwrap_or_default().to_owned());
-                calls += 1;
-            }
-            Some("tool_result") if block["is_error"] != true => {
-                let tool = tools.get(block["tool_use_id"].as_str().unwrap_or_default());
-                let content = envelope_json(block["content"].as_str().unwrap_or_default());
-                if let (Some(tool), Some(content)) = (tool, content)
-                    && content["status"] == "ok"
-                {
-                    results.insert(tool.clone(), content);
-                }
-            }
-            _ => {}
-        }
-    }
-    let use_tool = |name: &str, input: Value| {
-        message(vec![json!({
-            "type": "tool_use",
-            "id": format!("toolu_{}", calls + 1),
-            "name": name,
-            "input": input
-        })])
-    };
-    match (
-        results.get("create_plate"),
-        results.get("measure"),
-        results.contains_key("sdr_propose"),
-    ) {
-        (None, _, _) => use_tool("create_plate", plate()),
-        (Some(plate), None, _) => use_tool(
-            "measure",
-            json!({ "part": plate["result"]["part"], "density": { "value": 2.70, "unit": "g/cm3" } }),
-        ),
-        (Some(_), Some(measured), false) => {
-            let mass = measured["result"]["mass"]["value"]
-                .as_f64()
-                .unwrap_or_default();
-            let evidence: Vec<String> = measured["evidence_ids"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(|e| e.as_str().map(str::to_owned))
-                .collect();
-            use_tool("sdr_propose", propose_mass(mass, &evidence, true))
-        }
-        (Some(_), Some(_), true) => message(vec![json!({ "type": "text", "text": "Done." })]),
-    }
 }

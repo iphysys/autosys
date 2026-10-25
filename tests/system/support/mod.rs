@@ -15,6 +15,7 @@
 
 pub mod db;
 pub mod invariants;
+pub mod plate_script;
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::fs;
@@ -785,12 +786,17 @@ pub fn idempotent_create_plate() -> String {
     replaced
 }
 
-/// The project's head version.
+/// The test project's head version.
 pub async fn head(worker: &Worker) -> u64 {
+    head_of(worker, &id(PROJECT)).await
+}
+
+/// The head version of `project`, for example one the API created.
+pub async fn head_of(worker: &Worker, project: &ProjectId) -> u64 {
     let ctx = ExecutionContext::builder(id("corr-read")).build();
     worker
         .sdr
-        .head(&id::<ProjectId>(PROJECT), &ctx)
+        .head(project, &ctx)
         .await
         .expect("head")
         .expect("the project exists")
