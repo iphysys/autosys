@@ -69,11 +69,16 @@ pub enum ToolObservation {
 /// 5. serialize calls to a tool that is not concurrency-safe;
 /// 6. begin the step record and append `tool_call_started`;
 /// 7. execute with the tool's timeout and the context's cancellation;
+///    only a committed `tool_call_started` leads here (see [`StartedCall`]);
 /// 8. validate the result against its schema and store evidence;
 /// 9. complete the step record and append `tool_call_completed`.
 ///
 /// A step whose earlier attempt was interrupted runs again only if its tool
 /// is idempotent; otherwise it fails without calling the tool (ADR-0026).
+///
+/// Every write carries the context's authority (ADR-0032). A worker whose
+/// lease was reclaimed fails with `lease_lost` at its first write, before the
+/// tool is reached.
 pub struct ToolGateway {
     registry: ToolRegistry,
     gates: GateRunner,
@@ -253,8 +258,25 @@ impl ToolGateway {
                 }
             }
         }
+        let announced = self.announce_started(registered, &call, &step, ctx).await?;
+        let started = Instant::now();
+        let produced = self.invoke_started(announced, ctx).await;
+        self.finish(&step, &call, ctx, started, produced).await
+    }
+
+    /// Appends `tool_call_started` with the context's authority. The append
+    /// is the call's write-ahead record: its idempotency key is stored in the
+    /// same transaction that checks the fence, so a stale fence ends the
+    /// call here.
+    async fn announce_started<'a>(
+        &self,
+        registered: &'a Registered,
+        call: &'a ToolCall<'a>,
+        step: &NewStep,
+        ctx: &ExecutionContext,
+    ) -> Result<StartedCall<'a>, Error> {
         self.record(
-            &run_id,
+            &step.run_id,
             ctx,
             EventPayload::ToolCallStarted {
                 idempotency_key: step.idempotency_key.clone(),
@@ -263,19 +285,23 @@ impl ToolGateway {
             },
         )
         .await?;
-
-        let started = Instant::now();
-        let produced = self.execute(registered, &call, ctx).await;
-        self.finish(&step, &call, ctx, started, produced).await
+        Ok(StartedCall {
+            registered,
+            call,
+            _sealed: (),
+        })
     }
 
-    /// Calls the tool and checks its result.
-    async fn execute(
+    /// Calls the tool and checks its result. The only call of
+    /// `Tool::invoke` (arch-check).
+    async fn invoke_started(
         &self,
-        registered: &Registered,
-        call: &ToolCall<'_>,
+        started: StartedCall<'_>,
         ctx: &ExecutionContext,
     ) -> Result<Map<String, Value>, Error> {
+        let StartedCall {
+            registered, call, ..
+        } = started;
         let tool = call.request.tool.as_str();
         let limit = Duration::from_secs(registered.policy.timeout_seconds.get());
         let output = bounded(ctx, limit, &format!("tool {tool}"), async {
@@ -441,6 +467,17 @@ impl ToolGateway {
             .await
             .map(|_| ())
     }
+}
+
+/// Proof that the fenced `tool_call_started` append committed. Only
+/// [`ToolGateway::announce_started`] makes one, and
+/// [`ToolGateway::invoke_started`] needs one, so a tool is never called
+/// without that record. The window after the commit is the one the
+/// idempotency key covers (ADR-0026).
+struct StartedCall<'a> {
+    registered: &'a Registered,
+    call: &'a ToolCall<'a>,
+    _sealed: (),
 }
 
 fn ensure_same_request(record: &StepRecord, step: &NewStep) -> Result<(), Error> {

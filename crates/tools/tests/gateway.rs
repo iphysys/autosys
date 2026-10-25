@@ -9,13 +9,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use contracts::types::{ApprovalAnswer, EventPayload, EvidenceBody, StepOutcome};
-use contracts::{ErrorCode, EvidenceStore, StepStore, Tool, ToolOutput};
+use contracts::{ErrorCode, EvidenceStore, JobStore, StepStore, Tool, ToolOutput};
 use serde_json::{Value, json};
 use support::{
     Harness, Listed, agent, autonomy, call, measure, measure_result, overlay, plate, plate_result,
 };
 use testkit::builders::{id, tool_request};
 use testkit::fakes::FakeTool;
+use testkit::leases::{LONG_LEASE, fenced_ctx};
 use tools::{ServerTools, ToolObservation, ToolRegistry};
 
 fn returning(name: &str, result: Value) -> Arc<FakeTool> {
@@ -582,6 +583,58 @@ async fn the_registry_fails_fast_on_inconsistent_overlays() {
         ErrorCode::InvalidInput,
         "a tool offered twice"
     );
+}
+
+/// A worker whose job was reclaimed has a stale fence. Its first write fails
+/// with lease_lost, so the call stops before the tool, and stores nothing.
+#[tokio::test]
+async fn a_stale_fence_never_reaches_the_tool() {
+    let tool = Arc::new(FakeTool::new("create_plate", |_| {
+        Ok(ToolOutput {
+            structured: plate_result(),
+        })
+    }));
+    let h = harness(&[Listed::tool("create_plate")], std::slice::from_ref(&tool));
+    let stale = h.step_ctx("step-1");
+    h.clock.advance(LONG_LEASE + Duration::from_secs(1));
+    let reclaimed = h
+        .leased
+        .jobs()
+        .claim(&id("worker-2"), LONG_LEASE)
+        .await
+        .unwrap()
+        .expect("the expired job is reclaimed");
+
+    let request = tool_request("create_plate", "step-1", plate());
+    let agent = agent();
+    let error = h
+        .gateway
+        .call(call(&request, &agent), &stale)
+        .await
+        .expect_err("a stale fence cannot call");
+    assert_eq!(error.code(), ErrorCode::LeaseLost, "{error}");
+    assert_eq!(tool.calls(), 0, "the tool was reached");
+    assert_eq!(
+        h.steps
+            .get(&request.idempotency_key)
+            .await
+            .map_err(|e| e.code()),
+        Err(ErrorCode::NotFound),
+        "a step record was written"
+    );
+    assert!(h.events().await.is_empty(), "an event was written");
+
+    // The worker that holds the job now makes the same call.
+    let current = fenced_ctx(&reclaimed, id("corr-2"))
+        .with_run(support::run_id())
+        .for_step(id("step-1"));
+    let observation = h
+        .gateway
+        .call(call(&request, &agent), &current)
+        .await
+        .unwrap();
+    assert!(matches!(observation, ToolObservation::Succeeded { .. }));
+    assert_eq!(tool.calls(), 1);
 }
 
 /// Leaves `request`'s step started without an outcome, as a worker killed
