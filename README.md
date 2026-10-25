@@ -301,6 +301,8 @@ A mass or other reference value is an arithmetic expression over parameter IDs. 
 | [0030](docs/adr/0030-query-loop-v0.md) | Query loop v0 | Proposed |
 | [0031](docs/adr/0031-scheduler-and-recovery-v0.md) | Scheduler and recovery v0 | Proposed |
 | [0032](docs/adr/0032-lease-fencing.md) | Lease fencing | Proposed |
+| [0033](docs/adr/0033-run-report-v0.md) | Run report v0 | Proposed |
+| [0034](docs/adr/0034-cli-and-api-client.md) | The CLI, the API client and benchmark run requests | Proposed |
 
 ## License
 
