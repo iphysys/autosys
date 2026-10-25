@@ -67,6 +67,10 @@ const ROOT_TYPES: &[(&str, RoundTrip)] = &[
         round_trip::<schema_types::ModelRouting>,
     ),
     (
+        "config/runtime.schema.json",
+        round_trip::<schema_types::RuntimeSettings>,
+    ),
+    (
         "config/tool-overlay.schema.json",
         round_trip::<schema_types::ToolOverlay>,
     ),
@@ -135,6 +139,26 @@ const ROOT_TYPES: &[(&str, RoundTrip)] = &[
     (
         "tools/build123d/part.schema.json",
         round_trip::<schema_types::Build123dPart>,
+    ),
+    (
+        "tools/sdr/sdr_propose_request.schema.json",
+        round_trip::<schema_types::SdrProposeRequest>,
+    ),
+    (
+        "tools/sdr/sdr_propose_result.schema.json",
+        round_trip::<schema_types::SdrProposeResult>,
+    ),
+    (
+        "tools/sdr/sdr_read_request.schema.json",
+        round_trip::<schema_types::SdrReadRequest>,
+    ),
+    (
+        "tools/sdr/sdr_read_result.schema.json",
+        round_trip::<schema_types::SdrReadResult>,
+    ),
+    (
+        "tools/tool-result.schema.json",
+        round_trip::<schema_types::ToolResultContent>,
     ),
 ];
 

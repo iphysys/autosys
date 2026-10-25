@@ -242,6 +242,29 @@ One orchestrator that plans, calls tools and proposes design changes, with gates
 
 **Done when:** with the fake model and fake tool, scripted runs reach every stop reason, a model claiming success without passing checks does not stop with `success`, and an exhausted budget ends the run with `budget_exhausted`.
 
+Settled while building, and recorded in [ADR-0030](../adr/0030-query-loop-v0.md):
+- `sdr_read` and `sdr_propose` run in process through `SdrManager`, not as MCP tools or through the tool gateway. Their schemas are in `schemas/tools/sdr/`. The harness sets a proposal's id, base version, actor and schema version.
+- Every tool result follows `schemas/tools/tool-result.schema.json`.
+- `governance::WriteScopeGate` (`sdr_write_scope`, `deny`) enforces the task's write scope before commit.
+- A turn closes on a reply without a tool call or on a commit. The calls after a committing proposal in the same reply are not run.
+- A failed or denied call, an invalid or rejected proposal, and a reply without success each count one repair. The run fails on the first failure beyond `max_repair_attempts`. `main_orchestrator` uses `on_repair_exhausted: fail`, and the registry refuses `escalate` until Increment 3.
+- Each turn that closes sets `job.pending_work` to what is unmet.
+- A run succeeds only right after a final commit through every gate, with every must-level and task-named requirement passing on that commit's checks. The §5.4 artifact clause is met trivially until artifacts exist.
+- With no tool call left, the run stops before its next model call.
+- `approval_required` returns a `Continuation`; `Orchestrator::resume` continues it in memory.
+- `model_call_completed` has no cost field.
+- The ignored live test showed that the API accepts a context rebuilt mid-turn, so the context is not pinned within a turn.
+- `config/runtime.yaml` holds the loop's I/O timeout.
+- `futures-core` is a new direct dependency, for the `Stream` trait only.
+
+Follow-ups, not in this PR:
+- PR 12 persists the continuation (open turn with its thinking blocks, pending call, counters) and the job, with a schema.
+- PR 12 detects a transition that committed before a crash, by its deterministic id.
+- PR 12 accounts for the `tool_call_completed` a replay does not write (ADR-0026).
+- PR 12 adds job states, `job_state_changed`, waking on an answered approval or a cancel, and bootstrap.
+- A provenance check in `evaluation`: a parameter's value and source must match the evidence it cites. Until then the benchmark's `parameter_matches_reference` outcome catches a fabricated value (PR 15).
+- PR 13 decides where the result's narrative `summary` comes from.
+
 ### PR 12 — Scheduler, worker and recovery
 
 Runs that outlive processes.

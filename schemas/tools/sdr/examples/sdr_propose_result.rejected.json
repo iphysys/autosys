@@ -1,0 +1,15 @@
+{
+  "transition_id": "tr-5f0c2a1e9b7d6c5a4f0c2a1e9b7d6c5a",
+  "outcome": "rejected",
+  "base_version": 1,
+  "reasons": ["sdr_commit: requirement.numeric_threshold failed: req-mass: part.mass = 0.3 kg is not <= 0.25 kg"],
+  "checks": [
+    {
+      "evidence_id": "ev-2a1b2c3d4e5f60718293a4b5c6d7e8f9",
+      "check_id": "requirement.numeric_threshold",
+      "verdict": "fail",
+      "subject_ids": ["req-mass", "part.mass"],
+      "message": "req-mass: part.mass = 0.3 kg is not <= 0.25 kg"
+    }
+  ]
+}

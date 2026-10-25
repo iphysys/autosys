@@ -1,0 +1,49 @@
+# The orchestrator: the one agent of Increment 1 (blueprint sections 2.6,
+# 11.3 and 14.3). Schema: schemas/config/agent.schema.json
+#
+# It runs the bounded_worker loop of crates/runtime. A task given to it names
+# its own tools, SDR read slice, write scope and budget; each must stay
+# within what this spec allows.
+#
+# - tools: sdr_read and sdr_propose are the harness's own design tools; the
+#   others are listed in config/tools/. The runtime refuses a name in
+#   neither.
+# - limits: the ceiling of any task's budget. max_tool_calls,
+#   max_wall_time_seconds and max_repair_attempts mirror the dev benchmark's
+#   budgets; max_tokens and max_steps are provisional until the team sets
+#   them (ADR-0025).
+# - no model_profile: the routing default_profile, which SYNTH_MODEL_PROFILE
+#   overrides (ADR-0027).
+# - on_repair_exhausted: fail. Every agent is top-level in Increment 1, so
+#   there is nobody to escalate to.
+schema_version: "0.1"
+id: main_orchestrator
+version: 0.1.0
+kind: agent
+implementation: bounded_worker
+name: Main orchestrator
+description: Runs a design task from its requirements to a committed design that the checks pass.
+role: Design orchestrator
+goal: A committed design whose required requirements all have passing checks.
+responsibilities:
+  - Plan each step towards an unmet requirement.
+  - Measure through tools instead of estimating.
+  - Propose design changes and repair the ones the gates reject.
+prompt: orchestrator/main.md
+result_schema: results/result.schema.json
+skills: []
+tools:
+  - sdr_read
+  - sdr_propose
+  - create_plate
+  - measure
+sdr:
+  read_slice: from_task
+  write_scope: from_task
+limits:
+  max_tokens: 1000000
+  max_tool_calls: 30
+  max_steps: 40
+  max_wall_time_seconds: 600
+  max_repair_attempts: 3
+on_repair_exhausted: fail

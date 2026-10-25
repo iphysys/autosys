@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use contracts::ids::{AgentId, Identifier, RunId};
 use contracts::types::{
     ApprovalAnswer, AutonomyPolicy, Event, EventPayload, Evidence, GateDecision, GatesPolicy,
-    SdrDocument, ToolOverlay, Transition,
+    SdrDocument, SdrSlice, ToolOverlay, Transition,
 };
 use contracts::{
     Error, ErrorCode, EventLog, EventSubscriber, ExecutionContext, Gate, GateOutcome, GateRequest,
@@ -21,6 +21,7 @@ use contracts::{
 };
 use governance::{
     ApprovalGate, Decision, GateRunner, ObservedEventLog, SdrCommitGate, ToolPermissionGate,
+    WriteScopeGate,
 };
 use serde_json::{Value, json};
 use testkit::builders::{id, parse, sdr_document, tool_request};
@@ -493,4 +494,203 @@ async fn decisions_need_a_run_and_unique_gates() {
         duplicate_tool.map(|_| ()).unwrap_err().code(),
         ErrorCode::InvalidInput
     );
+}
+
+fn write_scope(kinds: &[&str], ids: &[&str]) -> SdrSlice {
+    parse(json!({ "kinds": kinds, "ids": ids }))
+}
+
+/// A transition against [`sdr_document`]'s version 0, which holds the
+/// requirement `req-mass` and the parameter `part.mass`.
+fn transition_with(operations: Value) -> Transition {
+    parse(json!({
+        "schema_version": "0.1",
+        "id": "tr-scope",
+        "base_version": 0,
+        "actor": { "kind": "agent", "agent_id": "main_orchestrator" },
+        "reason": "Change the design.",
+        "final": false,
+        "operations": operations
+    }))
+}
+
+fn set_parameter(element_id: &str) -> Value {
+    json!({
+        "op": "set_parameter",
+        "parameter": {
+            "id": element_id,
+            "value": { "value": 0.5, "unit": "kg" },
+            "source": { "kind": "user" },
+            "evidence_ids": []
+        }
+    })
+}
+
+fn add_requirement(element_id: &str) -> Value {
+    json!({
+        "op": "add_requirement",
+        "requirement": {
+            "id": element_id,
+            "text": "A requirement the task did not ask for.",
+            "priority": "must",
+            "evidence_ids": []
+        }
+    })
+}
+
+fn link_evidence(element_id: &str) -> Value {
+    json!({ "op": "link_evidence", "element_id": element_id, "evidence_id": "ev-1" })
+}
+
+async fn scope_decision(scope: &SdrSlice, transition: &Transition) -> GateOutcome {
+    let gate = WriteScopeGate::new(scope).expect("gate");
+    let base = sdr_document("p1", 0, None);
+    gate.decide(
+        GateRequest {
+            subject: GateSubject::SdrCommit {
+                base: &base,
+                transition,
+                evidence: &[],
+            },
+            approval: None,
+        },
+        &ExecutionContext::new(id("corr-scope")),
+    )
+    .await
+    .expect("decide")
+}
+
+#[tokio::test]
+async fn a_transition_inside_the_write_scope_is_allowed() {
+    let scope = write_scope(&["parameter", "decision"], &[]);
+    let transition = transition_with(json!([
+        set_parameter("part.mass"),
+        {
+            "op": "add_decision",
+            "decision": {
+                "id": "dec-1",
+                "choice": "A thinner plate.",
+                "rationale": "Lighter.",
+                "related_ids": ["req-mass"]
+            }
+        },
+        link_evidence("part.mass")
+    ]));
+    let decided = scope_decision(&scope, &transition).await;
+    assert_eq!(
+        decided.decision,
+        GateDecision::Allow,
+        "{:?}",
+        decided.reasons
+    );
+    assert!(decided.reasons.is_empty());
+}
+
+#[tokio::test]
+async fn elements_outside_the_write_scope_are_denied_and_named() {
+    let scope = write_scope(&["parameter"], &[]);
+    let transition = transition_with(json!([
+        set_parameter("part.mass"),
+        add_requirement("req-new"),
+        link_evidence("req-mass")
+    ]));
+    let decided = scope_decision(&scope, &transition).await;
+    assert_eq!(decided.decision, GateDecision::Deny);
+    assert_eq!(decided.reasons.len(), 2, "{:?}", decided.reasons);
+    assert!(
+        decided.reasons[0].starts_with("operation 1: requirement req-new is outside"),
+        "{:?}",
+        decided.reasons
+    );
+    assert!(
+        decided.reasons[1].starts_with("operation 2: requirement req-mass is outside"),
+        "{:?}",
+        decided.reasons
+    );
+    assert!(
+        decided.reasons[0].contains("kinds: parameter; ids: none"),
+        "{:?}",
+        decided.reasons
+    );
+    assert!(decided.evidence_ids.is_empty());
+}
+
+#[tokio::test]
+async fn ids_in_the_scope_cover_elements_of_any_kind() {
+    let scope = write_scope(&[], &["req-mass"]);
+    let allowed =
+        scope_decision(&scope, &transition_with(json!([link_evidence("req-mass")]))).await;
+    assert_eq!(
+        allowed.decision,
+        GateDecision::Allow,
+        "{:?}",
+        allowed.reasons
+    );
+
+    let denied = scope_decision(
+        &scope,
+        &transition_with(json!([set_parameter("part.mass")])),
+    )
+    .await;
+    assert_eq!(denied.decision, GateDecision::Deny);
+}
+
+#[tokio::test]
+async fn an_evidence_link_takes_the_kind_of_what_it_links_to() {
+    let scope = write_scope(&["parameter"], &[]);
+    // Added by the same transition.
+    let added = transition_with(json!([
+        set_parameter("part.width"),
+        link_evidence("part.width")
+    ]));
+    assert_eq!(
+        scope_decision(&scope, &added).await.decision,
+        GateDecision::Allow
+    );
+    // In no document: no kind covers it, so the gate fails closed.
+    let unknown = scope_decision(&scope, &transition_with(json!([link_evidence("ghost")]))).await;
+    assert_eq!(unknown.decision, GateDecision::Deny);
+    assert!(
+        unknown.reasons[0].contains("element ghost is outside"),
+        "{:?}",
+        unknown.reasons
+    );
+}
+
+#[tokio::test]
+async fn a_write_scope_denial_wins_and_is_recorded() {
+    let scope = write_scope(&["decision"], &[]);
+    let f = fixture_with(vec![Arc::new(WriteScopeGate::new(&scope).expect("gate"))]);
+    let decision = f
+        .commit_decision(&transition("tr-1", false), &passing(), None)
+        .await;
+    assert_eq!(decision.outcome.decision, GateDecision::Deny);
+    assert!(
+        decision.outcome.reasons[0]
+            .starts_with("sdr_write_scope: operation 0: parameter part.mass"),
+        "{:?}",
+        decision.outcome.reasons
+    );
+    assert!(
+        f.decisions()
+            .await
+            .contains(&("sdr_write_scope".to_owned(), GateDecision::Deny))
+    );
+
+    let gate = WriteScopeGate::new(&scope).expect("gate");
+    let agent: AgentId = id("orchestrator");
+    let request = tool_request("create_part", "step-1", json!({}));
+    let wrong = gate
+        .decide(
+            GateRequest {
+                subject: GateSubject::ToolCall {
+                    agent_id: &agent,
+                    request: &request,
+                },
+                approval: None,
+            },
+            &f.ctx,
+        )
+        .await;
+    assert_eq!(wrong.unwrap_err().code(), ErrorCode::InvalidInput);
 }

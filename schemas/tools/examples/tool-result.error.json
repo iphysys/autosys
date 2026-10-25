@@ -1,0 +1,9 @@
+{
+  "status": "error",
+  "error": {
+    "code": "timeout",
+    "message": "tool measure did not finish within 60s",
+    "retryable": true,
+    "correlation_id": "corr-run-1"
+  }
+}

@@ -8,7 +8,8 @@ use std::path::PathBuf;
 
 use contracts::ErrorCode;
 use contracts::types::{
-    ApprovalTrigger, AutonomyPolicy, ContextBudgets, ContextPolicy, GatesPolicy, ToolOverlay,
+    AgentSpec, AgentSpecOnRepairExhausted, ApprovalTrigger, AutonomyPolicy, ContextBudgets,
+    ContextPolicy, GatesPolicy, RuntimeSettings, ToolOverlay,
 };
 use infra::config::ConfigLoader;
 
@@ -225,4 +226,47 @@ fn the_build123d_tools_are_read_only_without_side_effects_or_approval() {
         assert!(!tool.requires_approval, "{}", tool.name.as_str());
         assert!(tool.request_schema.is_some() && tool.result_schema.is_some());
     }
+}
+
+#[test]
+fn the_runtime_settings_load_and_a_zero_timeout_is_rejected() {
+    let settings: RuntimeSettings = loader()
+        .load(&config_dir().join("runtime.yaml"))
+        .expect("runtime settings");
+    assert_eq!(settings.io_timeout_seconds.get(), 10);
+
+    let message = rejected::<RuntimeSettings>("schema_version: \"0.1\"\nio_timeout_seconds: 0\n");
+    assert!(message.contains("/io_timeout_seconds"), "{message}");
+    let unknown = rejected::<RuntimeSettings>(
+        "schema_version: \"0.1\"\nio_timeout_seconds: 10\nmax_tokens: 5\n",
+    );
+    assert!(unknown.contains("max_tokens"), "{unknown}");
+}
+
+#[test]
+fn the_main_orchestrator_has_the_approved_tools_and_limits() {
+    let spec: AgentSpec = loader()
+        .load(&config_dir().join("agents/main_orchestrator.yaml"))
+        .expect("main orchestrator spec");
+    assert_eq!(spec.id.as_str(), "main_orchestrator");
+    assert_eq!(spec.prompt.as_str(), "orchestrator/main.md");
+    assert_eq!(spec.model_profile, None, "it uses the routing default");
+    let tools: Vec<&str> = spec.tools.iter().map(|t| t.as_str()).collect();
+    assert_eq!(
+        tools,
+        ["sdr_read", "sdr_propose", "create_plate", "measure"]
+    );
+    assert!(spec.skills.is_empty());
+    assert_eq!(spec.on_repair_exhausted, AgentSpecOnRepairExhausted::Fail);
+    let limits = &spec.limits;
+    assert_eq!(
+        [
+            limits.max_tokens.get(),
+            limits.max_tool_calls.get(),
+            limits.max_steps.get(),
+            limits.max_wall_time_seconds.get(),
+            limits.max_repair_attempts.get(),
+        ],
+        [1_000_000, 30, 40, 600, 3]
+    );
 }

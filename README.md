@@ -88,6 +88,7 @@ Checks produce evidence; gates decide (blueprint §15).
 - **Gates** (`crates/governance`):
   - the tool permission gate allows only tools listed in `config/tools/`;
   - the SDR commit gate rejects a transition when a check required by `config/policies/gates.yaml` failed, and attaches that evidence;
+  - the write-scope gate denies a transition that changes an element outside its task's SDR write scope;
   - the approval gate asks a human when `config/policies/autonomy.yaml` requires it.
 - **The `GateRunner`** writes every decision to the event log as `gate_decided`; the most restrictive decision wins.
 - **Hooks** observe every event through `ObservedEventLog` and can never stop the run.
@@ -108,7 +109,8 @@ Run `cargo xtask validate-config` to check `config/` without starting anything. 
 - a model routing file the gateway would reject;
 - an agent whose model profile is missing, or has no tool calling while the agent has tools;
 - a context profile whose total is above the ceiling in `config/policies/context.yaml`, whose fixed sections are capped above its own total, or a missing `default` profile;
-- a prompt in `prompts/` with no header, an invalid header, or an id another prompt has.
+- a prompt in `prompts/` with no header, an invalid header, or an id another prompt has;
+- an agent in `config/agents/` whose prompt is not in `prompts/`, whose tools are neither `sdr_read`, `sdr_propose` nor listed in `config/tools/`, that names a skill, whose result schema does not exist, or that escalates when its repairs run out.
 
 ## Tool servers
 
@@ -190,6 +192,28 @@ cargo test -p synth-model-gateway --lib -- --ignored --test-threads=1
 - **Prompts.** Static Markdown with a YAML header, in [prompts/](prompts/README.md). Each header is checked against `schemas/prompts/prompt-header.schema.json`. A run records each prompt's id, version and hash.
 - **Golden tests.** `tests/golden/context/` pins the assembled context for fixed inputs, so a change to a prompt shows up as a diff. After an intended change, run `UPDATE_GOLDEN=1 cargo test -p synth-context --test golden` and read each changed file before committing it.
 
+## Query loop
+
+`crates/runtime` runs a task with its agent ([ADR-0030](docs/adr/0030-query-loop-v0.md)). `Orchestrator::run` takes a job and returns a stream of the run's events, then how it stopped. Every component is passed in at startup; the runtime reads no configuration itself.
+
+- **Agents.** `AgentRegistry` holds the specs in `config/agents/`. It refuses one whose prompt is not in `prompts/`, whose tools nobody offers, that names a skill, or that would escalate. A task may narrow its agent's tools and limits, never widen them. `config/agents/main_orchestrator.yaml` is the one agent of Increment 1.
+- **The loop.** Each step builds the context, calls the model, then runs the reply's tool calls in order. A turn closes when the model replies without a tool call or when one of its proposals commits.
+- **The design tools.** `sdr_read` and `sdr_propose` run in process, through `SdrManager`. A proposal is validated, checked, and then decided by the commit gates: the `sdr_commit` gate, the approval gate and the task's write-scope gate. Only `allow` commits. Every other tool goes through the tool gateway. Each tool's definition is its request schema in `schemas/tools/`, and each result follows `schemas/tools/tool-result.schema.json`.
+- **Stop reasons** (blueprint §5.4):
+  - `success`: only right after a final commit whose checks pass for every required requirement. What the model says never counts.
+  - `failure`: one failed call, rejected proposal or reply without success beyond `max_repair_attempts`.
+  - `budget_exhausted`: tokens, tool calls, steps or wall time used up, or a context that does not fit.
+  - `cancelled`: the run's context was cancelled.
+  - `approval_required`: a gate asked a human. The outcome carries a `Continuation`, and `Orchestrator::resume` continues it with the answer.
+- **The stream.** It yields every event of the run, read back from the event log in order, then the outcome. It is driven by polling, with no spawned task. A harness failure ends it with an error instead, and no `run_stopped` is written.
+- **Timeouts.** `config/runtime.yaml` holds the timeout of the loop's own reads and writes.
+
+`cargo test -p synth-runtime` runs every stop reason with a scripted model and fake build123d tools. The ignored live test checks that the Claude API accepts a context rebuilt in the middle of a tool-use turn. It needs `ANTHROPIC_API_KEY` and costs a few cents:
+
+```sh
+cargo test -p synth-runtime --test live -- --ignored
+```
+
 ## Benchmarks
 
 Benchmark problems live in `evals/benchmarks/<split>/<id>/problem.yaml` and follow `schemas/benchmarks/benchmark-problem.schema.json` ([ADR-0025](docs/adr/0025-benchmark-problem-format.md)). Only `dev` problems are stored in the repository. The team writes them; values come from the specification each file cites in `source`, unchanged.
@@ -242,6 +266,7 @@ A mass or other reference value is an arithmetic expression over parameter IDs. 
 | [0027](docs/adr/0027-model-gateway-providers.md) | Model gateway with two providers, Claude by default | Proposed; profile format superseded by 0028 |
 | [0028](docs/adr/0028-pluggable-model-providers.md) | Pluggable model providers | Proposed |
 | [0029](docs/adr/0029-context-assembly-v0.md) | Context assembly v0 | Proposed |
+| [0030](docs/adr/0030-query-loop-v0.md) | Query loop v0 | Proposed |
 
 ## License
 

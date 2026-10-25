@@ -4,10 +4,11 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use contracts::ids::{CheckId, EvidenceId, Identifier};
+use contracts::ids::{CheckId, ElementId, EvidenceId, Identifier};
 use contracts::types::{
-    ApprovalAnswer, ApprovalRule, ApprovalTrigger, AutonomyPolicy, Evidence, EvidenceBody,
-    GateDecision, GatesPolicy, ToolOverlay, ToolPolicy, Verdict,
+    ApprovalAnswer, ApprovalRule, ApprovalTrigger, AutonomyPolicy, ElementKind, Evidence,
+    EvidenceBody, GateDecision, GatesPolicy, Operation, SdrDocument, SdrSlice, ToolOverlay,
+    ToolPolicy, Transition, Verdict,
 };
 use contracts::{
     Error, ErrorCode, ExecutionContext, Gate, GateOutcome, GateRequest, GateSubject,
@@ -221,6 +222,142 @@ impl Gate for SdrCommitGate {
             outcome(GateDecision::Retry, errored.0, errored.1)
         } else {
             outcome(GateDecision::Allow, Vec::new(), relied_on)
+        })
+    }
+}
+
+/// Gate `sdr_write_scope`: a transition may change only what its task's
+/// write scope covers (blueprint sections 2.6 and 15.2). Every element an
+/// operation adds, replaces or links evidence to must be of a kind the scope
+/// lists, or have an id it lists; otherwise `deny`, naming each element.
+///
+/// The scope belongs to one task, so a gate is built per run. The read slice
+/// needs no gate: `SdrManager::read` already returns only what it covers.
+pub struct WriteScopeGate {
+    id: Identifier,
+    scope: SdrSlice,
+}
+
+impl WriteScopeGate {
+    pub const ID: &'static str = "sdr_write_scope";
+
+    pub fn new(scope: &SdrSlice) -> Result<Self, Error> {
+        Ok(Self {
+            id: identifier(Self::ID)?,
+            scope: scope.clone(),
+        })
+    }
+
+    fn covers(&self, kind: Option<ElementKind>, id: &ElementId) -> bool {
+        kind.is_some_and(|k| self.scope.kinds.contains(&k)) || self.scope.ids.contains(id)
+    }
+
+    fn describe(&self) -> String {
+        let kinds: Vec<String> = self.scope.kinds.iter().map(ToString::to_string).collect();
+        let ids: Vec<String> = self
+            .scope
+            .ids
+            .iter()
+            .map(|i| i.as_str().to_owned())
+            .collect();
+        format!("kinds: {}; ids: {}", or_none(&kinds), or_none(&ids))
+    }
+}
+
+fn or_none(items: &[String]) -> String {
+    if items.is_empty() {
+        "none".to_owned()
+    } else {
+        items.join(", ")
+    }
+}
+
+/// The kind of the element an operation touches, and its id. For
+/// `link_evidence` the kind comes from the base document or from an element
+/// the same transition adds; `None` if neither has it.
+fn touched<'a>(
+    operation: &'a Operation,
+    base: &SdrDocument,
+    transition: &Transition,
+) -> (Option<ElementKind>, &'a ElementId) {
+    match operation {
+        Operation::AddRequirement { requirement } => {
+            (Some(ElementKind::Requirement), &requirement.id)
+        }
+        Operation::SetParameter { parameter } => (Some(ElementKind::Parameter), &parameter.id),
+        Operation::AddDecision { decision } => (Some(ElementKind::Decision), &decision.id),
+        Operation::AddAssumption { assumption } => (Some(ElementKind::Assumption), &assumption.id),
+        Operation::LinkEvidence { element_id, .. } => {
+            let added = transition.operations.iter().find_map(|op| match op {
+                Operation::AddRequirement { requirement } if &requirement.id == element_id => {
+                    Some(ElementKind::Requirement)
+                }
+                Operation::SetParameter { parameter } if &parameter.id == element_id => {
+                    Some(ElementKind::Parameter)
+                }
+                _ => None,
+            });
+            (added.or_else(|| kind_in(base, element_id)), element_id)
+        }
+    }
+}
+
+fn kind_in(doc: &SdrDocument, id: &ElementId) -> Option<ElementKind> {
+    if doc.requirements.iter().any(|r| &r.id == id) {
+        Some(ElementKind::Requirement)
+    } else if doc.design.parameters.iter().any(|p| &p.id == id) {
+        Some(ElementKind::Parameter)
+    } else if doc.design.decisions.iter().any(|d| &d.id == id) {
+        Some(ElementKind::Decision)
+    } else if doc.design.assumptions.iter().any(|a| &a.id == id) {
+        Some(ElementKind::Assumption)
+    } else {
+        None
+    }
+}
+
+#[async_trait]
+impl Gate for WriteScopeGate {
+    fn id(&self) -> &Identifier {
+        &self.id
+    }
+
+    fn subject_kind(&self) -> GateSubjectKind {
+        GateSubjectKind::SdrCommit
+    }
+
+    async fn decide(
+        &self,
+        request: GateRequest<'_>,
+        ctx: &ExecutionContext,
+    ) -> Result<GateOutcome, Error> {
+        ctx.ensure_not_cancelled()?;
+        let GateSubject::SdrCommit {
+            base, transition, ..
+        } = request.subject
+        else {
+            return Err(wrong_subject(Self::ID));
+        };
+        let outside: Vec<String> = transition
+            .operations
+            .iter()
+            .enumerate()
+            .filter_map(|(index, operation)| {
+                let (kind, id) = touched(operation, base, transition);
+                (!self.covers(kind, id)).then(|| {
+                    let what = kind.map_or_else(|| "element".to_owned(), |k| k.to_string());
+                    format!(
+                        "operation {index}: {what} {} is outside the task's write scope ({})",
+                        id.as_str(),
+                        self.describe()
+                    )
+                })
+            })
+            .collect();
+        Ok(if outside.is_empty() {
+            outcome(GateDecision::Allow, Vec::new(), Vec::new())
+        } else {
+            outcome(GateDecision::Deny, outside, Vec::new())
         })
     }
 }

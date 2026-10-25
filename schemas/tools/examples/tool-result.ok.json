@@ -1,0 +1,9 @@
+{
+  "status": "ok",
+  "step_id": "step-3.1",
+  "result": {
+    "part_id": "sha256:c184e3b64442c589f4fee88c0f62ec6e182cf4b5f0eed59e90cb693259dbf706",
+    "mass": { "value": 122.58973690825044, "unit": "g" }
+  },
+  "evidence_ids": ["ev-tool-0123456789abcdef0123456789abcdef"]
+}

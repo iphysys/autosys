@@ -109,6 +109,12 @@ impl ModelGateway {
         }
     }
 
+    /// The routing the gateway was started with, read-only: callers read a
+    /// profile's limits here, such as its `max_output_tokens`.
+    pub fn routing(&self) -> &Routing {
+        &self.routing
+    }
+
     /// The profile of agents that name none, after `SYNTH_MODEL_PROFILE`.
     pub fn default_profile(&self) -> &Identifier {
         &self.default_profile

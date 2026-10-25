@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RuntimeSettings",
+  "description": "config/runtime.yaml: settings of the query loop (blueprint section 13.1, ADR-0030). Budgets are not here: they come from the task, within the agent's limits.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "io_timeout_seconds"],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "io_timeout_seconds": {
+      "description": "Timeout for each read or write the query loop itself makes: the SDR, the event log, and the checks and gates of a proposal. Tool and model calls have their own timeouts.",
+      "type": "integer",
+      "minimum": 1
+    }
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SdrProposeResult",
+  "description": "What a proposed design change came to: committed as a new version, or rejected with the reasons and the checks behind them (ADR-0030). Every field is set by the harness.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["transition_id", "outcome", "base_version", "reasons", "checks"],
+  "properties": {
+    "transition_id": { "$ref": "../../common/types.schema.json#/$defs/TransitionId" },
+    "outcome": { "$ref": "../../events/event.schema.json#/$defs/TransitionOutcome" },
+    "base_version": {
+      "description": "The version the change was based on.",
+      "$ref": "../../common/types.schema.json#/$defs/SdrVersion"
+    },
+    "new_version": {
+      "description": "Set when the outcome is committed.",
+      "$ref": "../../common/types.schema.json#/$defs/SdrVersion"
+    },
+    "reasons": {
+      "description": "Why the change was rejected: validation problems or gate reasons. Empty when it committed.",
+      "type": "array",
+      "items": { "$ref": "../../common/types.schema.json#/$defs/NonEmptyString" }
+    },
+    "checks": {
+      "description": "The findings of the checks that ran on the change, in the order they ran. Empty when the change was invalid, since no check ran.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/SdrProposeCheck" }
+    }
+  },
+  "$defs": {
+    "SdrProposeCheck": {
+      "description": "One check finding, as stored in the evidence store.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence_id", "check_id", "verdict", "subject_ids"],
+      "properties": {
+        "evidence_id": { "$ref": "../../common/types.schema.json#/$defs/EvidenceId" },
+        "check_id": { "$ref": "../../common/types.schema.json#/$defs/CheckId" },
+        "verdict": { "$ref": "../../sdr/evidence.schema.json#/$defs/Verdict" },
+        "subject_ids": {
+          "type": "array",
+          "items": { "$ref": "../../common/types.schema.json#/$defs/ElementId" }
+        },
+        "message": { "$ref": "../../common/types.schema.json#/$defs/NonEmptyString" }
+      }
+    }
+  }
+}

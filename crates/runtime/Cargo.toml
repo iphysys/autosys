@@ -1,0 +1,42 @@
+[package]
+name = "synth-runtime"
+version = "0.1.0"
+description = "The query loop and the orchestrator: the bounded_worker loop, budgets, the repair bound and the stop reasons (blueprint sections 5.2, 5.4 and 13.1, ADR-0030)."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "runtime"
+
+[dependencies]
+synth-context.workspace = true
+synth-contracts.workspace = true
+synth-evaluation.workspace = true
+synth-governance.workspace = true
+synth-model-gateway.workspace = true
+synth-sdr.workspace = true
+synth-tools.workspace = true
+
+futures-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["macros", "sync", "time"] }
+tracing.workspace = true
+
+[dev-dependencies]
+synth-testkit.workspace = true
+
+# The scripted provider adapter of the tests (ADR-0015).
+async-trait.workspace = true
+# Checks that a bundled tool definition compiles on its own.
+jsonschema.workspace = true
+# Reads the committed config/ in tests, as crates/context does.
+serde-saphyr.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "test-util", "time"] }
+
+[lints]
+workspace = true

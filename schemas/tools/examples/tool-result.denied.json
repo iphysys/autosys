@@ -1,0 +1,4 @@
+{
+  "status": "denied",
+  "reasons": ["tool export_part is not allowed by the task; allowed: sdr_read, sdr_propose, create_plate, measure"]
+}

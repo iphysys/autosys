@@ -8,6 +8,7 @@ members = [
     "crates/governance",
     "crates/infra",
     "crates/model-gateway",
+    "crates/runtime",
     "crates/schema-types",
     "crates/sdr",
     "crates/testkit",
@@ -24,9 +25,11 @@ publish = false
 [workspace.dependencies]
 synth-context = { path = "crates/context" }
 synth-contracts = { path = "crates/contracts" }
+synth-evaluation = { path = "crates/evaluation" }
 synth-governance = { path = "crates/governance" }
 synth-infra = { path = "crates/infra" }
 synth-model-gateway = { path = "crates/model-gateway" }
+synth-runtime = { path = "crates/runtime" }
 synth-schema-types = { path = "crates/schema-types" }
 synth-sdr = { path = "crates/sdr" }
 synth-testkit = { path = "crates/testkit" }
@@ -36,6 +39,9 @@ anyhow = "1.0"
 # Object-safe async traits (ADR-0015).
 async-trait = "0.1"
 chrono = { version = "0.4", default-features = false, features = ["serde", "std"] }
+# The Stream trait of the query loop only (ADR-0030). Already in the tree
+# through rmcp and sqlx.
+futures-core = { version = "0.3", default-features = false, features = ["std"] }
 # Network schema resolution stays off: tests resolve references from local files only.
 jsonschema = { version = "0.58", default-features = false }
 prettyplease = "0.3"

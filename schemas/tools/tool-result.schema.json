@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ToolResultContent",
+  "description": "The content of one tool result as the model receives it, for every tool, the SDR tools included (ADR-0030). The harness writes it; the context wraps it as untrusted.",
+  "oneOf": [
+    {
+      "description": "The tool ran and returned a result.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "step_id", "result", "evidence_ids"],
+      "properties": {
+        "status": { "const": "ok" },
+        "step_id": { "$ref": "../common/types.schema.json#/$defs/StepId" },
+        "result": {
+          "description": "The result, as the tool's result schema describes it.",
+          "type": "object"
+        },
+        "evidence_ids": {
+          "description": "Evidence recorded for this result. A design change cites these as the source of a measured value.",
+          "type": "array",
+          "items": { "$ref": "../common/types.schema.json#/$defs/EvidenceId" }
+        }
+      }
+    },
+    {
+      "description": "The call failed: the arguments were invalid, or the tool reported an error, timed out or was cancelled.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "error"],
+      "properties": {
+        "status": { "const": "error" },
+        "error": { "$ref": "../common/types.schema.json#/$defs/ErrorInfo" }
+      }
+    },
+    {
+      "description": "The call was not allowed, so the tool did not run.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reasons"],
+      "properties": {
+        "status": { "const": "denied" },
+        "reasons": {
+          "type": "array",
+          "items": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" }
+        }
+      }
+    }
+  ]
+}

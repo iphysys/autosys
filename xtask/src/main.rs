@@ -27,7 +27,9 @@ Tasks:
                 Every file in config/ against its schema (blueprint 11.2), the model
                 routing checks of the gateway: unique profiles, headers, agent profiles
                 and tool calling (ADR-0027), the context profiles against their ceiling,
-                and every prompt header in prompts/ (ADR-0029)
+                every prompt header in prompts/ (ADR-0029), and every agent spec through
+                the runtime's agent registry: prompt, tools, skills, result schema and
+                repair behavior (ADR-0030)
   validate-benchmarks
                 Every problem in evals/benchmarks/ against its schema (blueprint 14.7)
   codegen [--check]
@@ -208,6 +210,7 @@ fn validate_config(root: &Path) -> Result<()> {
     if problems.is_empty() {
         problems.extend(model_routing_problems(&loader, &config));
         problems.extend(context_problems(&loader, root));
+        problems.extend(agent_problems(&loader, root));
     }
     if !problems.is_empty() {
         bail!("invalid configuration:\n  - {}", problems.join("\n  - "));
@@ -259,16 +262,7 @@ fn model_routing_problems(loader: &infra::config::ConfigLoader, config: &Path) -
         Ok(routing) => routing,
         Err(e) => return vec![format!("{}: {}", routing_path.display(), e.message())],
     };
-    let agents_dir = config.join("agents");
-    let Ok(entries) = std::fs::read_dir(&agents_dir) else {
-        return Vec::new();
-    };
-    let mut paths: Vec<PathBuf> = entries
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.extension().is_some_and(|x| x == "yaml"))
-        .collect();
-    paths.sort();
-    paths
+    yaml_files(&config.join("agents"))
         .iter()
         .filter_map(|path| {
             loader
@@ -278,6 +272,63 @@ fn model_routing_problems(loader: &infra::config::ConfigLoader, config: &Path) -
                 .map(|e| format!("{}: {}", path.display(), e.message()))
         })
         .collect()
+}
+
+/// Every agent in `config/agents/` through the registry the runtime builds
+/// at startup: its prompt is in `prompts/`, its tools are the SDR tools or
+/// listed in `config/tools/`, it names no skill, its result schema compiles,
+/// and it does not escalate (ADR-0029 follow-up 5, ADR-0030).
+fn agent_problems(loader: &infra::config::ConfigLoader, root: &Path) -> Vec<String> {
+    let config = root.join("config");
+    let specs: Vec<contracts::types::AgentSpec> = match load_all(loader, &config.join("agents")) {
+        Ok(specs) => specs,
+        Err(problem) => return vec![problem],
+    };
+    let overlays: Vec<contracts::types::ToolOverlay> = match load_all(loader, &config.join("tools"))
+    {
+        Ok(overlays) => overlays,
+        Err(problem) => return vec![problem],
+    };
+    let tools: Vec<&str> = overlays
+        .iter()
+        .flat_map(|o| o.tools.iter().map(|t| t.name.as_str()))
+        .collect();
+    let prompts = match context::PromptLibrary::load_dir(&root.join("prompts")) {
+        Ok(prompts) => prompts,
+        Err(e) => return vec![format!("prompts/: {e}")],
+    };
+    match runtime::AgentRegistry::new(specs, &prompts, &tools) {
+        Ok(_) => Vec::new(),
+        Err(runtime::RuntimeError::InvalidAgents { problems }) => problems
+            .into_iter()
+            .map(|p| format!("config/agents/: {p}"))
+            .collect(),
+        Err(e) => vec![format!("config/agents/: {e}")],
+    }
+}
+
+/// Every `*.yaml` file directly in `dir`, loaded as `T`.
+fn load_all<T: infra::config::ConfigFile>(
+    loader: &infra::config::ConfigLoader,
+    dir: &Path,
+) -> Result<Vec<T>, String> {
+    yaml_files(dir)
+        .iter()
+        .map(|path| loader.load(path).map_err(|e| e.message().to_owned()))
+        .collect()
+}
+
+/// The `*.yaml` files directly in `dir`, sorted; none if it does not exist.
+fn yaml_files(dir: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut paths: Vec<PathBuf> = entries
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|x| x == "yaml"))
+        .collect();
+    paths.sort();
+    paths
 }
 
 /// Validates `evals/benchmarks/` with the loader the evaluation runs use.
@@ -364,8 +415,10 @@ mod tests {
         let root = workspace_root().expect("root");
         let dir = tempfile::tempdir().expect("temp dir");
         for file in [
+            "config/agents/main_orchestrator.yaml",
             "config/context.yaml",
             "config/policies/context.yaml",
+            "config/tools/build123d.yaml",
             "prompts/system/base.md",
             "prompts/orchestrator/main.md",
         ] {
@@ -404,6 +457,62 @@ mod tests {
         assert_eq!(problems.len(), 1, "{problems:#?}");
         assert!(
             problems[0].contains("allowed_capabilities"),
+            "{problems:#?}"
+        );
+    }
+
+    #[test]
+    fn the_repository_passes_the_agent_checks() {
+        let problems = agent_problems(&loader(), &workspace_root().expect("root"));
+        assert!(problems.is_empty(), "{problems:#?}");
+    }
+
+    #[test]
+    fn a_broken_agent_prompt_is_a_problem() {
+        let dir = copy_of_the_repository();
+        assert!(agent_problems(&loader(), dir.path()).is_empty());
+        let path = dir.path().join("config/agents/main_orchestrator.yaml");
+        let text = fs::read_to_string(&path).expect("read");
+        assert!(
+            text.contains("prompt: orchestrator/main.md\n"),
+            "the fixture changed"
+        );
+        fs::write(
+            &path,
+            text.replace(
+                "prompt: orchestrator/main.md\n",
+                "prompt: orchestrator/mian.md\n",
+            ),
+        )
+        .expect("write");
+        let problems = agent_problems(&loader(), dir.path());
+        assert_eq!(problems.len(), 1, "{problems:#?}");
+        assert!(
+            problems[0].starts_with("config/agents/: agent `main_orchestrator`: prompt:"),
+            "{problems:#?}"
+        );
+        assert!(
+            problems[0].contains("orchestrator/mian.md"),
+            "{problems:#?}"
+        );
+        assert!(
+            problems[0].contains("available: orchestrator/main.md, system/base.md"),
+            "{problems:#?}"
+        );
+    }
+
+    #[test]
+    fn an_agent_tool_that_no_overlay_lists_is_a_problem() {
+        let dir = copy_of_the_repository();
+        fs::remove_file(dir.path().join("config/tools/build123d.yaml")).expect("remove");
+        let problems = agent_problems(&loader(), dir.path());
+        assert_eq!(problems.len(), 2, "{problems:#?}");
+        assert!(
+            problems[0].contains("tool `create_plate` is not available"),
+            "{problems:#?}"
+        );
+        assert!(
+            problems[1].contains("tool `measure` is not available"),
             "{problems:#?}"
         );
     }
