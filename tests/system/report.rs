@@ -18,7 +18,11 @@ use crate::support::*;
 
 use JobState::{Completed, Suspended};
 
-async fn assembler(worker: &Worker, db: &TestDb, volume: &tempfile::TempDir) -> ReportAssembler {
+pub(crate) async fn assembler(
+    worker: &Worker,
+    db: &TestDb,
+    volume: &tempfile::TempDir,
+) -> ReportAssembler {
     let database = Database::connect(
         db.url(),
         &PoolSettings {

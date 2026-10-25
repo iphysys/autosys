@@ -39,6 +39,8 @@ tracing.workspace = true
 synth-testkit.workspace = true
 
 chrono = { workspace = true, features = ["clock"] }
+# A plain-HTTP client of api-server in the system tests.
+reqwest.workspace = true
 serde_json.workspace = true
 # The system tests create and drop their own database.
 sqlx = { workspace = true, features = ["postgres", "runtime-tokio"] }

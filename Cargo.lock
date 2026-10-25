@@ -2420,6 +2420,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "chrono",
+ "reqwest",
  "rustls",
  "serde_json",
  "sqlx",
