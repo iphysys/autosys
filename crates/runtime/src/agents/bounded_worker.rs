@@ -704,6 +704,7 @@ impl Worker<'_> {
                         evidence: commit.evidence,
                     };
                     let unmet = stop::unmet(
+                        &view.requirements,
                         &stop::required(&view.requirements, &self.task.requirement_ids),
                         &view.evidence,
                     );
@@ -834,6 +835,7 @@ impl Worker<'_> {
             _ => (self.requirements_at(&head).await?, Vec::new(), false),
         };
         let unmet = stop::unmet(
+            &requirements,
             &stop::required(&requirements, &self.task.requirement_ids),
             &evidence,
         );

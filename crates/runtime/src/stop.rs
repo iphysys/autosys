@@ -10,9 +10,10 @@
 
 use contracts::ids::{ElementId, SdrVersion};
 use contracts::types::{
-    ErrorInfo, Evidence, EvidenceBody, Job, NonEmptyString, Requirement, RequirementPriority,
-    StopReason, TaskResult, TaskResultSchemaVersion, TransitionId, Verdict,
+    ErrorInfo, Evidence, Job, NonEmptyString, Requirement, RequirementPriority, RequirementStatus,
+    StopReason, TaskResult, TaskResultSchemaVersion, TransitionId,
 };
+use contracts::{ConsideredFinding, requirement_status};
 
 /// The must-level requirements of `requirements`, then the task's other
 /// requirement ids, each once.
@@ -30,21 +31,21 @@ pub(crate) fn required(requirements: &[Requirement], task_ids: &[ElementId]) -> 
     ids
 }
 
-/// The ids in `required` without a passing finding in `evidence`: no check
-/// finding names them, or one that does is not `pass`.
-pub(crate) fn unmet(required: &[ElementId], evidence: &[Evidence]) -> Vec<ElementId> {
+/// The ids in `required` that do not pass on `evidence`, by the rule the
+/// run report uses too (`contracts::requirement_status`, ADR-0033). An id
+/// that is not a requirement of `requirements` cannot pass.
+pub(crate) fn unmet(
+    requirements: &[Requirement],
+    required: &[ElementId],
+    evidence: &[Evidence],
+) -> Vec<ElementId> {
+    let findings = ConsideredFinding::all(evidence);
     required
         .iter()
         .filter(|id| {
-            let verdicts: Vec<Verdict> = evidence
-                .iter()
-                .filter(|e| e.subject_ids.contains(id))
-                .filter_map(|e| match &e.body {
-                    EvidenceBody::Check { verdict, .. } => Some(*verdict),
-                    EvidenceBody::ToolObservation { .. } => None,
-                })
-                .collect();
-            verdicts.is_empty() || verdicts.iter().any(|v| *v != Verdict::Pass)
+            requirements.iter().find(|r| &r.id == *id).is_none_or(|r| {
+                requirement_status(r, &findings, None).status != RequirementStatus::Pass
+            })
         })
         .cloned()
         .collect()
@@ -154,7 +155,8 @@ mod tests {
 
     #[test]
     fn a_requirement_is_met_only_when_every_finding_on_it_passes() {
-        let required = ids(&["R-1", "R-2", "R-3", "R-4"]);
+        let requirements = ["R-1", "R-2", "R-3", "R-4"].map(|id| requirement(id, "must"));
+        let required = ids(&["R-1", "R-2", "R-3", "R-4", "R-9"]);
         let evidence = [
             finding(&["R-1"], "pass"),
             finding(&["R-1", "p"], "pass"),
@@ -162,8 +164,11 @@ mod tests {
             finding(&["R-2"], "unverified"),
             finding(&["R-3"], "fail"),
         ];
-        // R-4 has no finding at all.
-        assert_eq!(strings(&unmet(&required, &evidence)), ["R-2", "R-3", "R-4"]);
+        // R-4 has no finding at all; R-9 is not a requirement.
+        assert_eq!(
+            strings(&unmet(&requirements, &required, &evidence)),
+            ["R-2", "R-3", "R-4", "R-9"]
+        );
     }
 
     #[test]
