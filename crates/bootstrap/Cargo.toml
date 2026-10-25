@@ -35,11 +35,12 @@ tracing.workspace = true
 [dev-dependencies]
 synth-testkit.workspace = true
 
+chrono = { workspace = true, features = ["clock"] }
 serde_json.workspace = true
 # The system tests create and drop their own database.
 sqlx = { workspace = true, features = ["postgres", "runtime-tokio"] }
 tempfile.workspace = true
-tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time"] }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "sync", "time"] }
 
 # Workers built by bootstrap on Postgres (blueprint section 16.1). They live
 # at the root, beside the other system-level material.

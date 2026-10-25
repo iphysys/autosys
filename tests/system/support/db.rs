@@ -8,12 +8,18 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use sqlx::AssertSqlSafe;
 use sqlx::postgres::{PgConnectOptions, PgPool, PgPoolOptions};
+use tokio::sync::{Semaphore, SemaphorePermit};
 
 const TIMEOUT: Duration = Duration::from_secs(10);
 
 static DATABASES: AtomicU64 = AtomicU64::new(0);
 
+/// How many test databases exist at once: each has one or two workers with
+/// their own pools, and the server's connections are limited.
+static SLOTS: Semaphore = Semaphore::const_new(6);
+
 pub struct TestDb {
+    _slot: SemaphorePermit<'static>,
     server: PgPool,
     name: String,
     url: String,
@@ -23,6 +29,10 @@ impl TestDb {
     /// Creates an empty database. Panics with instructions when
     /// `DATABASE_URL` is unset: these tests never skip silently.
     pub async fn create() -> Self {
+        let slot = SLOTS
+            .acquire()
+            .await
+            .expect("the semaphore is never closed");
         let server_url = std::env::var("DATABASE_URL").expect(
             "DATABASE_URL must point at a Postgres server where tests may create databases \
              (see README, section Database)",
@@ -48,7 +58,12 @@ impl TestDb {
             .await
             .expect("cannot create a test database");
         let url = with_database(&server_url, &name);
-        Self { server, name, url }
+        Self {
+            _slot: slot,
+            server,
+            name,
+            url,
+        }
     }
 
     /// The new database's URL: `DATABASE_URL` with its database replaced.

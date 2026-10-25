@@ -14,8 +14,9 @@
 )]
 
 pub mod db;
+pub mod invariants;
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -25,7 +26,8 @@ use async_trait::async_trait;
 use bootstrap::{CancellationToken, Overrides, Worker, WorkerSetup, build_worker};
 use contracts::ids::{Identifier, JobId, ProjectId, RunId, SdrVersion};
 use contracts::types::{
-    Event, EventPayload, Job, JobState, TokenUsage, ToolResultContent, Transition,
+    Event, EventPayload, Job, JobState, JobStatus, TokenUsage, ToolResultContent, Transition,
+    WakeCondition,
 };
 use contracts::{
     ContentBlock, Error, ErrorCode, ExecutionContext, ModelProvider, ModelRequest, ModelResponse,
@@ -33,9 +35,9 @@ use contracts::{
 };
 use sdr::{CommitInfo, InitialVersion, Validation};
 use serde_json::{Value, json};
-use testkit::builders::{id, parse};
+use testkit::builders::{id, new_event, parse};
 use testkit::fakes::FakeTool;
-use testkit::leases::{fenced_ctx, job_submit, project_create, unfenced_ctx};
+use testkit::leases::{api_command, fenced_ctx, job_submit, project_create, unfenced_ctx};
 use tools::ServerTools;
 
 use self::db::TestDb;
@@ -53,7 +55,7 @@ pub fn repo_root() -> PathBuf {
 /// Intervals short enough for a test, allowed only in the test environment.
 pub const TEST_WORKER_YAML: &str = "\
 schema_version: \"0.1\"
-lease_ms: 3000
+lease_ms: 2000
 heartbeat_ms: 500
 poll_interval_ms: 50
 poll_jitter_ms: 0
@@ -61,7 +63,7 @@ max_attempts: 3
 retry_backoff_min_ms: 100
 retry_backoff_max_ms: 400
 database:
-  max_connections: 8
+  max_connections: 3
   acquire_timeout_ms: 5000
   operation_timeout_ms: 10000
 tool_servers:
@@ -173,6 +175,122 @@ impl ModelProvider for ScriptedModel {
     }
 }
 
+/// A model that answers from the conversation it is shown, so a worker
+/// that recovers a run at any checkpoint gets the next step: create the
+/// plate until a plate exists, then measure it, then propose its mass as
+/// the final design citing the measurement, then say it is done.
+pub struct PolicyModel {
+    id: Identifier,
+    /// Fails this many first calls with this code instead of answering.
+    failing: Option<(ErrorCode, usize)>,
+    requests: Mutex<usize>,
+}
+
+impl PolicyModel {
+    pub fn new() -> Self {
+        Self {
+            id: id("policy"),
+            failing: None,
+            requests: Mutex::new(0),
+        }
+    }
+
+    /// Fails its first `calls` calls with `code`, then follows the policy.
+    pub fn failing(code: ErrorCode, calls: usize) -> Self {
+        Self {
+            failing: Some((code, calls)),
+            ..Self::new()
+        }
+    }
+
+    /// Fails its first call with `code`, then follows the policy.
+    pub fn failing_first(code: ErrorCode) -> Self {
+        Self::failing(code, 1)
+    }
+
+    /// How many calls reached it.
+    pub fn requests(&self) -> usize {
+        *self.requests.lock().unwrap()
+    }
+}
+
+#[async_trait]
+impl ModelProvider for PolicyModel {
+    fn provider_id(&self) -> &Identifier {
+        &self.id
+    }
+
+    async fn complete(
+        &self,
+        request: &ModelRequest,
+        ctx: &ExecutionContext,
+    ) -> Result<ModelResponse, Error> {
+        ctx.ensure_not_cancelled()?;
+        let call = {
+            let mut requests = self.requests.lock().unwrap();
+            *requests += 1;
+            *requests
+        };
+        if let Some((code, calls)) = self.failing
+            && call <= calls
+        {
+            return Err(Error::new(code, "the model failed on purpose"));
+        }
+        Ok(next_step(request))
+    }
+}
+
+/// The policy of [`PolicyModel`].
+pub fn next_step(request: &ModelRequest) -> ModelResponse {
+    let mut tools: HashMap<&str, &str> = HashMap::new();
+    let mut done: HashSet<&str> = HashSet::new();
+    let mut calls = 0;
+    let mut measured = Vec::new();
+    for block in request.messages.iter().flat_map(|m| &m.content) {
+        match block {
+            ContentBlock::ToolCall { id, name, .. } => {
+                tools.insert(id, name.as_str());
+                calls += 1;
+            }
+            ContentBlock::ToolResult {
+                call_id,
+                content,
+                is_error: false,
+            } => {
+                let Some(tool) = tools.get(call_id.as_str()).copied() else {
+                    continue;
+                };
+                if let Some(ToolResultContent::Ok { evidence_ids, .. }) = envelope(content) {
+                    done.insert(tool);
+                    if tool == "measure" {
+                        measured = evidence_ids.iter().map(|e| e.as_str().to_owned()).collect();
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let call_id = format!("c{}", calls + 1);
+    if !done.contains("create_plate") {
+        tool_use(&[(&call_id, "create_plate", plate())])
+    } else if !done.contains("measure") {
+        tool_use(&[(&call_id, "measure", measure_args())])
+    } else if !done.contains("sdr_propose") {
+        tool_use(&[(
+            &call_id,
+            "sdr_propose",
+            propose_mass(MASS_G, &measured, true),
+        )])
+    } else {
+        response(
+            vec![ContentBlock::Text {
+                text: "The design is committed.".to_owned(),
+            }],
+            ModelStopReason::EndTurn,
+        )
+    }
+}
+
 fn response(content: Vec<ContentBlock>, stop_reason: ModelStopReason) -> ModelResponse {
     ModelResponse {
         model_id: "claude-haiku-5-5".to_owned(),
@@ -245,13 +363,24 @@ pub fn last_evidence(request: &ModelRequest) -> Vec<String> {
 }
 
 fn unwrap_envelope(envelope: &str) -> ToolResultContent {
-    let start = envelope.find('>').expect("an envelope opens") + 1;
-    let end = envelope.rfind("</untrusted>").expect("an envelope closes");
-    let text = envelope[start..end]
+    self::envelope(envelope).unwrap_or_else(|| panic!("not a tool result: {envelope}"))
+}
+
+/// The tool result inside an untrusted envelope, if it is one.
+fn envelope(envelope: &str) -> Option<ToolResultContent> {
+    serde_json::from_value(envelope_json(envelope)?).ok()
+}
+
+/// The JSON inside an untrusted envelope, if it is one.
+pub fn envelope_json(envelope: &str) -> Option<Value> {
+    let start = envelope.find('>')? + 1;
+    let end = envelope.rfind("</untrusted>")?;
+    let text = envelope
+        .get(start..end)?
         .replace("&lt;", "<")
         .replace("&gt;", ">")
         .replace("&amp;", "&");
-    serde_json::from_str(&text).unwrap_or_else(|e| panic!("not a tool result: {e}: {text}"))
+    serde_json::from_str(&text).ok()
 }
 
 // ----------------------------------------------------------------- tools ---
@@ -387,21 +516,26 @@ pub fn job(job_id: &str, run: &str) -> Job {
 
 /// What one worker is built with.
 pub struct Parts {
-    pub model: Arc<ScriptedModel>,
+    pub model: Arc<dyn ModelProvider>,
     pub create_plate: Arc<FakeTool>,
     pub measure: Arc<FakeTool>,
     pub overrides: Overrides,
 }
 
 impl Parts {
-    /// The script, the committed tool results, nothing else replaced.
-    pub fn new(script: Vec<ScriptStep>) -> Self {
+    /// `model`, the committed tool results, nothing else replaced.
+    pub fn new(model: Arc<dyn ModelProvider>) -> Self {
         Self {
-            model: Arc::new(ScriptedModel::new(script)),
+            model,
             create_plate: Arc::new(returning("create_plate", plate_result())),
             measure: Arc::new(returning("measure", measure_result())),
             overrides: Overrides::default(),
         }
+    }
+
+    /// A [`PolicyModel`].
+    pub fn policy() -> Self {
+        Self::new(Arc::new(PolicyModel::new()))
     }
 
     pub fn create_plate(mut self, tool: FakeTool) -> Self {
@@ -418,10 +552,7 @@ impl Parts {
 /// Builds a worker named `name` on `db` with `config` and `parts`.
 pub async fn build(name: &str, db: &TestDb, config: &TestConfig, parts: Parts) -> Arc<Worker> {
     let mut overrides = parts.overrides;
-    overrides.models = Some(BTreeMap::from([(
-        "haiku".to_owned(),
-        parts.model as Arc<dyn ModelProvider>,
-    )]));
+    overrides.models = Some(BTreeMap::from([("haiku".to_owned(), parts.model)]));
     overrides.tool_servers = Some(build123d(parts.create_plate, parts.measure));
     let setup = WorkerSetup {
         config_dir: config.path().to_owned(),
@@ -456,6 +587,14 @@ impl Background {
             shutdown,
             task,
         }
+    }
+
+    /// Kills the worker where it stands, as a crash would: the run and its
+    /// heartbeat stop, and nothing more is written. Its lease stays until it
+    /// expires.
+    pub async fn abort(self) {
+        self.task.abort();
+        let _ = self.task.await;
     }
 
     /// Shuts the worker down, as a signal would, and waits for it.
@@ -562,20 +701,87 @@ pub fn harness() -> contracts::types::HarnessVersions {
 
 /// Waits until `job` is in `state`, or panics after [`WAIT`].
 pub async fn wait_for(worker: &Worker, job: &str, state: JobState) -> Job {
+    wait_until(worker, job, |at| at == state).await
+}
+
+/// Waits until `job`'s state satisfies `done`, or panics after [`WAIT`].
+pub async fn wait_until(worker: &Worker, job: &str, done: impl Fn(JobState) -> bool) -> Job {
     let job_id: JobId = id(job);
     let deadline = tokio::time::Instant::now() + WAIT;
     loop {
         let stored = worker.jobs.get(&job_id).await.expect("read the job");
-        if job_state(&stored.status) == state {
+        if done(job_state(&stored.status)) {
             return stored;
         }
         assert!(
             tokio::time::Instant::now() < deadline,
-            "{job} is still {:?}, not {state:?}",
+            "{job} is still {:?}",
             stored.status
         );
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
+}
+
+/// Approves the approval `job` waits for, as a client's answer.
+pub async fn approve(worker: &Worker, job: &Job) {
+    let JobStatus::Suspended {
+        wake_condition: WakeCondition::ApprovalAnswered(approval_id),
+        ..
+    } = &job.status
+    else {
+        panic!(
+            "{} is not waiting for an approval: {:?}",
+            job.id.as_str(),
+            job.status
+        );
+    };
+    worker
+        .events
+        .append(
+            new_event(
+                job.run_id.as_str(),
+                chrono_now(),
+                json!({
+                    "type": "approval_answered",
+                    "approval_id": approval_id.as_str(),
+                    "answer": "approve"
+                }),
+            ),
+            Some(&api_command()),
+        )
+        .await
+        .expect("append the answer");
+}
+
+/// Asks to cancel `run`, as a client would.
+pub async fn cancel(worker: &Worker, run: &str) {
+    worker
+        .events
+        .append(
+            new_event(
+                run,
+                chrono_now(),
+                json!({ "type": "cancel_requested", "reason": "The client cancelled." }),
+            ),
+            Some(&api_command()),
+        )
+        .await
+        .expect("append the cancel");
+}
+
+fn chrono_now() -> chrono::DateTime<chrono::Utc> {
+    chrono::Utc::now()
+}
+
+/// `config/tools/build123d.yaml` with `create_plate` idempotent.
+pub fn idempotent_create_plate() -> String {
+    let committed = fs::read_to_string(repo_root().join("config/tools/build123d.yaml"))
+        .expect("the committed overlay");
+    let idempotent = "idempotent: true
+    idempotency_test: tests/test_create_plate.py::test_repeat";
+    let replaced = committed.replacen("idempotent: false", idempotent, 1);
+    assert_ne!(replaced, committed, "the overlay changed its format");
+    replaced
 }
 
 /// The project's head version.

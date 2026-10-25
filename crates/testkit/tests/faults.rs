@@ -158,3 +158,38 @@ async fn keyed_effects_keep_one_effect_per_key_across_tool_instances() {
     tool(&effects).invoke(&other, &ctx).await.unwrap();
     assert_eq!(effects.effects(), 2, "another key, another effect");
 }
+
+#[tokio::test]
+async fn a_tool_hook_stops_at_a_pause_once() {
+    let pause = Pause::new("tool", At::Before);
+    let hook = {
+        let pause = pause.clone();
+        move |_: usize, _: &contracts::ToolRequest| {
+            let pause = pause.clone();
+            Box::pin(async move {
+                pause.stop().await;
+                Ok(())
+            }) as testkit::fakes::HookFuture
+        }
+    };
+    let tool: Arc<dyn Tool> = Arc::new(KeyedEffects::new().tool("t", |_| json!({}), hook));
+    let ctx = contracts::ExecutionContext::new(id("corr"));
+    let first = {
+        let (tool, ctx) = (Arc::clone(&tool), ctx.clone());
+        tokio::spawn(async move {
+            let request = tool_request("t", "step-1.1", json!({}));
+            tool.invoke(&request, &ctx).await
+        })
+    };
+    pause.reached(WAIT).await;
+    assert!(!first.is_finished(), "the first call waits at the pause");
+    let later = tool_request("t", "step-1.2", json!({}));
+    tool.invoke(&later, &ctx)
+        .await
+        .expect("a later call does not stop");
+    pause.release();
+    first
+        .await
+        .unwrap()
+        .expect("the first call goes on once released");
+}

@@ -154,7 +154,10 @@ impl Worker {
 /// stores and the SDR manager; the tool servers, registry and gateway; the
 /// checks and gates; the context builder and agents; the model gateway;
 /// the orchestrator and the scheduler.
-pub async fn build_worker(setup: WorkerSetup, env: &dyn Env) -> Result<Worker, BootstrapError> {
+pub async fn build_worker(
+    setup: WorkerSetup,
+    env: &(dyn Env + Sync),
+) -> Result<Worker, BootstrapError> {
     let WorkerSetup {
         config_dir,
         prompts_dir,

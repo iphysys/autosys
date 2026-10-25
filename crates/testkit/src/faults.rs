@@ -8,8 +8,8 @@
 //! it hands it a wrapper ([`Wrap`]) from one of the `*Faults` values below,
 //! which wraps what bootstrap built. Tests never name `SdrRepository`.
 //!
-//! A tool call pauses through [`crate::fakes::FakeTool::before_answer`], not
-//! here.
+//! A tool call pauses through [`crate::fakes::FakeTool::before_answer`],
+//! whose hook calls [`Pause::stop`].
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -91,6 +91,12 @@ impl Pause {
     /// never calls it.
     pub fn release(&self) {
         self.state.released.send_replace(true);
+    }
+
+    /// Stops here, unless a call already has: for a tool, from
+    /// [`crate::fakes::FakeTool::before_answer`].
+    pub async fn stop(&self) {
+        self.stop_if(self.state.at, true).await;
     }
 
     /// For a double: stops here if `matched` is the first match at `at`.

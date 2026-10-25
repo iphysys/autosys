@@ -16,9 +16,8 @@ use JobState::{Completed, Queued, Running};
 async fn a_built_worker_runs_a_submitted_job_to_completion() {
     let db = TestDb::create().await;
     let config = TestConfig::new(&[("policies/autonomy.yaml", NO_APPROVALS_YAML)]);
-    let parts = Parts::new(succeeding());
-    let model = parts.model.clone();
-    let worker = build("worker-a", &db, &config, parts).await;
+    let model = Arc::new(ScriptedModel::new(succeeding()));
+    let worker = build("worker-a", &db, &config, Parts::new(model.clone())).await;
     seed(&worker).await;
     worker
         .scheduler
@@ -46,6 +45,7 @@ async fn a_built_worker_runs_a_submitted_job_to_completion() {
         ]
     );
     assert_eq!(head(&worker).await, 2, "the final proposal committed");
+    invariants::hold(&worker, &job, None).await;
     drop(worker);
     db.drop().await;
 }
@@ -61,7 +61,7 @@ fn setup(config: &TestConfig, overrides: Overrides) -> WorkerSetup {
 
 /// Fake tool servers, so startup gets past connecting to them.
 fn fake_tools() -> Overrides {
-    let parts = Parts::new(Vec::new());
+    let parts = Parts::policy();
     Overrides {
         tool_servers: Some(build123d(parts.create_plate, parts.measure)),
         ..Overrides::default()

@@ -2,6 +2,7 @@
 //! [`crate::contract`], except [`FaultySdrRepository`], which fails on purpose.
 
 mod check;
+mod claude_server;
 mod gate;
 mod keyed_effect;
 mod model;
@@ -11,6 +12,7 @@ mod subscriber;
 mod tool;
 
 pub use check::FakeCheck;
+pub use claude_server::{FakeClaudeServer, Responder, message};
 pub use gate::FakeGate;
 pub use keyed_effect::{KeyedEffects, go_on};
 pub use model::{ScriptedModelProvider, text_response, tool_call_response};
