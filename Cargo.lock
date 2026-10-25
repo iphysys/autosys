@@ -2440,6 +2440,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "synth-api",
+ "synth-api-client",
  "synth-artifacts",
  "synth-context",
  "synth-contracts",
