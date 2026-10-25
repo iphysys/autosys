@@ -210,6 +210,13 @@ async fn a_commit_records_its_provenance() {
             .expect("stored record"),
         record
     );
+    assert_eq!(
+        f.manager
+            .version_record(&f.project, &SdrVersion(1), &f.ctx)
+            .await
+            .expect("read through the manager"),
+        record
+    );
 }
 
 #[tokio::test]
