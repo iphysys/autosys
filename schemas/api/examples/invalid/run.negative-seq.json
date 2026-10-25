@@ -1,0 +1,9 @@
+{
+  "schema_version": "0.1",
+  "run_id": "run-0001",
+  "project_id": "proj-0001",
+  "status": { "state": "queued" },
+  "created_at": "2026-10-26T09:00:00Z",
+  "updated_at": "2026-10-26T09:00:00Z",
+  "last_seq": -1
+}

@@ -1,0 +1,12 @@
+{
+  "schema_version": "0.1",
+  "run_id": "run-1",
+  "agent_id": "main_orchestrator",
+  "name": "Size the plate",
+  "description": "Choose plate dimensions that meet the requirements.",
+  "goal": "A committed design.",
+  "acceptance_criteria": ["Every requirement has a passing check."],
+  "requirements": [
+    { "id": "R-text", "text": "Easy to machine.", "priority": "should", "evidence_ids": [] }
+  ]
+}

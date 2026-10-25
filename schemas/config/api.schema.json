@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ApiSettings",
+  "description": "config/api.yaml: where api-server listens, its database pool, and the limits of its requests and event streams (ADR-0018). The token is SYNTH_API_TOKEN, never written here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "listen",
+    "request_timeout_ms",
+    "max_body_bytes",
+    "stream",
+    "database"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "listen": {
+      "description": "The socket address to bind, as host:port.",
+      "type": "string",
+      "minLength": 1
+    },
+    "request_timeout_ms": {
+      "description": "How long a request other than an event stream may take.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "max_body_bytes": {
+      "description": "The largest request body accepted.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "stream": { "$ref": "#/$defs/ApiStream" },
+    "database": { "$ref": "worker.schema.json#/$defs/WorkerDatabase" }
+  },
+  "$defs": {
+    "ApiStream": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["keep_alive_ms", "page_size"],
+      "properties": {
+        "keep_alive_ms": {
+          "description": "How often an idle event stream sends a comment, so proxies keep it open.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "page_size": {
+          "description": "How many events one read of the log returns at most.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

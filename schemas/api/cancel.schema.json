@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CancelRequest",
+  "description": "POST /v0/runs/{run_id}/cancel: asks the run to stop. It is recorded as a cancel_requested event; the run stops at its next safe point (ADR-0018).",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "reason": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" }
+  }
+}

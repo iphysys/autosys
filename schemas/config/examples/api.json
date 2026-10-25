@@ -1,0 +1,8 @@
+{
+  "schema_version": "0.1",
+  "listen": "127.0.0.1:8080",
+  "request_timeout_ms": 30000,
+  "max_body_bytes": 1048576,
+  "stream": { "keep_alive_ms": 15000, "page_size": 256 },
+  "database": { "max_connections": 8, "acquire_timeout_ms": 5000, "operation_timeout_ms": 10000 }
+}

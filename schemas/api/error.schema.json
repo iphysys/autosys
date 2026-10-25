@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ApiError",
+  "description": "The body of every error response (ADR-0018): a stable code, a message, whether retrying can help, and the request's correlation id.",
+  "$ref": "../common/types.schema.json#/$defs/ErrorInfo"
+}

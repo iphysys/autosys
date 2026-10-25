@@ -1,0 +1,23 @@
+{
+  "schema_version": "0.1",
+  "agent_id": "main_orchestrator",
+  "name": "Size the plate",
+  "description": "Choose plate dimensions that meet the requirements.",
+  "goal": "A committed design whose requirements all have passing checks.",
+  "acceptance_criteria": ["Every requirement has a passing check."],
+  "requirements": [
+    {
+      "id": "R-text",
+      "text": "The plate shall be easy to machine.",
+      "priority": "should",
+      "evidence_ids": []
+    }
+  ],
+  "budget": {
+    "max_tokens": 200000,
+    "max_tool_calls": 20,
+    "max_steps": 20,
+    "max_wall_time_seconds": 600,
+    "max_repair_attempts": 3
+  }
+}

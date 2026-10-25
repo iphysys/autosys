@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Run",
+  "description": "A run as a client sees it (ADR-0018): its state and how far its event log has come. Not the job record the harness keeps.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "project_id",
+    "status",
+    "created_at",
+    "updated_at",
+    "last_seq"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "run_id": { "$ref": "../common/types.schema.json#/$defs/RunId" },
+    "project_id": { "$ref": "../common/types.schema.json#/$defs/ProjectId" },
+    "status": {
+      "description": "The run's state. A suspended run names the approval it waits for in its wake condition.",
+      "$ref": "../jobs/job.schema.json#/$defs/JobStatus"
+    },
+    "created_at": { "$ref": "../common/types.schema.json#/$defs/Timestamp" },
+    "updated_at": { "$ref": "../common/types.schema.json#/$defs/Timestamp" },
+    "last_seq": {
+      "description": "The sequence number of the run's last event when this was read; 0 before the first. A stream opened with this as its Last-Event-ID receives only later events.",
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

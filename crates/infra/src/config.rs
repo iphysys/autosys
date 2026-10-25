@@ -14,8 +14,8 @@ use std::path::{Path, PathBuf};
 use std::collections::BTreeSet;
 
 use contracts::types::{
-    AgentSpec, AutonomyPolicy, ContextBudgets, ContextPolicy, GatesPolicy, ModelRouting,
-    RuntimeSettings, SCHEMA_FILES, ToolOverlay, WorkerSettings,
+    AgentSpec, ApiSettings, AutonomyPolicy, ContextBudgets, ContextPolicy, GatesPolicy,
+    ModelRouting, RuntimeSettings, SCHEMA_FILES, ToolOverlay, WorkerSettings,
 };
 use contracts::{Environment, Error, ErrorCode, SchemaSet};
 use serde::de::DeserializeOwned;
@@ -81,6 +81,21 @@ impl ConfigFile for ModelRouting {
 
 impl ConfigFile for RuntimeSettings {
     const SCHEMA: &'static str = "config/runtime.schema.json";
+}
+
+impl ConfigFile for ApiSettings {
+    const SCHEMA: &'static str = "config/api.schema.json";
+
+    /// `listen` is a socket address, such as `127.0.0.1:8080`.
+    fn validate(&self, _environment: Environment) -> Vec<String> {
+        match self.listen.parse::<std::net::SocketAddr>() {
+            Ok(_) => Vec::new(),
+            Err(e) => vec![format!(
+                "listen ({}) is not a socket address: {e}",
+                self.listen.as_str()
+            )],
+        }
+    }
 }
 
 /// Fastest intervals a worker may use outside the Test environment.
@@ -166,6 +181,7 @@ impl ConfigLoader {
                 GatesPolicy::SCHEMA,
                 ToolOverlay::SCHEMA,
                 AgentSpec::SCHEMA,
+                ApiSettings::SCHEMA,
                 ModelRouting::SCHEMA,
                 RuntimeSettings::SCHEMA,
                 WorkerSettings::SCHEMA,
@@ -231,6 +247,7 @@ impl ConfigLoader {
         for path in files {
             let relative = relative_path(config_dir, &path);
             let checked = match relative.as_str() {
+                "api.yaml" => self.load::<ApiSettings>(&path).map(|_| ()),
                 "context.yaml" => self.load::<ContextBudgets>(&path).map(|_| ()),
                 "policies/autonomy.yaml" => self.load::<AutonomyPolicy>(&path).map(|_| ()),
                 "policies/context.yaml" => self.load::<ContextPolicy>(&path).map(|_| ()),

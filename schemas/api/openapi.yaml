@@ -1,18 +1,288 @@
-# External HTTP API (blueprint section 3.5). Skeleton only: paths, the event
-# stream and contract tests arrive in PR 14 of the Increment 1 plan.
+# External HTTP API v0 (blueprint section 3.5, ADR-0018). Every body is a
+# `$ref` to a JSON Schema file in schemas/, from which the Rust types are
+# generated; crates/api/tests/contract.rs checks every response of the
+# handlers against this document.
 openapi: 3.1.0
 info:
   title: autosys API
   version: 0.1.0
   description: >-
-    Commands are requests, not state edits. Run events stream as server-sent
-    events and resume from the last sequence number.
+    Commands are requests, not state edits: starting a run, answering an
+    approval and cancelling become events and gate decisions inside the
+    harness. Run events stream as server-sent events and resume from the
+    last sequence number. Authentication is a development token for
+    Increment 1 only (ADR-0022).
 security:
   - devToken: []
-paths: {}
+paths:
+  /v0/runs:
+    post:
+      operationId: createRun
+      summary: Start a run.
+      description: >-
+        Creates a project whose SDR version 0 holds the requirements, and
+        queues a run of the named agent on it. The ids are derived from the
+        Idempotency-Key, so a retry with the same key and request returns
+        the same run.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "./run-request.schema.json" }
+      responses:
+        "201":
+          description: The run was created and queued.
+          content:
+            application/json:
+              schema: { $ref: "./run.schema.json" }
+        "200":
+          description: A run with this key and this request already exists.
+          content:
+            application/json:
+              schema: { $ref: "./run.schema.json" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409":
+          description: The key was used for a different request.
+          content:
+            application/json:
+              schema: { $ref: "./error.schema.json" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        default: { $ref: "#/components/responses/Error" }
+  /v0/runs/{run_id}:
+    get:
+      operationId: getRun
+      summary: A run's state.
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: The run.
+          content:
+            application/json:
+              schema: { $ref: "./run.schema.json" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        default: { $ref: "#/components/responses/Error" }
+  /v0/runs/{run_id}/events:
+    get:
+      operationId: streamRunEvents
+      summary: The run's events, as server-sent events.
+      description: >-
+        Each event is one frame: `id` is its sequence number, `event` its
+        payload type, and `data` the event as JSON. A client that reconnects
+        with the Last-Event-ID header receives every later event exactly
+        once. The stream ends after the event that leaves the run in a final
+        state; a suspended run's stream stays open.
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+        - name: Last-Event-ID
+          in: header
+          required: false
+          description: The sequence number of the last event received; the stream starts after it.
+          schema: { type: string, pattern: "^[0-9]{1,19}$" }
+      responses:
+        "200":
+          description: The event stream.
+          content:
+            text/event-stream:
+              schema: { type: string }
+              # The schema every frame's data satisfies. OpenAPI 3.1 has no
+              # keyword for the items of a stream.
+              x-data-schema: { $ref: "../events/event.schema.json" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        default: { $ref: "#/components/responses/Error" }
+  /v0/runs/{run_id}/approvals/{approval_id}:
+    post:
+      operationId: answerApproval
+      summary: Answer an approval the run asked for.
+      description: >-
+        Recorded as an approval_answered event whose actor is the caller. A
+        run waits for its approval, so the earliest answer stored is the one
+        it uses.
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+        - name: approval_id
+          in: path
+          required: true
+          schema: { $ref: "../common/types.schema.json#/$defs/ApprovalId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "./approval-answer.schema.json" }
+      responses:
+        "202":
+          description: The answer was recorded, as this event.
+          content:
+            application/json:
+              schema: { $ref: "../events/event.schema.json" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: No such run, or the run never asked for this approval.
+          content:
+            application/json:
+              schema: { $ref: "./error.schema.json" }
+        "409":
+          description: The approval was already answered, or the run has stopped for good.
+          content:
+            application/json:
+              schema: { $ref: "./error.schema.json" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        default: { $ref: "#/components/responses/Error" }
+  /v0/runs/{run_id}/cancel:
+    post:
+      operationId: cancelRun
+      summary: Ask the run to stop.
+      description: >-
+        Recorded as a cancel_requested event. A queued, running, waiting or
+        suspended run stops with the cancelled stop reason at its next safe
+        point.
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "./cancel.schema.json" }
+      responses:
+        "202":
+          description: The request was recorded, as this event.
+          content:
+            application/json:
+              schema: { $ref: "../events/event.schema.json" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The run has stopped for good.
+          content:
+            application/json:
+              schema: { $ref: "./error.schema.json" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        default: { $ref: "#/components/responses/Error" }
+  /v0/runs/{run_id}/report:
+    get:
+      operationId: getRunReport
+      summary: The run report.
+      description: >-
+        Assembled on demand from durable records (ADR-0033). A suspended
+        run's report is not final.
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: The report.
+          content:
+            application/json:
+              schema: { $ref: "../reports/run-report.schema.json" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The run has not stopped, so it has no report yet.
+          content:
+            application/json:
+              schema: { $ref: "./error.schema.json" }
+        default: { $ref: "#/components/responses/Error" }
+  /v0/artifacts/{artifact_id}:
+    get:
+      operationId: getArtifact
+      summary: An artifact's metadata.
+      parameters:
+        - $ref: "#/components/parameters/ArtifactId"
+      responses:
+        "200":
+          description: The metadata.
+          content:
+            application/json:
+              schema: { $ref: "../artifacts/artifact.schema.json" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        default: { $ref: "#/components/responses/Error" }
+  /v0/artifacts/{artifact_id}/content:
+    get:
+      operationId: getArtifactContent
+      summary: An artifact's content.
+      description: The bytes, with the media type the metadata names.
+      parameters:
+        - $ref: "#/components/parameters/ArtifactId"
+      responses:
+        "200":
+          description: The content.
+          content:
+            "*/*":
+              schema: { type: string, contentEncoding: binary }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        default: { $ref: "#/components/responses/Error" }
 components:
   securitySchemes:
     devToken:
       type: http
       scheme: bearer
       description: Development token for Increment 1 only (ADR-0022).
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Chosen by the client, once per run it means to start.
+      schema: { $ref: "../common/types.schema.json#/$defs/Identifier" }
+    RunId:
+      name: run_id
+      in: path
+      required: true
+      schema: { $ref: "../common/types.schema.json#/$defs/RunId" }
+    ArtifactId:
+      name: artifact_id
+      in: path
+      required: true
+      schema: { $ref: "../common/types.schema.json#/$defs/ArtifactId" }
+  responses:
+    BadRequest:
+      description: The request is malformed or breaks its schema.
+      content:
+        application/json:
+          schema: { $ref: "./error.schema.json" }
+    Unauthorized:
+      description: The development token is missing or wrong.
+      headers:
+        WWW-Authenticate:
+          schema: { type: string }
+      content:
+        application/json:
+          schema: { $ref: "./error.schema.json" }
+    NotFound:
+      description: No such resource.
+      content:
+        application/json:
+          schema: { $ref: "./error.schema.json" }
+    TooLarge:
+      description: The body is larger than the server accepts.
+      content:
+        application/json:
+          schema: { $ref: "./error.schema.json" }
+    UnsupportedMediaType:
+      description: The body is not application/json.
+      content:
+        application/json:
+          schema: { $ref: "./error.schema.json" }
+    Error:
+      description: >-
+        Any other failure: 503 when a dependency is unavailable or a request
+        timed out (retryable), 500 for a harness bug.
+      content:
+        application/json:
+          schema: { $ref: "./error.schema.json" }

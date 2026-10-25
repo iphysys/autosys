@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.1",
+  "run_id": "run-0001",
+  "project_id": "proj-0001",
+  "status": {
+    "state": "suspended",
+    "wake_condition": { "kind": "approval_answered", "approval_id": "appr-0001" },
+    "checkpoint": { "version": 3, "sha256": "sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0" }
+  },
+  "created_at": "2026-10-26T09:00:00Z",
+  "updated_at": "2026-10-26T09:04:12Z",
+  "last_seq": 27
+}
