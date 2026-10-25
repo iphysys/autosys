@@ -8,7 +8,7 @@
 mod support;
 
 use contracts::ErrorCode;
-use contracts::types::{ApprovalAnswer, EventPayload, StopReason};
+use contracts::types::{ApprovalAnswer, EventPayload, JobStatus, StopReason};
 use serde_json::{Value, json};
 use support::*;
 use testkit::builders::parse;
@@ -57,7 +57,11 @@ async fn success_after_the_approval_policy_asks_and_a_human_approves() {
     assert_eq!(outcome.result.stop_reason, StopReason::Success);
     assert_eq!(outcome.result.sdr_version.as_ref().map(|v| v.0), Some(2));
     assert_eq!(outcome.result.committed_transition_ids.len(), 1);
-    assert_eq!(outcome.job.stop_reason, Some(StopReason::Success));
+    assert_eq!(
+        outcome.job.status,
+        JobStatus::Running,
+        "the loop leaves the status to the scheduler"
+    );
     assert!(outcome.continuation.is_none());
     // The resumed stream continues where the first stopped.
     assert_eq!(
@@ -457,7 +461,11 @@ async fn cancelling_during_a_slow_tool_stops_with_cancelled() {
     cancel.await.expect("the canceller ran");
     let outcome = ran.outcome();
     assert_eq!(outcome.stop_reason, StopReason::Cancelled);
-    assert_eq!(outcome.job.stop_reason, Some(StopReason::Cancelled));
+    assert_eq!(
+        outcome.job.status,
+        JobStatus::Running,
+        "the loop leaves the status to the scheduler"
+    );
     assert!(ran.errors().is_empty(), "a cancel is not an error");
     assert_eq!(ran.kinds().last(), Some(&"run_stopped"));
     assert_eq!(world.create_plate.calls(), 0);
@@ -475,8 +483,9 @@ async fn the_committed_autonomy_policy_stops_a_final_commit_with_approval_requir
     assert_eq!(outcome.stop_reason, StopReason::ApprovalRequired);
     assert_eq!(outcome.result.stop_reason, StopReason::ApprovalRequired);
     assert_eq!(
-        outcome.job.stop_reason, None,
-        "waiting is not a terminal state"
+        outcome.job.status,
+        JobStatus::Running,
+        "the loop leaves the status to the scheduler"
     );
     assert!(ran.transitions().is_empty(), "nothing was decided");
     assert_eq!(world.head().await, 1);

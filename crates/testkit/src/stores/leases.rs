@@ -3,7 +3,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use chrono::{DateTime, Utc};
 use contracts::types::{Job, JobState};
-use contracts::{Clock, Error, FenceToken, FoundLease, StaleFence, SystemClock, lease_lost};
+use contracts::{
+    Clock, Error, FenceToken, FoundLease, StaleFence, SystemClock, job_state, lease_lost,
+};
 
 /// A job as the in-memory job store keeps it, with its lease epoch.
 pub(crate) struct Leased {
@@ -84,7 +86,7 @@ pub(crate) fn check(jobs: &Jobs, fence: &FenceToken, now: DateTime<Utc>) -> Resu
     let found = jobs.get(fence.job_id().as_str());
     let current = found.is_some_and(|leased| {
         leased.epoch == fence.epoch()
-            && leased.job.state == JobState::Running
+            && job_state(&leased.job.status) == JobState::Running
             && leased
                 .job
                 .lease
@@ -99,7 +101,7 @@ pub(crate) fn check(jobs: &Jobs, fence: &FenceToken, now: DateTime<Utc>) -> Resu
         found.map(|leased| FoundLease {
             epoch: leased.epoch,
             holder: leased.job.lease.as_ref().map(|l| l.holder.clone()),
-            running: leased.job.state == JobState::Running,
+            running: job_state(&leased.job.status) == JobState::Running,
         }),
     )))
 }

@@ -13,6 +13,7 @@ pub mod fence;
 pub mod gate;
 pub mod hooks;
 pub mod ids;
+pub mod job;
 pub mod model;
 pub mod schema;
 pub mod storage;
@@ -31,6 +32,7 @@ pub use fence::{
 };
 pub use gate::{Gate, GateOutcome, GateRequest, GateSubject, GateSubjectKind};
 pub use hooks::EventSubscriber;
+pub use job::{job_state, stop_reason, wake_condition};
 pub use model::{
     ContentBlock, Message, ModelProvider, ModelRequest, ModelResponse, ModelStopReason, Role,
     ToolSpec,

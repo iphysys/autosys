@@ -142,11 +142,11 @@ pub fn with_header(header: &contracts::types::PromptHeader, body: &str) -> Strin
 
 pub fn job_json(goal: &str) -> Value {
     json!({
-        "schema_version": "0.1",
+        "schema_version": "0.2",
         "id": "job-1",
         "run_id": RUN,
         "project_id": PROJECT,
-        "state": "running",
+        "status": { "state": "running" },
         "task": {
             "schema_version": "0.1",
             "id": "task-1",

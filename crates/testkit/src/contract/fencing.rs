@@ -6,7 +6,6 @@ use std::time::Duration;
 
 use chrono::{TimeZone, Utc};
 use contracts::ids::{Identifier, JobId, ProjectId, RunId, SdrVersion};
-use contracts::types::{JobState, StopReason, WakeCondition};
 use contracts::{
     Claimed, Clock, Error, ErrorCode, EventLog, JobStore, NewEvent, SdrRepository, StaleFence,
     Staleness, StepStore, UnfencedReason, WakeReason, WriteAuthority,
@@ -15,7 +14,7 @@ use serde_json::{Value, json};
 
 use super::{WAIT, fenced, unfenced};
 use crate::builders::{
-    id, job, marker_payload, new_event, new_step, sdr_document, succeeded, version_record,
+    self, id, job, marker_payload, new_event, new_step, sdr_document, succeeded, version_record,
 };
 use crate::clock::ManualClock;
 
@@ -415,9 +414,7 @@ async fn a_fence_ends_when_the_job_leaves_running(f: Fixture) {
     f.insert("job-1").await;
     let suspended = f.claim(1).await;
     let mut waiting = suspended.job.clone();
-    waiting.state = JobState::Suspended;
-    waiting.stop_reason = Some(StopReason::ApprovalRequired);
-    waiting.wake_condition = Some(WakeCondition::ApprovalAnswered(id("appr-1")));
+    waiting.status = builders::suspended("appr-1", 1);
     f.s.jobs
         .save(&waiting, &suspended.fence)
         .await
@@ -456,8 +453,7 @@ async fn a_fence_ends_when_the_job_leaves_running(f: Fixture) {
         "left running: job-2"
     );
     let mut done = completed.job.clone();
-    done.state = JobState::Completed;
-    done.stop_reason = Some(StopReason::Success);
+    done.status = builders::completed("success", 1);
     f.s.jobs
         .save(&done, &completed.fence)
         .await

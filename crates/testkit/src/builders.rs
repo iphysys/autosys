@@ -3,8 +3,8 @@
 
 use chrono::{DateTime, Utc};
 use contracts::types::{
-    AgentSpec, ArtifactMetadata, Event, Evidence, Job, SdrDocument, SdrVersionRecord, StepOutcome,
-    Timestamp, Transition,
+    AgentSpec, ArtifactMetadata, CheckpointRef, Event, Evidence, Job, JobStatus, SdrDocument,
+    SdrVersionRecord, StepOutcome, Timestamp, Transition,
 };
 use contracts::{ContentBlock, Message, ModelRequest, NewEvent, NewStep, Role, ToolRequest};
 use serde::de::DeserializeOwned;
@@ -70,11 +70,11 @@ fn task(task_id: &str) -> Value {
 pub fn job(job_id: &str, run_id: &str, created_at: DateTime<Utc>) -> Job {
     let at = rfc3339(created_at);
     parse(json!({
-        "schema_version": "0.1",
+        "schema_version": "0.2",
         "id": job_id,
         "run_id": run_id,
         "project_id": "test-project",
-        "state": "queued",
+        "status": { "state": "queued" },
         "task": task(&format!("task-{job_id}")),
         "idempotency_key": job_id,
         "attempt": 0,
@@ -91,6 +91,33 @@ pub fn job(job_id: &str, run_id: &str, created_at: DateTime<Utc>) -> Job {
             "steps": 0,
             "wall_time_seconds": 0
         }
+    }))
+}
+
+/// A reference to checkpoint `version`, with a hash made from the version.
+pub fn checkpoint(version: u64) -> CheckpointRef {
+    parse(json!({
+        "version": version,
+        "sha256": sha256_of(format!("checkpoint {version}").as_bytes())
+    }))
+}
+
+/// Parked until `approval_id` is answered, on checkpoint `version`.
+pub fn suspended(approval_id: &str, version: u64) -> JobStatus {
+    parse(json!({
+        "state": "suspended",
+        "wake_condition": { "kind": "approval_answered", "approval_id": approval_id },
+        "checkpoint": checkpoint(version)
+    }))
+}
+
+/// Completed with `stop_reason` (`success`, `failure` or
+/// `budget_exhausted`), on checkpoint `version`.
+pub fn completed(stop_reason: &str, version: u64) -> JobStatus {
+    parse(json!({
+        "state": "completed",
+        "stop_reason": stop_reason,
+        "checkpoint": checkpoint(version)
     }))
 }
 
@@ -116,7 +143,7 @@ pub fn every_event_payload() -> Vec<Value> {
     vec![
         json!({ "type": "run_started", "task_id": "task-1", "agent_id": "test_agent" }),
         json!({ "type": "run_stopped", "stop_reason": "success", "sdr_version": 1 }),
-        json!({ "type": "job_state_changed", "from": "queued", "to": "running" }),
+        json!({ "type": "job_state_changed", "from": "queued", "to": { "state": "running" } }),
         json!({
             "type": "context_assembled",
             "context_hash": sha256_of(b"context"),

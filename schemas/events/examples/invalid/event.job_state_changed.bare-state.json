@@ -1,0 +1,9 @@
+{
+  "schema_version": "0.1",
+  "run_id": "run-0001",
+  "seq": 2,
+  "occurred_at": "2026-10-22T09:00:01Z",
+  "correlation_id": "corr-0001",
+  "actor": { "kind": "system", "component": "scheduler" },
+  "payload": { "type": "job_state_changed", "from": "queued", "to": "running", "reason": "Claimed by worker-a." }
+}

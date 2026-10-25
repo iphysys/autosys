@@ -178,11 +178,11 @@ pub fn task() -> Task {
 /// A running job of run `run-1` for `task`, with nothing used yet.
 pub fn job_for(task: Value) -> Job {
     parse(json!({
-        "schema_version": "0.1",
+        "schema_version": "0.2",
         "id": "job-1",
         "run_id": RUN,
         "project_id": PROJECT,
-        "state": "running",
+        "status": { "state": "running" },
         "task": task,
         "idempotency_key": "job-1",
         "attempt": 1,

@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use contracts::ids::{AgentId, ProjectId, SdrVersion};
-use contracts::types::{EventPayload, Job, JobState, ToolOverlay, Transition};
+use contracts::types::{EventPayload, Job, JobStatus, ToolOverlay, Transition};
 use contracts::{Claimed, ErrorCode, ExecutionContext, JobStore, StepStore};
 use sdr::{CommitInfo, Validation};
 use serde_json::json;
@@ -59,7 +59,7 @@ async fn assert_held_by_worker_2(world: &World) {
         .get(&id("job-1"))
         .await
         .expect("get the job");
-    assert_eq!(stored.state, JobState::Running, "the job left running");
+    assert_eq!(stored.status, JobStatus::Running, "the job left running");
     assert_eq!(stored.attempt, 2, "the job's attempt changed");
     assert_eq!(
         stored

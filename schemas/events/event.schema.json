@@ -42,13 +42,14 @@
           }
         },
         {
+          "description": "A job changed state. `to` is the status the job store holds afterwards, so a state a worker leaves running into names the checkpoint it rests on. `from` is absent for a submit.",
           "type": "object",
           "additionalProperties": false,
           "required": ["type", "to"],
           "properties": {
             "type": { "const": "job_state_changed" },
             "from": { "$ref": "../jobs/job.schema.json#/$defs/JobState" },
-            "to": { "$ref": "../jobs/job.schema.json#/$defs/JobState" },
+            "to": { "$ref": "../jobs/job.schema.json#/$defs/JobStatus" },
             "reason": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" }
           }
         },

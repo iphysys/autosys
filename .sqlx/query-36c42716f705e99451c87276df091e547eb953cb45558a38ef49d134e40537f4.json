@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    INSERT INTO jobs (id, run_id, created_at, document, attempt, updated_at)\n                    VALUES ($1, $2, $3, $4, $5, $6)\n                    ON CONFLICT (id) DO NOTHING\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Jsonb",
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "36c42716f705e99451c87276df091e547eb953cb45558a38ef49d134e40537f4"
+}

@@ -56,8 +56,8 @@ impl Claimed {
 #[async_trait]
 pub trait JobStore: Send + Sync {
     /// Stores a new job, with `UnfencedReason::JobInsert` or a current fence.
-    /// InvalidInput unless it is queued without a lease; Conflict if the id
-    /// exists.
+    /// InvalidInput unless it is queued, without a checkpoint or a lease;
+    /// Conflict if the id exists.
     async fn insert(&self, job: &Job, authority: Option<&WriteAuthority>) -> Result<(), Error>;
 
     /// NotFound if there is no such job.
@@ -82,13 +82,14 @@ pub trait JobStore: Send + Sync {
 
     /// Writes the job while `fence` is current; LeaseLost otherwise.
     /// InvalidInput if the fence is for another job. The store keeps its own
-    /// lease, epoch and attempt values; a state other than running clears the
-    /// lease, and with it the fence.
+    /// lease, epoch and attempt values; a status other than running clears
+    /// the lease, and with it the fence.
     async fn save(&self, job: &Job, fence: &FenceToken) -> Result<(), Error>;
 
-    /// Moves a waiting or suspended job back to queued if `reason` matches its
-    /// wake condition, with `UnfencedReason::JobWake` or a current fence.
-    /// Returns whether it woke. NotFound if there is no such job.
+    /// Moves a waiting or suspended job back to queued, on the checkpoint it
+    /// was parked on, if `reason` matches its wake condition, with
+    /// `UnfencedReason::JobWake` or a current fence. Returns whether it woke.
+    /// NotFound if there is no such job.
     async fn wake(
         &self,
         id: &JobId,

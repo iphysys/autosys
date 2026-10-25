@@ -110,7 +110,9 @@ async fn events_the_model_does_not_see_do_not_change_the_hash() {
         }))
         .await;
     world
-        .event(json!({ "type": "job_state_changed", "from": "queued", "to": "running" }))
+        .event(
+            json!({ "type": "job_state_changed", "from": "queued", "to": { "state": "running" } }),
+        )
         .await;
     assert_eq!(before, hash_of(&world, &job(), &[]).await);
 

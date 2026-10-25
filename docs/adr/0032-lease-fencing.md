@@ -110,6 +110,28 @@ FOR SHARE
 7. PR 12's migration becomes `0004_scheduler.sql`.
 8. `crates/api` is not added to the `UnfencedReason` rule: bootstrap gives it a pre-built `ApiCommand` authority (PR 14).
 
+## Amendments
+
+### PR 12: a job's status is one tagged type
+
+The job contract (blueprint §4.1) changes with job schema 0.2. A job's state and the fields that state needs are one object, `status: JobStatus`, a `oneOf` keyed by a `const` `state` tag. It replaces the top-level `state`, `wake_condition` and `stop_reason`.
+
+| `state` | Carries |
+| --- | --- |
+| `queued` | `checkpoint?`: present when a woken or requeued job resumes, absent after a submit |
+| `running` | nothing |
+| `waiting`, `suspended` | `wake_condition`, `checkpoint` |
+| `completed` | `stop_reason` (`success`, `failure` or `budget_exhausted`), `checkpoint` |
+| `cancelled` | `checkpoint` |
+| `failed` | `failure`, `checkpoint` |
+
+- **Why.** The rule "this state carries these fields" was to be schema `if`/`then`, which typify 0.8 cannot generate (`if/then/else schemas are not supported`). As a tagged union the rule is the type, in Rust (an internally tagged enum), Python (a union of `Literal`-tagged models) and TypeScript (a discriminated union); all three generators were checked.
+- No `const` fields: typify maps one to untyped JSON. A stop reason the state implies (`approval_required` for suspended, `cancelled` for cancelled) is not stored; `contracts::stop_reason` gives it, and `contracts::job_state` gives the tag.
+- `checkpoint` names the continuation record the status rests on, by checkpoint number and sha256. A transition a worker decided applies only if the job row holds that record.
+- `job_state_changed.to` is a `JobStatus`, so what each transition carries is a type too. `from` stays a `JobState`.
+- The stores keep a plain, indexed `state`: in Postgres a column generated from `document #>> '{status,state}'` (migration `0004_job_status.sql`), so a claim or a wake-up rewrites the status in the document and the index cannot disagree with it. The `wake_condition` column goes. The migration moves queued and running jobs and refuses any other, which has no checkpoint to name.
+- `lease` stays a top-level field the stores manage.
+
 ## Links
 
 - Blueprint §6.1, §6.2, §6.3, §7.2, §10.3, §13.1, §15.2

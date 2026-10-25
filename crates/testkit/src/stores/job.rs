@@ -4,9 +4,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 use chrono::TimeDelta;
 use contracts::ids::{Identifier, JobId, RunId};
-use contracts::types::{Job, JobState, Lease, Timestamp, WakeCondition};
+use contracts::types::{Job, JobState, JobStatus, Lease, Timestamp, WakeCondition};
 use contracts::{
     Claimed, Clock, Error, FenceToken, JobStore, StoreWrite, WakeReason, WriteAuthority, authorize,
+    job_state,
 };
 
 use super::leases::{Leased, Leases, check};
@@ -38,8 +39,10 @@ impl InMemoryJobStore {
         authority: Option<&WriteAuthority>,
     ) -> Result<(), Error> {
         let fence = authorize(authority, StoreWrite::JobInsert)?;
-        if job.state != JobState::Queued || job.lease.is_some() {
-            return Err(invalid("a new job must be queued and have no lease"));
+        if job.status != (JobStatus::Queued { checkpoint: None }) || job.lease.is_some() {
+            return Err(invalid(
+                "a new job must be queued, without a checkpoint or a lease",
+            ));
         }
         self.leases.guard(fence, |jobs| {
             if jobs.contains_key(job.id.as_str()) {
@@ -67,7 +70,7 @@ impl InMemoryJobStore {
         let mut jobs = self.leases.jobs();
         let claimable = jobs
             .values_mut()
-            .filter(|l| match l.job.state {
+            .filter(|l| match job_state(&l.job.status) {
                 JobState::Queued => true,
                 JobState::Running => l.job.lease.as_ref().is_none_or(|l| l.expires_at.0 <= now),
                 _ => false,
@@ -80,7 +83,7 @@ impl InMemoryJobStore {
             return Ok(None);
         };
         let job = &mut leased.job;
-        job.state = JobState::Running;
+        job.status = JobStatus::Running;
         job.attempt += 1;
         job.updated_at = Timestamp(now);
         job.lease = Some(Lease {
@@ -166,7 +169,7 @@ impl JobStore for InMemoryJobStore {
         *stored = job.clone();
         stored.attempt = attempt;
         stored.updated_at = Timestamp(now);
-        stored.lease = if job.state == JobState::Running {
+        stored.lease = if job_state(&job.status) == JobState::Running {
             lease
         } else {
             None
@@ -187,20 +190,28 @@ impl JobStore for InMemoryJobStore {
                 .get_mut(id.as_str())
                 .ok_or_else(|| not_found("job", id.as_str()))?
                 .job;
-            if !matches!(job.state, JobState::Waiting | JobState::Suspended) {
-                return Ok(false);
-            }
-            let matches = match (reason, &job.wake_condition) {
+            let (wake_condition, checkpoint) = match &job.status {
+                JobStatus::Waiting {
+                    wake_condition,
+                    checkpoint,
+                }
+                | JobStatus::Suspended {
+                    wake_condition,
+                    checkpoint,
+                } => (wake_condition, checkpoint),
+                _ => return Ok(false),
+            };
+            let matches = match (reason, wake_condition) {
                 (WakeReason::CancelRequested, _) => true,
                 (
                     WakeReason::ApprovalAnswered(answered),
-                    Some(WakeCondition::ApprovalAnswered(waiting_for)),
+                    WakeCondition::ApprovalAnswered(waiting_for),
                 ) => answered == waiting_for,
-                (WakeReason::ApprovalAnswered(_), None) => false,
             };
             if matches {
-                job.state = JobState::Queued;
-                job.wake_condition = None;
+                job.status = JobStatus::Queued {
+                    checkpoint: Some(checkpoint.clone()),
+                };
                 job.updated_at = Timestamp(now);
             }
             Ok(matches)

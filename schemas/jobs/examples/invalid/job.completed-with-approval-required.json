@@ -1,0 +1,48 @@
+{
+  "schema_version": "0.2",
+  "id": "job-0001",
+  "run_id": "run-0001",
+  "project_id": "example-project",
+  "status": { "state": "completed", "stop_reason": "approval_required", "checkpoint": { "version": 9, "sha256": "sha256:8c1e5b7a2f4d6e8091a3b5c7d9e0f1a2b3c4d5e6f708192a3b4c5d6e7f809123" } },
+  "task": {
+    "schema_version": "0.1",
+    "id": "task-0001",
+    "project_id": "example-project",
+    "agent_id": "main_orchestrator",
+    "name": "Design the example bracket",
+    "description": "Size a bracket that meets the mass and length requirements.",
+    "goal": "A committed SDR version whose must-level requirements all have passing evidence.",
+    "acceptance_criteria": ["Every must-level requirement has passing evidence."],
+    "requirement_ids": ["req-mass", "req-length"],
+    "skills": [],
+    "tools": ["create_part", "measure_part"],
+    "sdr": {
+      "base_version": 0,
+      "read_slice": { "kinds": ["requirement", "parameter"], "ids": [] },
+      "write_scope": { "kinds": ["parameter", "decision", "assumption"], "ids": [] }
+    },
+    "budget": {
+      "max_tokens": 200000,
+      "max_tool_calls": 40,
+      "max_steps": 30,
+      "max_wall_time_seconds": 1800,
+      "max_repair_attempts": 3
+    },
+    "result_schema": "results/result.schema.json"
+  },
+  "idempotency_key": "job-0001",
+  "attempt": 1,
+  "created_at": "2026-10-22T09:00:00Z",
+  "updated_at": "2026-10-22T09:03:30Z",
+  "sdr_base_version": 0,
+  "progress": { "steps_completed": 4, "last_event_seq": 17 },
+  "pending_work": ["Measure the revised part."],
+  "artifact_ids": ["art-part-step-1"],
+  "budget_used": {
+    "input_tokens": 18000,
+    "output_tokens": 1500,
+    "tool_calls": 2,
+    "steps": 4,
+    "wall_time_seconds": 210
+  }
+}

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                    SELECT document AS \"document!: Json<Job>\", state, attempt, updated_at,\n                        wake_condition AS \"wake_condition: Json<WakeCondition>\",\n                        lease_holder, lease_acquired_at, lease_expires_at, lease_heartbeat_at,\n                        lease_epoch\n                    FROM jobs\n                    WHERE run_id = $1\n                    ORDER BY created_at, id\n                    LIMIT 1\n                    ",
+  "query": "\n                        WITH next AS (\n                            SELECT id FROM jobs\n                            WHERE state = 'queued'\n                                OR (state = 'running'\n                                    AND (lease_expires_at IS NULL OR lease_expires_at <= autosys_now()))\n                            ORDER BY created_at, id\n                            LIMIT 1\n                            FOR UPDATE SKIP LOCKED\n                        )\n                        UPDATE jobs SET\n                            document = jsonb_set(jobs.document, '{status}', '{\"state\": \"running\"}'),\n                            attempt = jobs.attempt + 1,\n                            updated_at = autosys_now(),\n                            lease_holder = $1,\n                            lease_acquired_at = autosys_now(),\n                            lease_expires_at = autosys_now() + $2::interval,\n                            lease_heartbeat_at = autosys_now(),\n                            lease_epoch = jobs.lease_epoch + 1\n                        FROM next\n                        WHERE jobs.id = next.id\n                        RETURNING jobs.document AS \"document!: Json<Job>\",\n                            jobs.attempt AS \"attempt!\", jobs.updated_at AS \"updated_at!\",\n                            jobs.lease_holder, jobs.lease_acquired_at, jobs.lease_expires_at,\n                            jobs.lease_heartbeat_at, jobs.lease_epoch AS \"lease_epoch!\"\n                        ",
   "describe": {
     "columns": [
       {
@@ -16,18 +16,7 @@
       },
       {
         "ordinal": 1,
-        "name": "state",
-        "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "jobs",
-            "name": "state"
-          }
-        }
-      },
-      {
-        "ordinal": 2,
-        "name": "attempt",
+        "name": "attempt!",
         "type_info": "Int8",
         "origin": {
           "Table": {
@@ -37,8 +26,8 @@
         }
       },
       {
-        "ordinal": 3,
-        "name": "updated_at",
+        "ordinal": 2,
+        "name": "updated_at!",
         "type_info": "Timestamptz",
         "origin": {
           "Table": {
@@ -48,18 +37,7 @@
         }
       },
       {
-        "ordinal": 4,
-        "name": "wake_condition: Json<WakeCondition>",
-        "type_info": "Jsonb",
-        "origin": {
-          "Table": {
-            "table": "jobs",
-            "name": "wake_condition"
-          }
-        }
-      },
-      {
-        "ordinal": 5,
+        "ordinal": 3,
         "name": "lease_holder",
         "type_info": "Text",
         "origin": {
@@ -70,7 +48,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 4,
         "name": "lease_acquired_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -81,7 +59,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 5,
         "name": "lease_expires_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -92,7 +70,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 6,
         "name": "lease_heartbeat_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -103,8 +81,8 @@
         }
       },
       {
-        "ordinal": 9,
-        "name": "lease_epoch",
+        "ordinal": 7,
+        "name": "lease_epoch!",
         "type_info": "Int8",
         "origin": {
           "Table": {
@@ -116,15 +94,14 @@
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Text",
+        "Interval"
       ]
     },
     "nullable": [
       false,
       false,
       false,
-      false,
-      true,
       true,
       true,
       true,
@@ -132,5 +109,5 @@
       false
     ]
   },
-  "hash": "09ee0a559683c33c15ad6a3844e858894f25ec2894c4bf465a2e683ad043a577"
+  "hash": "1c2ed14d3b724e4827f211690d5122db1f9183096dcb9db50d9196de49b0eaf2"
 }

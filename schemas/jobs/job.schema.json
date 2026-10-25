@@ -9,7 +9,7 @@
     "id",
     "run_id",
     "project_id",
-    "state",
+    "status",
     "task",
     "idempotency_key",
     "attempt",
@@ -22,15 +22,15 @@
     "budget_used"
   ],
   "properties": {
-    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "schema_version": { "type": "string", "enum": ["0.2"] },
     "id": { "$ref": "../common/types.schema.json#/$defs/JobId" },
     "run_id": { "$ref": "../common/types.schema.json#/$defs/RunId" },
     "project_id": { "$ref": "../common/types.schema.json#/$defs/ProjectId" },
-    "state": { "$ref": "#/$defs/JobState" },
+    "status": { "$ref": "#/$defs/JobStatus" },
     "task": { "$ref": "../tasks/task.schema.json" },
     "idempotency_key": { "$ref": "../common/types.schema.json#/$defs/Identifier" },
     "attempt": {
-      "description": "How many times the job has been claimed after an interruption.",
+      "description": "How many times the job has been claimed.",
       "type": "integer",
       "minimum": 0
     },
@@ -48,17 +48,115 @@
       "items": { "$ref": "../common/types.schema.json#/$defs/ArtifactId" }
     },
     "budget_used": { "$ref": "../common/types.schema.json#/$defs/Usage" },
-    "wake_condition": { "$ref": "#/$defs/WakeCondition" },
-    "lease": { "$ref": "#/$defs/Lease" },
-    "stop_reason": {
-      "description": "Set when the job reaches a terminal state.",
-      "$ref": "../common/types.schema.json#/$defs/StopReason"
-    }
+    "lease": { "$ref": "#/$defs/Lease" }
   },
   "$defs": {
     "JobState": {
       "type": "string",
       "enum": ["queued", "running", "waiting", "suspended", "completed", "failed", "cancelled"]
+    },
+    "JobStatus": {
+      "description": "The job's state, tagged by `state`, with what that state needs. A stop reason the state implies is not stored: suspended means approval_required, cancelled means cancelled. Every state a worker leaves running into names the checkpoint it rests on.",
+      "oneOf": [
+        {
+          "description": "Waiting to be claimed. After a wake-up or a requeue it names the checkpoint the run resumes from; after a submit there is none.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state"],
+          "properties": {
+            "state": { "const": "queued" },
+            "checkpoint": { "$ref": "#/$defs/CheckpointRef" }
+          }
+        },
+        {
+          "description": "Claimed by a worker, which holds its lease.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state"],
+          "properties": {
+            "state": { "const": "running" }
+          }
+        },
+        {
+          "description": "Parked until its wake condition is met.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "wake_condition", "checkpoint"],
+          "properties": {
+            "state": { "const": "waiting" },
+            "wake_condition": { "$ref": "#/$defs/WakeCondition" },
+            "checkpoint": { "$ref": "#/$defs/CheckpointRef" }
+          }
+        },
+        {
+          "description": "Parked until a human answers its approval (blueprint section 6.4); the run stopped with approval_required.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "wake_condition", "checkpoint"],
+          "properties": {
+            "state": { "const": "suspended" },
+            "wake_condition": { "$ref": "#/$defs/WakeCondition" },
+            "checkpoint": { "$ref": "#/$defs/CheckpointRef" }
+          }
+        },
+        {
+          "description": "The run stopped for good.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "stop_reason", "checkpoint"],
+          "properties": {
+            "state": { "const": "completed" },
+            "stop_reason": { "$ref": "#/$defs/CompletedStopReason" },
+            "checkpoint": { "$ref": "#/$defs/CheckpointRef" }
+          }
+        },
+        {
+          "description": "The run stopped because it was cancelled.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "checkpoint"],
+          "properties": {
+            "state": { "const": "cancelled" },
+            "checkpoint": { "$ref": "#/$defs/CheckpointRef" }
+          }
+        },
+        {
+          "description": "The harness could not run the job to a stop.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "failure", "checkpoint"],
+          "properties": {
+            "state": { "const": "failed" },
+            "failure": { "$ref": "#/$defs/JobFailure" },
+            "checkpoint": { "$ref": "#/$defs/CheckpointRef" }
+          }
+        }
+      ]
+    },
+    "CompletedStopReason": {
+      "description": "The stop reasons of a completed job (blueprint section 5.4).",
+      "type": "string",
+      "enum": ["success", "failure", "budget_exhausted"]
+    },
+    "CheckpointRef": {
+      "description": "The continuation record a status rests on, as the job store holds it: its checkpoint number and the sha256 of its canonical JSON.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "sha256"],
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "../common/types.schema.json#/$defs/Sha256" }
+      }
+    },
+    "JobFailure": {
+      "description": "Why the harness gave up on a job: its attempts ran out, or it hit an error that retrying cannot fix.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error", "kind"],
+      "properties": {
+        "error": { "$ref": "../common/types.schema.json#/$defs/ErrorInfo" },
+        "kind": { "type": "string", "enum": ["attempts_exhausted", "harness_error"] }
+      }
     },
     "JobProgress": {
       "type": "object",

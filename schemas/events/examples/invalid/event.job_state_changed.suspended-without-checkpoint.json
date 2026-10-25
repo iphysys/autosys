@@ -1,0 +1,17 @@
+{
+  "schema_version": "0.1",
+  "run_id": "run-0001",
+  "seq": 31,
+  "occurred_at": "2026-10-22T09:04:15Z",
+  "correlation_id": "corr-0001",
+  "actor": { "kind": "system", "component": "scheduler" },
+  "payload": {
+    "type": "job_state_changed",
+    "from": "running",
+    "to": {
+      "state": "suspended",
+      "wake_condition": { "kind": "approval_answered", "approval_id": "appr-0001" }
+    },
+    "reason": "The final commit needs approval."
+  }
+}

@@ -1,9 +1,13 @@
 {
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "id": "job-0001",
   "run_id": "run-0001",
   "project_id": "example-project",
-  "state": "suspended",
+  "status": {
+    "state": "suspended",
+    "wake_condition": { "kind": "approval_answered", "approval_id": "appr-0001" },
+    "checkpoint": { "version": 7, "sha256": "sha256:3f0c2a1b9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a" }
+  },
   "task": {
     "schema_version": "0.1",
     "id": "task-0001",
@@ -44,7 +48,5 @@
     "tool_calls": 6,
     "steps": 9,
     "wall_time_seconds": 312.5
-  },
-  "wake_condition": { "kind": "approval_answered", "approval_id": "appr-0001" },
-  "stop_reason": "approval_required"
+  }
 }

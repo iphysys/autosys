@@ -760,9 +760,6 @@ impl Worker<'_> {
                 Some((turn, step, approval_id)),
             ),
         };
-        if waiting.is_none() {
-            state.job.stop_reason = Some(stop_reason);
-        }
         let result = stop::task_result(ResultParts {
             job: &state.job,
             stop_reason,

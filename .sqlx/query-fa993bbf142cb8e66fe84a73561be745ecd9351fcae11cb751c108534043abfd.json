@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                    SELECT document AS \"document!: Json<Job>\", state, attempt, updated_at,\n                        wake_condition AS \"wake_condition: Json<WakeCondition>\",\n                        lease_holder, lease_acquired_at, lease_expires_at, lease_heartbeat_at,\n                        lease_epoch\n                    FROM jobs\n                    WHERE id = $1\n                    ",
+  "query": "\n                    UPDATE jobs SET\n                        lease_expires_at = autosys_now() + $3::interval,\n                        lease_heartbeat_at = autosys_now(),\n                        updated_at = autosys_now()\n                    WHERE id = $1\n                        AND state = 'running'\n                        AND lease_holder = $2\n                        AND lease_epoch = $4\n                        AND lease_expires_at > autosys_now()\n                    RETURNING document AS \"document!: Json<Job>\",\n                        attempt AS \"attempt!\", updated_at AS \"updated_at!\",\n                        lease_holder, lease_acquired_at, lease_expires_at, lease_heartbeat_at,\n                        lease_epoch AS \"lease_epoch!\"\n                    ",
   "describe": {
     "columns": [
       {
@@ -16,18 +16,7 @@
       },
       {
         "ordinal": 1,
-        "name": "state",
-        "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "jobs",
-            "name": "state"
-          }
-        }
-      },
-      {
-        "ordinal": 2,
-        "name": "attempt",
+        "name": "attempt!",
         "type_info": "Int8",
         "origin": {
           "Table": {
@@ -37,8 +26,8 @@
         }
       },
       {
-        "ordinal": 3,
-        "name": "updated_at",
+        "ordinal": 2,
+        "name": "updated_at!",
         "type_info": "Timestamptz",
         "origin": {
           "Table": {
@@ -48,18 +37,7 @@
         }
       },
       {
-        "ordinal": 4,
-        "name": "wake_condition: Json<WakeCondition>",
-        "type_info": "Jsonb",
-        "origin": {
-          "Table": {
-            "table": "jobs",
-            "name": "wake_condition"
-          }
-        }
-      },
-      {
-        "ordinal": 5,
+        "ordinal": 3,
         "name": "lease_holder",
         "type_info": "Text",
         "origin": {
@@ -70,7 +48,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 4,
         "name": "lease_acquired_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -81,7 +59,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 5,
         "name": "lease_expires_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -92,7 +70,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 6,
         "name": "lease_heartbeat_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -103,8 +81,8 @@
         }
       },
       {
-        "ordinal": 9,
-        "name": "lease_epoch",
+        "ordinal": 7,
+        "name": "lease_epoch!",
         "type_info": "Int8",
         "origin": {
           "Table": {
@@ -116,15 +94,16 @@
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Text",
+        "Text",
+        "Interval",
+        "Int8"
       ]
     },
     "nullable": [
       false,
       false,
       false,
-      false,
-      true,
       true,
       true,
       true,
@@ -132,5 +111,5 @@
       false
     ]
   },
-  "hash": "97b952946dcec7d9a63137762a9cd2701285aa3adeb26978c5e8438ee21ff8aa"
+  "hash": "fa993bbf142cb8e66fe84a73561be745ecd9351fcae11cb751c108534043abfd"
 }

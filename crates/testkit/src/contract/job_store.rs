@@ -5,11 +5,11 @@ use std::time::Duration;
 
 use chrono::TimeDelta;
 use contracts::ids::{Identifier, JobId};
-use contracts::types::{JobState, StopReason, WakeCondition};
+use contracts::types::JobStatus;
 use contracts::{Clock, ErrorCode, JobStore, UnfencedReason, WakeReason};
 
 use super::{assert_code, unfenced};
-use crate::builders::{id, job};
+use crate::builders::{self, checkpoint, id, job};
 use crate::clock::ManualClock;
 
 const LEASE: Duration = Duration::from_secs(30);
@@ -90,13 +90,25 @@ async fn duplicate_insert_is_conflict<S: JobStore>(f: Fixture<S>) {
 
 async fn insert_requires_a_queued_job<S: JobStore>(f: Fixture<S>) {
     let mut running = job("job-1", "run-1", f.clock.now());
-    running.state = JobState::Running;
+    running.status = JobStatus::Running;
     assert_code(
         f.store
             .insert(&running, Some(&unfenced(UnfencedReason::JobInsert)))
             .await,
         ErrorCode::InvalidInput,
         "insert_requires_a_queued_job",
+    );
+    // A new job has no checkpoint to resume from.
+    let mut resuming = job("job-1", "run-1", f.clock.now());
+    resuming.status = JobStatus::Queued {
+        checkpoint: Some(checkpoint(1)),
+    };
+    assert_code(
+        f.store
+            .insert(&resuming, Some(&unfenced(UnfencedReason::JobInsert)))
+            .await,
+        ErrorCode::InvalidInput,
+        "insert_requires_a_queued_job: with a checkpoint",
     );
 }
 
@@ -151,7 +163,7 @@ async fn claim_takes_the_oldest_job<S: JobStore>(f: Fixture<S>) {
         .expect("claim_oldest: claim")
         .expect("claim_oldest: a queued job was not claimed");
     assert_eq!(first.job.id, older.id, "claim_oldest: not the oldest job");
-    assert_eq!(first.job.state, JobState::Running, "claim_oldest: state");
+    assert_eq!(first.job.status, JobStatus::Running, "claim_oldest: status");
     assert_eq!(first.job.attempt, 1, "claim_oldest: attempt");
     let lease = first.job.lease.clone().expect("claim_oldest: no lease");
     assert_eq!(lease.holder, worker(1), "claim_oldest: lease holder");
@@ -354,14 +366,13 @@ async fn leaving_running_clears_the_lease<S: JobStore>(f: Fixture<S>) {
         .expect("leaving_running: claim")
         .expect("leaving_running: no job");
     let mut completed = claimed.job.clone();
-    completed.state = JobState::Completed;
-    completed.stop_reason = Some(StopReason::Success);
+    completed.status = builders::completed("success", 1);
     f.store
         .save(&completed, &claimed.fence)
         .await
         .expect("leaving_running: save");
     let stored = f.store.get(&new.id).await.expect("leaving_running: get");
-    assert_eq!(stored.state, JobState::Completed, "leaving_running: state");
+    assert_eq!(stored.status, completed.status, "leaving_running: status");
     assert_eq!(stored.lease, None, "leaving_running: lease not cleared");
     assert_code(
         f.store.save(&completed, &claimed.fence).await,
@@ -446,9 +457,7 @@ async fn wake_follows_the_wake_condition<S: JobStore>(f: Fixture<S>) {
             .expect("wake: claim")
             .expect("wake: no job");
         let mut suspended = claimed.job.clone();
-        suspended.state = JobState::Suspended;
-        suspended.stop_reason = Some(StopReason::ApprovalRequired);
-        suspended.wake_condition = Some(WakeCondition::ApprovalAnswered(id(approval)));
+        suspended.status = builders::suspended(approval, 1);
         f.store
             .save(&suspended, &claimed.fence)
             .await
@@ -469,9 +478,9 @@ async fn wake_follows_the_wake_condition<S: JobStore>(f: Fixture<S>) {
     );
     let stored = f.store.get(&job1).await.expect("wake: get");
     assert_eq!(
-        stored.state,
-        JobState::Suspended,
-        "wake: state changed without waking"
+        stored.status,
+        builders::suspended("appr-1", 1),
+        "wake: status changed without waking"
     );
 
     let matching = WakeReason::ApprovalAnswered(id("appr-1"));
@@ -481,13 +490,11 @@ async fn wake_follows_the_wake_condition<S: JobStore>(f: Fixture<S>) {
     );
     let stored = f.store.get(&job1).await.expect("wake: get");
     assert_eq!(
-        stored.state,
-        JobState::Queued,
-        "wake: not queued after waking"
-    );
-    assert_eq!(
-        stored.wake_condition, None,
-        "wake: wake condition not cleared"
+        stored.status,
+        JobStatus::Queued {
+            checkpoint: Some(checkpoint(1))
+        },
+        "wake: not queued on its checkpoint after waking"
     );
     let reclaimed = f
         .store

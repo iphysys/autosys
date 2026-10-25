@@ -53,9 +53,8 @@ pub struct RunOutcome {
     pub stop_reason: StopReason,
     /// Checked against the agent's result schema.
     pub result: TaskResult,
-    /// The job with its usage, progress, pending work and, for a terminal
-    /// stop, its stop reason. Its state and lease are the scheduler's
-    /// (PR 12).
+    /// The job with its usage, progress and pending work. Its status and
+    /// lease are the scheduler's: the loop never changes them.
     pub job: Job,
     /// Set when the run waits for an approval: what
     /// [`crate::Orchestrator::resume`] continues from.
