@@ -357,6 +357,20 @@ The external contract, shared later with the frontend.
 
 **Done when:** the contract tests pass, a client that disconnects mid-run and reconnects with its last ID receives every later event exactly once, and requests without the token are rejected.
 
+Settled while building, and recorded in [ADR-0018](../adr/0018-schema-first-api-v0.md):
+- **A run starts from a brief and its requirements.** The server builds the task from the agent's spec. The requirements become the new project's SDR version 0, still one write under `ProjectCreate`. Ids come from the client's `Idempotency-Key`, so a retry returns the same run.
+- **The API reaches the harness through contracts.** `RunSubmitter` and `RunReports` are traits in `contracts`, implemented by `runtime::Submissions` and `runtime::Reports`. testkit fakes them, so `crates/api/tests` runs the contract tests in memory. Bootstrap hands `api` the `ApiCommand` authority and the `dev` actor.
+- **Routes under `/v0`.** An answer needs a requested, unanswered approval. No command is taken once a run has stopped for good. Errors are `ApiError` bodies, and a 5xx hides its cause behind the correlation id.
+- **The event stream** ends once the run has stopped for good and the log is drained. A suspended run's stream stays open until shutdown.
+- **axum 0.8.** `config/api.yaml` holds the listen address, limits, stream settings, pool and `artifact_root`. Both binaries migrate. Stop signals are shared through `bootstrap::Signals`.
+- **Tests.** `crates/api/tests/contract.rs` produces every documented response and fails on one never produced. `tests/system/api.rs` covers reconnect, the token and startup on Postgres.
+
+Follow-ups, not in this PR:
+- PR 15: turning a benchmark problem into a `RunRequest`, outside the CLI, which holds no logic.
+- TypeScript client generation from `openapi.yaml`, with the frontend.
+- Authorization per project (Open Decision 9).
+- Several runs on one project, with SDR branches (Increment 2).
+
 ### PR 15 — CLI, end-to-end run and baseline
 
 The exit criterion, proved through the CLI.

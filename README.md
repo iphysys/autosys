@@ -286,6 +286,7 @@ A mass or other reference value is an arithmetic expression over parameter IDs. 
 | [0002](docs/adr/0002-rust-harness-python-julia-tools.md) | Rust for the harness; Python and Julia for tool workers | Accepted |
 | [0015](docs/adr/0015-async-trait-convention.md) | Async methods on trait objects use `async-trait` | Accepted |
 | [0016](docs/adr/0016-postgres-persistence.md) | PostgreSQL for jobs, events and design state | Accepted |
+| [0018](docs/adr/0018-schema-first-api-v0.md) | Schema-first external API v0 | Proposed |
 | [0019](docs/adr/0019-retain-frontend-rebuild-rest.md) | Retain the frontend; rebuild the rest | Accepted |
 | [0020](docs/adr/0020-sdr-v0-scope.md) | SDR v0 scope | Accepted |
 | [0021](docs/adr/0021-numeric-requirement-check-v0.md) | Numeric requirement check for Increment 1 | Accepted |
