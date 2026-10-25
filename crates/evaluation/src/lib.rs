@@ -4,7 +4,11 @@
 //! registry by dimension), and numeric requirement thresholds (ADR-0021).
 //! [`Evaluator`] runs them on a validated SDR transition, stores each finding
 //! as evidence and records a `check_completed` event.
+//!
+//! [`benchmarks`] turns a benchmark problem into the request that starts a
+//! run on it (ADR-0034).
 
+pub mod benchmarks;
 pub mod checks;
 mod evaluator;
 pub mod units;

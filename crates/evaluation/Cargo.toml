@@ -22,6 +22,9 @@ thiserror.workspace = true
 [dev-dependencies]
 synth-testkit.workspace = true
 
+# Reads the dev benchmark problems and the agent spec in the request tests.
+serde.workspace = true
+serde-saphyr.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
 
 [lints]
