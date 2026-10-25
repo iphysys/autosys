@@ -583,15 +583,15 @@ mod tests {
             at("crates/contracts/src/fence.rs", "pub enum UnfencedReason {"),
             at(
                 "crates/testkit/src/leases.rs",
-                "WriteAuthority::Unfenced(UnfencedReason::JobInsert)",
+                "WriteAuthority::Unfenced(UnfencedReason::JobSubmit)",
             ),
             at(
                 "crates/infra/src/persistence/jobs.rs",
-                "UnfencedReason::JobInsert",
+                "UnfencedReason::JobSubmit",
             ),
             at(
                 "crates/infra/tests/claiming.rs",
-                "UnfencedReason::JobInsert",
+                "UnfencedReason::JobSubmit",
             ),
             at("crates/api/src/routes.rs", "UnfencedReason::ApiCommand"),
         ];

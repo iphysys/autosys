@@ -57,7 +57,7 @@ fn worker(n: usize) -> Identifier {
 
 async fn insert<S: JobStore>(store: &S, job: &contracts::types::Job, case: &str) {
     store
-        .insert(job, Some(&unfenced(UnfencedReason::JobInsert)))
+        .insert(job, Some(&unfenced(UnfencedReason::JobSubmit)))
         .await
         .unwrap_or_else(|e| panic!("{case}: insert: {e}"));
 }
@@ -81,7 +81,7 @@ async fn duplicate_insert_is_conflict<S: JobStore>(f: Fixture<S>) {
     insert(f.store.as_ref(), &new, "duplicate_insert").await;
     assert_code(
         f.store
-            .insert(&new, Some(&unfenced(UnfencedReason::JobInsert)))
+            .insert(&new, Some(&unfenced(UnfencedReason::JobSubmit)))
             .await,
         ErrorCode::Conflict,
         "duplicate_insert_is_conflict",
@@ -93,7 +93,7 @@ async fn insert_requires_a_queued_job<S: JobStore>(f: Fixture<S>) {
     running.status = JobStatus::Running;
     assert_code(
         f.store
-            .insert(&running, Some(&unfenced(UnfencedReason::JobInsert)))
+            .insert(&running, Some(&unfenced(UnfencedReason::JobSubmit)))
             .await,
         ErrorCode::InvalidInput,
         "insert_requires_a_queued_job",
@@ -105,7 +105,7 @@ async fn insert_requires_a_queued_job<S: JobStore>(f: Fixture<S>) {
     };
     assert_code(
         f.store
-            .insert(&resuming, Some(&unfenced(UnfencedReason::JobInsert)))
+            .insert(&resuming, Some(&unfenced(UnfencedReason::JobSubmit)))
             .await,
         ErrorCode::InvalidInput,
         "insert_requires_a_queued_job: with a checkpoint",

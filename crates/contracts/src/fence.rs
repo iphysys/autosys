@@ -12,7 +12,7 @@
 
 use std::fmt;
 
-use schema_types::EventPayload;
+use schema_types::{EventPayload, JobState, JobStatus};
 
 use crate::error::{Error, ErrorCode};
 use crate::ids::{Identifier, JobId, SdrVersion};
@@ -71,15 +71,22 @@ pub enum WriteAuthority {
     Unfenced(UnfencedReason),
 }
 
-/// The writes that need no fence. This is the whole allow-list: a new reason
-/// is a new variant, with a test, recorded in an ADR. Job-scoped writers never
-/// get one.
+/// The writes that need no fence. Each reason names one operation and covers
+/// what that operation writes, across stores: a job write and the event
+/// that records it. This is the whole allow-list: a new reason is a new
+/// variant, with a test, recorded in an ADR. Job-scoped writers never get
+/// one.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum UnfencedReason {
-    /// Submitting a new job: `JobStore::insert`.
-    JobInsert,
-    /// Waking a waiting or suspended job: `JobStore::wake`.
+    /// Submitting a top-level job: `JobStore::insert`, and the
+    /// `job_state_changed` that records it, into queued without a `from` or a
+    /// checkpoint. A child job is a fenced insert under its parent's fence,
+    /// so a parent whose lease was reclaimed cannot spawn one.
+    JobSubmit,
+    /// Waking a waiting or suspended job: `JobStore::wake`, and the
+    /// `job_state_changed` that records it, from waiting or suspended into
+    /// queued on its checkpoint.
     JobWake,
     /// A command from a client: appending `approval_answered` or
     /// `cancel_requested`.
@@ -90,7 +97,7 @@ pub enum UnfencedReason {
 
 impl UnfencedReason {
     pub const ALL: [UnfencedReason; 4] = [
-        UnfencedReason::JobInsert,
+        UnfencedReason::JobSubmit,
         UnfencedReason::JobWake,
         UnfencedReason::ApiCommand,
         UnfencedReason::ProjectCreate,
@@ -98,7 +105,7 @@ impl UnfencedReason {
 
     pub const fn as_str(self) -> &'static str {
         match self {
-            UnfencedReason::JobInsert => "job_insert",
+            UnfencedReason::JobSubmit => "job_submit",
             UnfencedReason::JobWake => "job_wake",
             UnfencedReason::ApiCommand => "api_command",
             UnfencedReason::ProjectCreate => "project_create",
@@ -108,8 +115,27 @@ impl UnfencedReason {
     /// Whether this reason permits `write`.
     pub fn permits(self, write: StoreWrite<'_>) -> bool {
         match (self, write) {
-            (UnfencedReason::JobInsert, StoreWrite::JobInsert)
+            (UnfencedReason::JobSubmit, StoreWrite::JobInsert)
             | (UnfencedReason::JobWake, StoreWrite::JobWake) => true,
+            (
+                UnfencedReason::JobSubmit,
+                StoreWrite::Event(EventPayload::JobStateChanged {
+                    from: None,
+                    to: JobStatus::Queued { checkpoint: None },
+                    ..
+                }),
+            ) => true,
+            (
+                UnfencedReason::JobWake,
+                StoreWrite::Event(EventPayload::JobStateChanged {
+                    from: Some(JobState::Waiting | JobState::Suspended),
+                    to:
+                        JobStatus::Queued {
+                            checkpoint: Some(_),
+                        },
+                    ..
+                }),
+            ) => true,
             (UnfencedReason::ApiCommand, StoreWrite::Event(payload)) => matches!(
                 payload,
                 EventPayload::ApprovalAnswered { .. } | EventPayload::CancelRequested { .. }
@@ -305,6 +331,69 @@ mod tests {
         payload(json!({ "type": "run_started", "task_id": "task-1", "agent_id": "test_agent" }))
     }
 
+    fn checkpoint() -> serde_json::Value {
+        json!({ "version": 2, "sha256": format!("sha256:{}", "b".repeat(64)) })
+    }
+
+    /// `job_state_changed` from `from` (absent if `None`) into `to`.
+    fn changed(from: Option<&str>, to: serde_json::Value) -> EventPayload {
+        let mut value = json!({ "type": "job_state_changed", "to": to });
+        if let Some(from) = from {
+            value["from"] = json!(from);
+        }
+        payload(value)
+    }
+
+    /// Every `job_state_changed` the matrix tries, by name.
+    fn state_changes() -> Vec<(&'static str, EventPayload)> {
+        vec![
+            ("submitted", changed(None, json!({ "state": "queued" }))),
+            (
+                "submitted_on_a_checkpoint",
+                changed(
+                    None,
+                    json!({ "state": "queued", "checkpoint": checkpoint() }),
+                ),
+            ),
+            (
+                "woken",
+                changed(
+                    Some("suspended"),
+                    json!({ "state": "queued", "checkpoint": checkpoint() }),
+                ),
+            ),
+            (
+                "woken_from_waiting",
+                changed(
+                    Some("waiting"),
+                    json!({ "state": "queued", "checkpoint": checkpoint() }),
+                ),
+            ),
+            (
+                "woken_without_a_checkpoint",
+                changed(Some("suspended"), json!({ "state": "queued" })),
+            ),
+            (
+                "requeued",
+                changed(
+                    Some("running"),
+                    json!({ "state": "queued", "checkpoint": checkpoint() }),
+                ),
+            ),
+            (
+                "claimed",
+                changed(Some("queued"), json!({ "state": "running" })),
+            ),
+            (
+                "completed",
+                changed(
+                    Some("running"),
+                    json!({ "state": "completed", "stop_reason": "success", "checkpoint": checkpoint() }),
+                ),
+            ),
+        ]
+    }
+
     #[test]
     fn a_fence_authorises_every_write_and_is_returned_for_checking() {
         let authority = WriteAuthority::Fenced(fence("worker-1", 3));
@@ -327,7 +416,8 @@ mod tests {
     fn each_unfenced_reason_permits_only_its_writes() {
         let (v0, v1) = (SdrVersion(0), SdrVersion(1));
         let (cancel, answered, started) = (cancel(), answered(), started());
-        let writes = [
+        let changes = state_changes();
+        let mut writes = vec![
             ("insert", StoreWrite::JobInsert),
             ("wake", StoreWrite::JobWake),
             ("cancel", StoreWrite::Event(&cancel)),
@@ -338,15 +428,20 @@ mod tests {
             ("v0", StoreWrite::SdrVersion(&v0)),
             ("v1", StoreWrite::SdrVersion(&v1)),
         ];
+        writes.extend(
+            changes
+                .iter()
+                .map(|(name, payload)| (*name, StoreWrite::Event(payload))),
+        );
         let permitted = |reason| match reason {
-            UnfencedReason::JobInsert => vec!["insert"],
-            UnfencedReason::JobWake => vec!["wake"],
+            UnfencedReason::JobSubmit => vec!["insert", "submitted"],
+            UnfencedReason::JobWake => vec!["wake", "woken", "woken_from_waiting"],
             UnfencedReason::ApiCommand => vec!["cancel", "answered"],
             UnfencedReason::ProjectCreate => vec!["v0"],
         };
         for reason in UnfencedReason::ALL {
             let authority = WriteAuthority::Unfenced(reason);
-            for (name, write) in writes {
+            for &(name, write) in &writes {
                 let result = authorize(Some(&authority), write);
                 if permitted(reason).contains(&name) {
                     assert!(matches!(result, Ok(None)), "{reason} should permit {name}");
@@ -376,6 +471,35 @@ mod tests {
             assert_eq!(err.code(), ErrorCode::LeaseLost, "{write}");
             assert!(err.message().contains("needs a write authority"), "{err}");
         }
+    }
+
+    /// Each operation records only its own transition: a submit cannot claim
+    /// to have woken a job, nor a wake-up to have submitted one.
+    #[test]
+    fn submit_and_wake_cannot_record_each_others_transition() {
+        let changes = state_changes();
+        let change = |name: &str| {
+            changes
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map(|(_, payload)| payload)
+                .expect("a named change")
+        };
+        let submit = WriteAuthority::Unfenced(UnfencedReason::JobSubmit);
+        let wake = WriteAuthority::Unfenced(UnfencedReason::JobWake);
+        let refused = |authority: &WriteAuthority, name: &str| {
+            authorize(Some(authority), StoreWrite::Event(change(name)))
+                .map_err(|e| e.code())
+                .err()
+        };
+        assert_eq!(refused(&submit, "woken"), Some(ErrorCode::LeaseLost));
+        assert_eq!(
+            refused(&submit, "woken_from_waiting"),
+            Some(ErrorCode::LeaseLost)
+        );
+        assert_eq!(refused(&wake, "submitted"), Some(ErrorCode::LeaseLost));
+        assert_eq!(refused(&submit, "submitted"), None);
+        assert_eq!(refused(&wake, "woken"), None);
     }
 
     #[test]

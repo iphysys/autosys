@@ -55,7 +55,7 @@ impl Claimed {
 
 #[async_trait]
 pub trait JobStore: Send + Sync {
-    /// Stores a new job, with `UnfencedReason::JobInsert` or a current fence.
+    /// Stores a new job, with `UnfencedReason::JobSubmit` or a current fence.
     /// InvalidInput unless it is queued, without a checkpoint or a lease;
     /// Conflict if the id exists.
     async fn insert(&self, job: &Job, authority: Option<&WriteAuthority>) -> Result<(), Error>;

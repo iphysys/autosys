@@ -23,8 +23,8 @@ The holder alone cannot tell the two apart: the same holder may reclaim its own 
 
   | Reason | Permits only |
   | --- | --- |
-  | `JobInsert` | `JobStore::insert` |
-  | `JobWake` | `JobStore::wake` |
+  | `JobSubmit` (was `JobInsert`, see Amendments) | `JobStore::insert`, and `job_state_changed` into queued without a `from` or a checkpoint |
+  | `JobWake` | `JobStore::wake`, and `job_state_changed` from waiting or suspended into queued on a checkpoint |
   | `ApiCommand` | appending `approval_answered` or `cancel_requested` |
   | `ProjectCreate` | appending SDR version 0 |
 
@@ -104,8 +104,8 @@ FOR SHARE
 1. The scheduler claims and builds the job's root context with `authorized_by(WriteAuthority::Fenced(claimed.fence))`; bootstrap wires it.
 2. The heartbeat calls `renew_lease(&fence, lease)`. On `lease_lost` it cancels the lease token and drops the run, never recording `cancelled` or `failed`.
 3. Checkpoints call `save(job, &fence)`, so the continuation is fenced too.
-4. Submission uses `JobInsert`, and `ProjectCreate` for SDR version 0.
-5. The waker uses `JobWake`. Its `job_state_changed {suspended → queued}` append needs a new reason, with a test.
+4. Submission uses `JobSubmit` (renamed from `JobInsert`), and `ProjectCreate` for SDR version 0.
+5. The waker uses `JobWake`, which also permits its `job_state_changed {suspended → queued}`: superseded by the amendment "a reason covers one operation", instead of a new reason.
 6. A claim that reconciles the log appends under the new fence; recovery and the repair of `tool_call_completed` and `sdr_transition` write under it too. The lock order stays `jobs`, then the event counter.
 7. PR 12's migration becomes `0004_scheduler.sql`.
 8. `crates/api` is not added to the `UnfencedReason` rule: bootstrap gives it a pre-built `ApiCommand` authority (PR 14).
@@ -131,6 +131,15 @@ The job contract (blueprint §4.1) changes with job schema 0.2. A job's state an
 - `job_state_changed.to` is a `JobStatus`, so what each transition carries is a type too. `from` stays a `JobState`.
 - The stores keep a plain, indexed `state`: in Postgres a column generated from `document #>> '{status,state}'` (migration `0004_job_status.sql`), so a claim or a wake-up rewrites the status in the document and the index cannot disagree with it. The `wake_condition` column goes. The migration moves queued and running jobs and refuses any other, which has no checkpoint to name.
 - `lease` stays a top-level field the stores manage.
+
+### PR 12: a reason covers one operation, across stores
+
+"For PR 12" item 5 asked for a new reason for the waker's `job_state_changed`. Instead, each reason names one operation and covers what it writes in every store: the job write and the event that records it. `UnfencedReason::permits(StoreWrite)` checks both; there are no per-store reasons.
+
+- `JobInsert` is renamed `JobSubmit`, and permits the insert and `{absent → queued}`. testkit's `job_insert()` is now `job_submit()`.
+- `JobWake` permits the wake and `{waiting or suspended → queued}`, on the checkpoint the job was parked on.
+- Neither permits the other's transition, nor any transition a worker makes (claims, requeues, stops): those are job-scoped and fenced. The contracts matrix and the fencing suite test each pair on both backends.
+- Unfenced submit is for top-level runs only (the API and the CLI). A child job is a fenced insert under its parent's fence, so a parent whose lease was reclaimed cannot spawn children.
 
 ## Links
 
