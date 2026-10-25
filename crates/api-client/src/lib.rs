@@ -30,6 +30,9 @@ use reqwest::{Method, RequestBuilder, Response, StatusCode};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
+/// The ids and bodies of API v0, for clients that may depend on this crate
+/// alone (apps, blueprint section 10.3).
+pub use contracts::{ids, types};
 pub use error::ClientError;
 pub use journal::EventJournal;
 pub use key::IdempotencyKey;

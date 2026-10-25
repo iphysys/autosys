@@ -2460,6 +2460,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "synth-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "synth-api-client",
+ "tokio",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "synth-context"
 version = "0.1.0"
 dependencies = [
