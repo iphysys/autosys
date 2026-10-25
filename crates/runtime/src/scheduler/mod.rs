@@ -327,13 +327,12 @@ impl Scheduler {
             }
         }
 
-        // 1. The run stopped after its checkpoint, and nothing recorded it.
+        // 1. The previous holder's run stopped, and nothing recorded it: a
+        // stop after the log's last state change. The final checkpoint is
+        // written after the stop, so the job's own mark may be past it.
+        let since = last.as_ref().map_or(0, |(seq, _, _)| *seq);
         let stops = self
-            .read_kinds(
-                &job.run_id,
-                job.progress.last_event_seq,
-                &[EventKind::RUN_STOPPED],
-            )
+            .read_kinds(&job.run_id, since, &[EventKind::RUN_STOPPED])
             .await?;
         if let Some(EventPayload::RunStopped { stop_reason, .. }) = stops.last().map(|e| &e.payload)
         {

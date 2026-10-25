@@ -12,13 +12,13 @@ use std::time::Duration;
 
 use contracts::ids::RunId;
 use contracts::types::{EventPayload, Job, JobFailureKind, JobState, JobStatus, WakeCondition};
-use contracts::{Clock, Error, ErrorCode, EventLog, JobStore, Spawner, job_state};
+use contracts::{Clock, Error, ErrorCode, EventKind, EventLog, JobStore, Spawner, job_state};
 use runtime::{Ended, Scheduler, SchedulerSettings, Tick, checkpoint_ref};
 use serde_json::json;
 use support::*;
 use testkit::builders::{id, new_event};
 use testkit::fakes::HookFuture;
-use testkit::faults::{At, JobFaults, Pause};
+use testkit::faults::{At, EventFaults, JobFaults, Pause};
 use testkit::leases::{api_command, job_submit};
 use testkit::spawn::ManualSpawner;
 use tokio_util::sync::CancellationToken;
@@ -484,6 +484,60 @@ async fn a_transition_a_dead_worker_decided_is_finished_on_claim() {
         ],
         "the claim recorded itself, or the transition twice"
     );
+}
+
+/// Worker A records the run's stop and its final checkpoint, and dies
+/// before the transition. Worker B records the transition from the stop:
+/// the run does not stop a second time.
+#[tokio::test]
+async fn a_stop_a_dead_worker_recorded_is_finished_on_claim() {
+    let world = World::new(Setup::new(succeeding())).await;
+    let pause = Pause::new("before the completed transition", At::Before);
+    let events: Arc<dyn EventLog> = EventFaults::pause_append(&pause, |payload| {
+        matches!(
+            payload,
+            EventPayload::JobStateChanged {
+                to: JobStatus::Completed { .. },
+                ..
+            }
+        )
+    })
+    .wrapper()(world.events.clone());
+    let a = Scheduler::new(
+        world.leased.jobs().clone(),
+        events,
+        world.sdr.clone(),
+        world.orchestrator.clone(),
+        Arc::new(ManualSpawner::holding()),
+        world.clock.clone(),
+        settings("worker-a"),
+    );
+    a.submit(&job2(), None).await.unwrap();
+    let running = CancellationToken::new();
+    tokio::select! {
+        tick = a.tick(&running) => panic!("worker-a finished: {tick:?}"),
+        () = pause.reached(WAIT) => {}
+    }
+    drop(a);
+    let requests = world.model.requests().len();
+
+    world.clock.advance(LEASE + Duration::from_secs(1));
+    let b = scheduler(&world, "worker-b");
+    assert!(matches!(
+        b.tick(&CancellationToken::new()).await.unwrap(),
+        Tick::Ran {
+            ended: Ended::Left(Completed),
+            ..
+        }
+    ));
+    assert_eq!(world.model.requests().len(), requests, "the run ran again");
+    assert_rests_on_its_record(&world).await;
+    let stops = world
+        .events
+        .read_kinds(&id::<RunId>(RUN_2), 0, &[EventKind::RUN_STOPPED], 100)
+        .await
+        .unwrap();
+    assert_eq!(stops.len(), 1, "the run stopped twice");
 }
 
 /// A submit that crashed after its insert left no record; the claim adds it.
