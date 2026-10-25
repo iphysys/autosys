@@ -1,12 +1,14 @@
 //! Every contract suite, run against testkit's in-memory implementations and
 //! fakes. This is PR 3's done-when test.
 
+use std::sync::Arc;
+
 use chrono::{TimeZone, Utc};
 use contracts::types::{ApprovalAnswer, GateDecision, Verdict};
 use contracts::{CheckSubject, GateRequest, GateSubject, GateSubjectKind};
 use serde_json::json;
 use testkit::builders::{evidence, id, model_request, sdr_document, tool_request, transition};
-use testkit::contract;
+use testkit::contract::{self, FencedStores};
 use testkit::fakes::{
     FakeCheck, FakeGate, FakeTool, RecordedModelProvider, RecordingSubscriber,
     ScriptedModelProvider, text_response, tool_call_response,
@@ -40,6 +42,22 @@ async fn in_memory_step_store() {
     contract::step_store(|clock| async move {
         let jobs = InMemoryJobStore::new(clock);
         (InMemoryStepStore::fenced_by(jobs.leases()), jobs)
+    })
+    .await;
+}
+
+/// Every in-memory store fenced by one job store's leases.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn in_memory_fencing() {
+    contract::fencing(|clock| async move {
+        let jobs = InMemoryJobStore::new(clock);
+        let leases = jobs.leases();
+        FencedStores {
+            events: Arc::new(InMemoryEventLog::fenced_by(leases.clone())),
+            steps: Arc::new(InMemoryStepStore::fenced_by(leases.clone())),
+            sdr: Arc::new(InMemorySdrRepository::fenced_by(leases)),
+            jobs: Arc::new(jobs),
+        }
     })
     .await;
 }

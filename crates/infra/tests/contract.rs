@@ -88,6 +88,24 @@ async fn postgres_step_store() {
     db.drop().await;
 }
 
+/// Lease fencing across the four fenced stores, on one database whose clock
+/// follows the suite's. The interleaving case runs `FOR SHARE` against the
+/// claim's `FOR UPDATE SKIP LOCKED`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn postgres_fencing() {
+    let db = TestDb::create().await;
+    db.use_session_clock().await;
+    contract::fencing(|clock| {
+        let db = &db;
+        async move {
+            db.empty().await;
+            db.fenced_stores(clock).await
+        }
+    })
+    .await;
+    db.drop().await;
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn postgres_evidence_store() {
     let db = TestDb::create().await;
