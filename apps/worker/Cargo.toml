@@ -1,0 +1,24 @@
+[package]
+name = "synth-worker"
+version = "0.1.0"
+description = "The worker process: claims jobs and runs them until a signal asks it to stop (blueprint section 6, ADR-0031)."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "worker"
+path = "src/main.rs"
+
+[dependencies]
+synth-bootstrap.workspace = true
+
+# Allowed in binaries (blueprint section 13.1).
+anyhow.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

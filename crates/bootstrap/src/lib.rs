@@ -33,12 +33,13 @@ use governance::{ApprovalGate, GateRunner, SdrCommitGate, ToolPermissionGate};
 use infra::persistence::{
     Database, PgEventLog, PgEvidenceStore, PgJobStore, PgSdrRepository, PgStepStore, PoolSettings,
 };
-use model_gateway::{Env, ModelGateway, ProviderAdapter, Routing};
+use model_gateway::{ModelGateway, ProviderAdapter, Routing};
 use runtime::{AgentRegistry, Components, Orchestrator, Scheduler, SchedulerSettings};
 use sdr::SdrManager;
 use tokio_util::task::TaskTracker;
 use tools::{McpServer, McpSettings, ServerTools, ToolGateway, ToolRegistry};
 
+pub use model_gateway::{Env, ProcessEnv};
 pub use settings::{DATABASE_URL_ENV, WORKER_ID_ENV, environment, worker_id};
 pub use spawn::TokioSpawner;
 pub use tokio_util::sync::CancellationToken;
