@@ -2388,6 +2388,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "synth-api-client"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "synth-contracts",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "synth-api-server"
 version = "0.1.0"
 dependencies = [

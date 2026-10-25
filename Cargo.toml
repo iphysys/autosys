@@ -5,6 +5,7 @@ members = [
     "apps/api-server",
     "apps/worker",
     "crates/api",
+    "crates/api-client",
     "crates/artifacts",
     "crates/bootstrap",
     "crates/context",
@@ -29,6 +30,7 @@ publish = false
 
 [workspace.dependencies]
 synth-api = { path = "crates/api" }
+synth-api-client = { path = "crates/api-client" }
 synth-artifacts = { path = "crates/artifacts" }
 synth-bootstrap = { path = "crates/bootstrap" }
 synth-context = { path = "crates/context" }

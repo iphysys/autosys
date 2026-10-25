@@ -55,13 +55,14 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ),
     ("synth-infra", &["synth-contracts", "synth-schema-types"]),
     ("synth-api", &["synth-contracts", "synth-runtime"]),
+    ("synth-api-client", &["synth-contracts"]),
     ("synth-testkit", &["synth-contracts", "synth-schema-types"]),
 ];
 
 /// The composition root may depend on every crate above except testkit.
 const BOOTSTRAP: &str = "synth-bootstrap";
 /// Binaries under `apps/` may depend on these only.
-const APPS_ALLOWED: &[&str] = &[BOOTSTRAP, "synth-api"];
+const APPS_ALLOWED: &[&str] = &[BOOTSTRAP, "synth-api", "synth-api-client"];
 /// Test support: allowed only as a dev-dependency, by any crate.
 const TESTKIT: &str = "synth-testkit";
 /// Developer automation, outside the product dependency graph.
