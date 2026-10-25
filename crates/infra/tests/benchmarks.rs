@@ -95,8 +95,11 @@ fn write_problem(root: &Path, relative: &str, text: &str) {
 }
 
 fn problems_for(edit: impl Fn(&str) -> String) -> Vec<String> {
+    // The edits match whole lines ending in "\n"; a Windows checkout with
+    // core.autocrlf has CRLF, which would leave the text unedited.
     let text = fs::read_to_string(repo().join("evals/benchmarks/dev/part_design_001/problem.yaml"))
-        .expect("readable");
+        .expect("readable")
+        .replace("\r\n", "\n");
     let dir = tempfile::tempdir().expect("temp dir");
     write_problem(dir.path(), "dev/part_design_001/problem.yaml", &edit(&text));
     loader()
