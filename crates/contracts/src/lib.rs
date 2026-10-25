@@ -19,6 +19,7 @@ pub mod ids;
 pub mod job;
 pub mod model;
 pub mod provenance;
+pub mod runs;
 pub mod schema;
 pub mod spawn;
 pub mod status;
@@ -46,6 +47,7 @@ pub use model::{
     ContentBlock, Message, ModelProvider, ModelRequest, ModelResponse, ModelStopReason, Role,
     ToolSpec,
 };
+pub use runs::{RunReports, RunSubmitter, Submitted};
 pub use schema::SchemaSet;
 pub use spawn::{BackgroundTask, Spawner, TaskHandle};
 pub use status::{ConsideredFinding, requirement_status};

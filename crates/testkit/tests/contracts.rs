@@ -5,13 +5,18 @@ use std::sync::Arc;
 
 use chrono::{TimeZone, Utc};
 use contracts::types::{ApprovalAnswer, GateDecision, Verdict};
-use contracts::{CheckSubject, GateRequest, GateSubject, GateSubjectKind};
+use contracts::{
+    CheckSubject, Clock, GateRequest, GateSubject, GateSubjectKind, JobStore, JobWrite, RecordWrite,
+};
 use serde_json::json;
-use testkit::builders::{evidence, id, model_request, sdr_document, tool_request, transition};
+use testkit::builders::{
+    agent_spec, completed, continuation, evidence, id, job, model_request, parse, sdr_document,
+    tool_request, transition,
+};
 use testkit::contract::{self, FencedStores};
 use testkit::fakes::{
-    FakeCheck, FakeGate, FakeTool, RecordedModelProvider, RecordingSubscriber,
-    ScriptedModelProvider, text_response, tool_call_response,
+    FakeCheck, FakeGate, FakeReports, FakeSubmitter, FakeTool, RecordedModelProvider,
+    RecordingSubscriber, ScriptedModelProvider, text_response, tool_call_response,
 };
 use testkit::stores::{
     InMemoryArtifactStore, InMemoryEventLog, InMemoryEvidenceStore, InMemoryJobStore,
@@ -181,4 +186,71 @@ async fn recording_subscriber() {
     let subscriber = RecordingSubscriber::new();
     contract::event_subscriber(&subscriber).await;
     assert_eq!(subscriber.events().len(), 15, "one event per payload type");
+}
+
+#[tokio::test]
+async fn fake_submitter() {
+    contract::run_submitter(|| async {
+        let clock = Arc::new(testkit::ManualClock::at_epoch());
+        let jobs = Arc::new(InMemoryJobStore::new(clock.clone()));
+        let events = Arc::new(InMemoryEventLog::fenced_by(jobs.leases()));
+        let sdr = Arc::new(InMemorySdrRepository::new());
+        let agent = agent_spec("test_agent", None, &["sdr_read", "sdr_propose"]);
+        contract::SubmitterWorld {
+            submitter: Arc::new(FakeSubmitter::new(
+                jobs.clone(),
+                events.clone(),
+                sdr.clone(),
+                clock,
+                vec![agent.clone()],
+            )),
+            jobs,
+            events,
+            sdr,
+            agent,
+        }
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn fake_reports() {
+    let clock = Arc::new(testkit::ManualClock::at_epoch());
+    let jobs = Arc::new(InMemoryJobStore::new(clock.clone()));
+    let submit = testkit::leases::job_submit();
+    for (job_id, run_id) in [("job-1", "run-1"), ("job-2", "run-2")] {
+        jobs.insert(&job(job_id, run_id, clock.now()), Some(&submit))
+            .await
+            .expect("insert");
+        clock.advance(std::time::Duration::from_secs(1));
+    }
+    let claimed = jobs
+        .claim(&id("worker-1"), testkit::leases::LONG_LEASE)
+        .await
+        .expect("claim")
+        .expect("job-1 is claimable");
+    let mut stopped = claimed.job.clone();
+    stopped.status = completed("success", 1);
+    jobs.save(
+        &JobWrite {
+            job: &stopped,
+            continuation: RecordWrite::Replace(&continuation("run-1", 1)),
+            retry_after: None,
+        },
+        &claimed.fence,
+    )
+    .await
+    .expect("save the stopped job");
+    let report = parse(
+        serde_json::from_str(include_str!(
+            "../../../schemas/reports/examples/run-report.json"
+        ))
+        .expect("the report example is JSON"),
+    );
+    contract::run_reports(contract::ReportsWorld {
+        reports: Arc::new(FakeReports::new(jobs, report)),
+        not_stopped: id("run-2"),
+        stopped: id("run-1"),
+    })
+    .await;
 }
