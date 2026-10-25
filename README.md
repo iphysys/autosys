@@ -49,7 +49,7 @@ The traits every harness crate implements live in `crates/contracts`. `crates/te
 
 ## Database
 
-Jobs, events, SDR versions, evidence and artifact metadata are stored in PostgreSQL ([ADR-0016](docs/adr/0016-postgres-persistence.md)); artifact files go on a mounted volume. The stores live in `crates/infra`, and every timestamp they set, lease expiry included, comes from the database clock ([ADR-0023](docs/adr/0023-lease-times-from-database-clock.md)).
+Jobs, events, SDR versions, evidence and artifact metadata are stored in PostgreSQL ([ADR-0016](docs/adr/0016-postgres-persistence.md)); artifact files go on a mounted volume. The stores live in `crates/infra`, and every timestamp they set, lease expiry included, comes from the database clock ([ADR-0023](docs/adr/0023-lease-times-from-database-clock.md)). Every write is fenced ([ADR-0032](docs/adr/0032-lease-fencing.md)): it carries the fence from its job's claim, checked in the write's own transaction, or one of four unfenced reasons the store allows, and a worker whose job was reclaimed gets `lease_lost`.
 
 To start a local database:
 
@@ -267,6 +267,7 @@ A mass or other reference value is an arithmetic expression over parameter IDs. 
 | [0028](docs/adr/0028-pluggable-model-providers.md) | Pluggable model providers | Proposed |
 | [0029](docs/adr/0029-context-assembly-v0.md) | Context assembly v0 | Proposed |
 | [0030](docs/adr/0030-query-loop-v0.md) | Query loop v0 | Proposed |
+| [0032](docs/adr/0032-lease-fencing.md) | Lease fencing | Proposed |
 
 ## License
 

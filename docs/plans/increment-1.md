@@ -58,7 +58,7 @@ The CLI only talks to `api-server`. The worker claims jobs from Postgres, calls 
 
 ## PR overview
 
-Fifteen PRs in four tracks. The critical path is PR 1 → 2 → 3 → 5 → 6 → 8 → 11 → 12 → 15; everything else runs beside it once PR 3 lands.
+Fifteen PRs in four tracks. The critical path is PR 1 → 2 → 3 → 5 → 6 → 8 → 11 → 12a → 12 → 15; everything else runs beside it once PR 3 lands.
 
 | PR | Title | Track | Depends on | Size |
 | --- | --- | --- | --- | --- |
@@ -73,7 +73,8 @@ Fifteen PRs in four tracks. The critical path is PR 1 → 2 → 3 → 5 → 6 �
 | 9 | Model gateway | Agent | 3 | M |
 | 10 | Context v0 | Agent | 3, 5 | M |
 | 11 | Query loop and orchestrator | Agent | 6, 8, 9, 10 | L |
-| 12 | Scheduler, worker and recovery | Agent | 4, 11 | L |
+| 12a | Lease fencing | Agent | 4, 11 | M |
+| 12 | Scheduler, worker and recovery | Agent | 4, 11, 12a | L |
 | 13 | Run report and artifacts | Core | 5, 6 | S |
 | 14 | API v0 and api-server | Interface | 4, 13 | M |
 | 15 | CLI, end-to-end run and baseline | Interface | 12, 14 | M |
@@ -265,6 +266,29 @@ Follow-ups, not in this PR:
 - A provenance check in `evaluation`: a parameter's value and source must match the evidence it cites. Until then the benchmark's `parameter_matches_reference` outcome catches a fabricated value (PR 15).
 - PR 13 decides where the result's narrative `summary` comes from.
 
+### PR 12a — Lease fencing
+
+A worker whose lease was reclaimed cannot write. Lands before PR 12, which makes leases expire and jobs move between workers.
+
+- Every store write takes a `WriteAuthority`: the `FenceToken` from the job's claim, or one of four `UnfencedReason`s (`JobInsert`, `JobWake`, `ApiCommand`, `ProjectCreate`), an allow-list the store enforces, failing closed.
+- Each claim raises `jobs.lease_epoch` (migration `0003_lease_fencing.sql`). Each store checks the fence in the write's own transaction, on the database clock, before any other condition: a share lock on the job row that a reclaim cannot pass until the write commits.
+- A stale fence fails with the new `ErrorCode::LeaseLost`, not retryable. The worker abandons the run and never marks the job failed.
+- `ExecutionContext` gets a builder and carries the authority; children inherit it. Every writer passes `ctx.write_authority()`.
+- `Tool::invoke` is reached only through the fenced `tool_call_started` append.
+- `cargo xtask arch-check` limits who issues fences, grants authority, names `UnfencedReason` and invokes tools.
+
+**Done when:** every store rejects a write with a stale epoch and accepts one with the current epoch (one fencing suite, in memory and on Postgres); a worker whose job was reclaimed cannot append an event, record a step or commit; and every existing contract suite still passes against both backends.
+
+Settled while building, and recorded in [ADR-0032](../adr/0032-lease-fencing.md):
+- Other crates' tests get authority only from `testkit::leases`: `LeasedJob`, `fenced_ctx`, and one helper per unfenced reason, so they never name `UnfencedReason`.
+- `crates/api` does not get `UnfencedReason`: in PR 14, bootstrap hands it a pre-built `ApiCommand` authority.
+- `FakeTool::before_answer` is the pause point for crash and race tests, with `Slot` for what the hook needs from its world.
+
+Follow-ups for PR 12, listed in ADR-0032:
+- The scheduler builds the fenced root context; the heartbeat, checkpoints and recovery write under the fence.
+- The waker's `job_state_changed {suspended → queued}` needs a new unfenced reason, with a test, in ADR-0031. ADR-0031 also records that `crates/api` stays outside the `UnfencedReason` rule.
+- PR 12's migration is `0004_scheduler.sql`.
+
 ### PR 12 — Scheduler, worker and recovery
 
 Runs that outlive processes.
@@ -334,6 +358,7 @@ The biggest risk is SDR v0 churning while the design workflow is still unsettled
 | The legacy build123d tool runs arbitrary scripts, or its image is heavy | PR 7 wraps only fixed, typed operations and starts right after PR 2 on its own track, off the critical path. |
 | Live model runs vary, so tests flake | CI uses recorded responses only. Live runs happen in `cargo xtask eval`, repeated, with spread reported. |
 | PRs 11 and 12 are large and sequential | Split each into reviewable commits; land the job-store parts of the scheduler with PR 4. |
+| A worker that lost its lease keeps writing | PR 12a: every write carries an authority checked in its own transaction. |
 | Tests couple to Postgres | Every store has a trait and a testkit contract suite that runs against both in-memory and Postgres implementations. |
 
 ## Exit checklist
