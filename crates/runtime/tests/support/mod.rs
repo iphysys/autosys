@@ -597,7 +597,7 @@ impl Setup {
 }
 
 pub struct World {
-    pub orchestrator: Orchestrator,
+    pub orchestrator: Arc<Orchestrator>,
     pub sdr: Arc<SdrManager>,
     pub events: Arc<InMemoryEventLog>,
     pub evidence: Arc<InMemoryEvidenceStore>,
@@ -745,22 +745,24 @@ impl World {
         );
         let settings: RuntimeSettings = committed("runtime.yaml");
 
-        let orchestrator = Orchestrator::new(Components {
-            agents,
-            sdr: sdr.clone(),
-            context,
-            context_profiles: context_profiles(),
-            tools: tools.clone(),
-            evaluator,
-            evidence: evidence.clone(),
-            commit_gates,
-            models,
-            events: events.clone(),
-            clock: clock.clone(),
-            settings,
-            harness_build: parse(json!("test-build")),
-        })
-        .expect("orchestrator");
+        let orchestrator = Arc::new(
+            Orchestrator::new(Components {
+                agents,
+                sdr: sdr.clone(),
+                context,
+                context_profiles: context_profiles(),
+                tools: tools.clone(),
+                evaluator,
+                evidence: evidence.clone(),
+                commit_gates,
+                models,
+                events: events.clone(),
+                clock: clock.clone(),
+                settings,
+                harness_build: parse(json!("test-build")),
+            })
+            .expect("orchestrator"),
+        );
         Self {
             orchestrator,
             sdr,

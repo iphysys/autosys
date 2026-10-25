@@ -2374,6 +2374,7 @@ dependencies = [
  "synth-tools",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 

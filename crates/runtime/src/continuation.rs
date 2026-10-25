@@ -66,6 +66,15 @@ pub(crate) fn record(
     })
 }
 
+/// The record of a run that has not got past its start, numbered
+/// `checkpoint`: what a job that leaves running before its first
+/// checkpoint rests on.
+pub(crate) fn initial(job: &Job, checkpoint: u64) -> Result<ContinuationRecord, RuntimeError> {
+    let mut state = LoopState::new(job.clone());
+    state.checkpoint = checkpoint;
+    record(&state, &[], None, None)
+}
+
 /// The loop state a record stands for, with `job` as the job store holds it.
 pub(crate) struct Loaded {
     pub(crate) state: LoopState,

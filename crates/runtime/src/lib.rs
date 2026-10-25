@@ -33,6 +33,7 @@ mod error;
 mod events;
 mod orchestrator;
 mod query_loop;
+mod scheduler;
 mod sdr_tools;
 mod stop;
 mod tool_schemas;
@@ -44,3 +45,4 @@ pub use orchestrator::{Components, Orchestrator};
 pub use query_loop::{
     CheckpointSink, Continuation, NoCheckpoints, RunEvent, RunOutcome, RunStream, Start,
 };
+pub use scheduler::{Ended, Scheduler, SchedulerSettings, Tick};
