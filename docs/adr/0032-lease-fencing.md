@@ -150,9 +150,32 @@ The wake-up scan once had a `mark_checked` write, outside any lease, to remember
 - A parent waiting on a child will read the child's job state; nothing writes into another job's log, so that needs no authority either.
 - If re-reads become costly under fan-out, a persisted checkpoint can be added inside the Postgres adapter later, with no contract change.
 
+### PR 12: a fenced writer writes ahead
+
+A save that leaves running clears the lease, so nothing can be appended under that fence after it. One pattern holds for every fenced writer: **a fenced write-ahead record first, then the effect.**
+
+- A transition out of running is checkpoint, event, save: a fenced checkpoint save with the job still running; `job_state_changed {running → X}` naming that checkpoint; then the save into X.
+- A tool call already follows the pattern: the fenced `tool_call_started` comes before `Tool::invoke`.
+- Finishing a decided transition is idempotent and conditional. A claim that finds `{running → X}` without its save applies X only if the job row holds the checkpoint the event names, and never runs again the step that decided X. A save refused with `lease_lost` abandons the run; the new owner finishes the transition on claim.
+- Future transitions follow the same pattern, for example child sub-calls and kernel sessions.
+- Unfenced operations (submit, wake) are conditional store writes that can lose a race, so they act first and record after; the next claim adds a record that is missing.
+
+### PR 12: events reference durable data only
+
+An event may reference only data that is already durable: events carry references (a version and a hash), stores carry payloads.
+
+- `job_state_changed` carries the new status, including the checkpoint's number and sha256, never the continuation record itself.
+- No opaque or untrusted data goes into the log: no thinking blocks, no tool results.
+- Future large state follows the same rule: kernel scripts and sub-call results are stored in their store and referenced from events.
+- Untrusted text already in the log, the error messages in `tool_call_completed.error` and `error` events (PR 8, PR 11), is a follow-up.
+
+### PR 12: the scheduler and bootstrap exist
+
+The paths the "Who may do what" table listed in advance now hold code: `crates/runtime/src/scheduler/` builds every fenced context, and `crates/bootstrap/` builds the stores. `cargo xtask arch-check` also scans the system tests under `tests/`, which get authority only from `testkit::leases`. A tool hook pauses at a `testkit::faults::Pause` through `Pause::stop`.
+
 ## Links
 
 - Blueprint §6.1, §6.2, §6.3, §7.2, §10.3, §13.1, §15.2
-- ADR-0016, ADR-0023, ADR-0026, ADR-0030
+- ADR-0016, ADR-0023, ADR-0026, ADR-0030, ADR-0031
 - Increment 1 plan, PRs 12a, 12 and 14
 - `crates/contracts/src/fence.rs`, `crates/infra/src/persistence/fence.rs`, `crates/infra/migrations/0003_lease_fencing.sql`, `crates/testkit/src/stores/leases.rs`, `crates/testkit/src/leases.rs`, `crates/testkit/src/contract/fencing.rs`, `crates/runtime/tests/fencing.rs`

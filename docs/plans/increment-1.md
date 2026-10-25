@@ -286,8 +286,8 @@ Settled while building, and recorded in [ADR-0032](../adr/0032-lease-fencing.md)
 
 Follow-ups for PR 12, listed in ADR-0032:
 - The scheduler builds the fenced root context; the heartbeat, checkpoints and recovery write under the fence.
-- The waker's `job_state_changed {suspended → queued}` needs a new unfenced reason, with a test, in ADR-0031. ADR-0031 also records that `crates/api` stays outside the `UnfencedReason` rule.
-- PR 12's migration is `0004_scheduler.sql`.
+- ~~The waker's `job_state_changed {suspended → queued}` needs a new unfenced reason.~~ Corrected in PR 12: no new reason. Each reason covers one operation across stores, so `JobWake` permits the wake and its `job_state_changed` (ADR-0032 amendment). ADR-0031 records that `crates/api` stays outside the `UnfencedReason` rule.
+- PR 12's migrations are `0004_job_status.sql` and `0005_scheduler.sql`.
 
 ### PR 12 — Scheduler, worker and recovery
 
@@ -298,6 +298,30 @@ Runs that outlive processes.
 - `crates/bootstrap` as the composition root, and the `apps/worker` binary.
 
 **Done when:** a system test kills the worker mid-run and restarts it, and the run completes with no repeated tool call or commit and a gap-free event sequence. A suspended run survives a restart and resumes when its approval is answered.
+
+Settled while building, and recorded in [ADR-0031](../adr/0031-scheduler-and-recovery-v0.md) and the PR 12 amendments of [ADR-0032](../adr/0032-lease-fencing.md):
+- **Job status.** It is one tagged type, `status: JobStatus` (job schema 0.2): queued, running, waiting, suspended, completed, cancelled or failed, each with the fields it needs. typify 0.8 cannot generate the schema `if`/`then` the rule was first written as. `job_state_changed.to` is a `JobStatus`, and Postgres keeps an indexed `state` column generated from the document.
+- **Write-ahead transitions.** A transition out of running is checkpoint, event, save, since the save ends the fence. A claim finishes a decided transition only if the job holds the checkpoint the event names.
+- **Events reference durable data only.** They carry versions and hashes; stores carry payloads. No opaque or untrusted data goes into the log.
+- **The continuation record** (`schemas/jobs/continuation.schema.json`) is saved at every phase boundary under the fence, numbered, and referenced by its canonical sha256. Only the latest is kept.
+- **Recovery.** It reads the job, its record and the log on every claim. A `run_stopped` after the log's last state change is finished without running again (found by the crash point `stopped_before_transition`).
+- **Unfenced reasons.** `JobInsert` is renamed `JobSubmit`. Each reason covers one operation across stores, so the waker needs no new reason. Unfenced submit is for top-level runs only.
+- **Waking.** No `mark_checked`: the park save writes `wake_checked_seq`, and scans read only the wake-relevant kinds through `EventLog::read_kinds`.
+- **Unique completion events.** `run_started`, `tool_call_completed`, `sdr_transition` and `approval_requested` happen once per key. A lost one is repaired with `recovered: true`.
+- **Idempotency.** Keys are `{job_id}:{step_id}`, sent to tools in MCP `_meta`. An interrupted non-idempotent call is `outcome_unknown`. A tool is `idempotent: true` only with a named `idempotency_test`; build123d is `idempotent: false`.
+- **Approval ids** derive from the job, the subject and its content hash, so a re-run step raises the same approval.
+- **Environments.** `SYNTH_ENVIRONMENT` (unset is Production) is passed to every config section's validation. A model `base_url` may be loopback http only in Test.
+- **Bootstrap** builds the worker after its startup checks, installs ring as the process TLS provider, and refuses a registered check that `gates.yaml` does not require. `apps/worker` releases its job on a signal; its exit codes are 0, 2 and 1.
+- **Tests.** The system tests are the `system` test of `synth-bootstrap`, at `tests/system/`. The process-kill test is an ignored test there, not a test of `synth-worker`: arch-check counts dev-dependencies, and the shared test support names crates an app may not depend on. `cargo xtask test-tools` builds the binary and runs the test. arch-check scans `tests/`.
+
+Follow-ups, not in this PR:
+- The replay store of content-addressed context sections, before baselines (ADR-0029, ADR-0031).
+- A repeat-with-the-same-key test for each build123d tool, then `idempotent: true`.
+- An optional NOTIFY nudge inside the Postgres adapter, if polling proves slow.
+- An ADR for `config/environments/`, when a second environment needs its own values.
+- The wake condition for a parent waiting on a child, and the kernel crash point (Increment 3).
+- Untrusted text in `error` fields of the log (ADR-0032 amendment).
+- From ADR-0029 and ADR-0030: the provider overflow mapping, per-model context windows, the provenance check.
 
 ### PR 13 — Run report and artifacts
 
