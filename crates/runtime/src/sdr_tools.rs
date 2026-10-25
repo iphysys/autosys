@@ -13,18 +13,21 @@
 //!   on `ask`, when the run waits for a human and nothing is decided.
 //!
 //! Neither tool gets a step record: the SDR's version history records what
-//! they changed.
+//! they changed. A proposal run again after a crash first looks for its own
+//! commit there, by its deterministic transition id, so it never commits
+//! twice; finding it, it writes the `sdr_transition` a crash may have lost,
+//! marked `recovered` (ADR-0031).
 
 use std::time::Duration;
 
 use contracts::ids::{AgentId, ApprovalId, ProjectId, RunId, SdrVersion, StepId, TransitionId};
 use contracts::types::{
-    Actor, ApprovalAnswer, EventPayload, Evidence, EvidenceBody, GateDecision, HarnessVersions,
-    NonEmptyString, SdrDocument, SdrProposeCheck, SdrProposeRequest, SdrProposeResult,
-    SdrReadRequest, SdrReadResult, SdrSlice, Transition, TransitionOutcome,
-    TransitionSchemaVersion, VersionedHash,
+    Actor, ApprovalAnswer, ElementKind, EventPayload, Evidence, EvidenceBody, GateDecision,
+    HarnessVersions, NonEmptyString, SdrDocument, SdrProposeCheck, SdrProposeRequest,
+    SdrProposeResult, SdrReadRequest, SdrReadResult, SdrSlice, SdrVersionRecord, Transition,
+    TransitionOutcome, TransitionSchemaVersion, VersionedHash,
 };
-use contracts::{Error, ErrorCode, ExecutionContext, GateSubject};
+use contracts::{Error, ErrorCode, EvidenceStore, ExecutionContext, GateSubject};
 use evaluation::Evaluator;
 use governance::GateRunner;
 use sdr::{CommitInfo, SdrManager, Validation};
@@ -45,6 +48,8 @@ pub(crate) const NAMES: [&str; 2] = [READ, PROPOSE];
 pub(crate) struct SdrTools<'a> {
     pub(crate) sdr: &'a SdrManager,
     pub(crate) evaluator: &'a Evaluator,
+    /// Where a commit found after a crash reads its evidence back.
+    pub(crate) evidence: &'a dyn EvidenceStore,
     /// The shared commit gates and the task's write scope.
     pub(crate) gates: GateRunner,
     pub(crate) recorder: Recorder<'a>,
@@ -141,6 +146,18 @@ impl SdrTools<'_> {
         provenance: &Provenance<'_>,
         ctx: &ExecutionContext,
     ) -> Result<Proposal, RuntimeError> {
+        let found = bounded(
+            ctx,
+            self.io_timeout,
+            "looking for an earlier commit",
+            self.sdr.find_commit(&self.project, &id, &base_version, ctx),
+        )
+        .await?;
+        if let Some(record) = found {
+            return self
+                .recovered_commit(id, base_version, request.final_, record, ctx)
+                .await;
+        }
         let transition = Transition {
             schema_version: TransitionSchemaVersion::X01,
             id: id.clone(),
@@ -255,6 +272,74 @@ impl SdrTools<'_> {
                 Ok(Proposal::Rejected { result, evidence })
             }
         }
+    }
+
+    /// A commit of this transition that landed before a crash: its result,
+    /// rebuilt from the version and the evidence its gate relied on, and its
+    /// `sdr_transition`, written again; the log keeps the first if there is
+    /// one. The checks and gates do not run again.
+    async fn recovered_commit(
+        &self,
+        id: TransitionId,
+        base_version: SdrVersion,
+        final_: bool,
+        record: SdrVersionRecord,
+        ctx: &ExecutionContext,
+    ) -> Result<Proposal, RuntimeError> {
+        let everything = SdrSlice {
+            kinds: vec![
+                ElementKind::Requirement,
+                ElementKind::Parameter,
+                ElementKind::Decision,
+                ElementKind::Assumption,
+            ],
+            ids: Vec::new(),
+        };
+        let document = bounded(
+            ctx,
+            self.io_timeout,
+            "reading a recovered commit",
+            self.sdr
+                .read(&self.project, &everything, &record.version, ctx),
+        )
+        .await?;
+        let mut evidence = Vec::new();
+        for evidence_id in &record.evidence_ids {
+            evidence.push(
+                timed(
+                    self.io_timeout,
+                    "reading a recovered commit's evidence",
+                    self.evidence.get(evidence_id),
+                )
+                .await?,
+            );
+        }
+        self.recorder
+            .append(
+                EventPayload::SdrTransition {
+                    transition_id: id.clone(),
+                    outcome: TransitionOutcome::Committed,
+                    base_version: base_version.clone(),
+                    new_version: Some(record.version.clone()),
+                    reasons: Vec::new(),
+                    recovered: Some(true),
+                },
+                ctx,
+            )
+            .await?;
+        Ok(Proposal::Committed {
+            result: SdrProposeResult {
+                transition_id: id,
+                outcome: TransitionOutcome::Committed,
+                base_version,
+                new_version: Some(record.version),
+                reasons: Vec::new(),
+                checks: checks(&evidence),
+            },
+            final_,
+            document: Box::new(document),
+            evidence,
+        })
     }
 
     async fn head(&self, ctx: &ExecutionContext) -> Result<SdrVersion, RuntimeError> {

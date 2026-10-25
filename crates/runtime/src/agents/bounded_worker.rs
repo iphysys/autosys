@@ -27,7 +27,7 @@ use contracts::types::{
     ApprovalAnswer, ElementKind, ErrorInfo, Event, EventPayload, Job, NonEmptyString, Requirement,
     SdrSlice, StopReason, Task, Usage,
 };
-use contracts::{ContentBlock, Error, ErrorCode, ExecutionContext, Gate, Message, Role, ToolSpec};
+use contracts::{Error, ErrorCode, EventKind, ExecutionContext, Gate, Message, Role, ToolSpec};
 use governance::{GateRunner, WriteScopeGate};
 use model_gateway::ModelCall;
 use tokio::sync::mpsc;
@@ -37,12 +37,15 @@ use crate::agents::registry::AgentDefinition;
 use crate::budget::{self, Exhausted};
 use crate::cancellation::{Deadline, timed};
 use crate::capability_router::{
-    CapabilityRouter, Effect, Routed, StepInfo, ToolCallBlock, call_step_id, tool_result,
+    CapabilityRouter, Effect, Routed, StepInfo, call_step_id, tool_calls, tool_result,
 };
+use crate::continuation;
 use crate::error::RuntimeError;
 use crate::events::Recorder;
 use crate::orchestrator::Components;
-use crate::query_loop::{CommitView, Continuation, Forwarder, LoopState, OpenStep, RunOutcome};
+use crate::query_loop::{
+    CheckpointSink, CommitView, Continuation, Forwarder, LoopState, OpenStep, RunOutcome, Start,
+};
 use crate::sdr_tools::{Provenance, SdrTools};
 use crate::stop::{self, ResultParts};
 use crate::tool_schemas::ToolSchemas;
@@ -50,27 +53,17 @@ use crate::tool_schemas::ToolSchemas;
 /// The code of the error that ends a run whose repairs ran out.
 const REPAIR_EXHAUSTED: &str = "repair.exhausted";
 
-/// Where a run starts.
-pub(crate) enum Start {
-    New(Box<Job>),
-    Resume {
-        continuation: Box<Continuation>,
-        answer: ApprovalAnswer,
-    },
-}
-
-/// Runs a job from `start` until it stops, sending its events to `sender`.
+/// Runs a job from `start` until it stops, sending its events to `sender`
+/// and its checkpoints to `sink`.
 pub(crate) async fn run(
     components: &Components,
     schemas: &ToolSchemas,
     start: Start,
+    sink: &dyn CheckpointSink,
     ctx: ExecutionContext,
     sender: mpsc::Sender<Event>,
 ) -> Result<RunOutcome, RuntimeError> {
-    let job = match &start {
-        Start::New(job) => job,
-        Start::Resume { continuation, .. } => &continuation.state.job,
-    };
+    let job = start.job();
     let ctx = run_context(job, ctx)?;
     let io_timeout = std::time::Duration::from_secs(components.settings.io_timeout_seconds.get());
     let recorder = Recorder {
@@ -108,26 +101,77 @@ pub(crate) async fn run(
         reserved_tokens,
         recorder,
         forwarder,
+        sink,
         ctx: &ctx,
         deadline,
     };
     match start {
-        Start::New(job) => {
+        Start::New(job) => worker.begin(LoopState::new(*job)).await,
+        Start::Recover { job, record: None } => {
             let mut state = LoopState::new(*job);
-            let started = worker
-                .recorder
-                .append(
-                    EventPayload::RunStarted {
-                        task_id: task.id.clone(),
-                        agent_id: task.agent_id.clone(),
-                    },
+            match recount(components, &mut state, io_timeout).await {
+                Ok(()) => worker.begin(state).await,
+                Err(error) => Err(worker.fail(&mut state, error).await),
+            }
+        }
+        Start::Recover {
+            job,
+            record: Some(record),
+        } => {
+            let mut fallback = (*job).clone();
+            match worker.load(*job, &record).await {
+                Ok(loaded) => {
+                    let continuation::Loaded { state, turn, step } = loaded;
+                    worker
+                        .drive(state, turn, step.map(|step| (step, None)))
+                        .await
+                }
+                Err(error) => Err(failed(
+                    &worker.recorder,
+                    &worker.forwarder,
+                    &mut fallback,
+                    error,
                     &ctx,
                 )
-                .await;
-            if let Err(error) = started {
-                return Err(worker.fail(&mut state, error).await);
+                .await),
             }
-            worker.drive(state, Vec::new(), None).await
+        }
+        Start::Answer {
+            job,
+            record,
+            answer,
+        } => {
+            let mut fallback = (*job).clone();
+            let loaded = match worker.load(*job, &record).await {
+                Ok(loaded) => loaded,
+                Err(error) => {
+                    return Err(failed(
+                        &worker.recorder,
+                        &worker.forwarder,
+                        &mut fallback,
+                        error,
+                        &ctx,
+                    )
+                    .await);
+                }
+            };
+            let continuation::Loaded { state, turn, step } = loaded;
+            match step {
+                Some(step) => worker.drive(state, turn, Some((step, Some(answer)))).await,
+                None => {
+                    let error = RuntimeError::Internal(
+                        "an answer for a checkpoint with no open step".to_owned(),
+                    );
+                    Err(failed(
+                        &worker.recorder,
+                        &worker.forwarder,
+                        &mut fallback,
+                        error,
+                        &ctx,
+                    )
+                    .await)
+                }
+            }
         }
         Start::Resume {
             continuation,
@@ -136,9 +180,47 @@ pub(crate) async fn run(
             let Continuation {
                 state, turn, step, ..
             } = *continuation;
-            worker.drive(state, turn, Some((step, answer))).await
+            worker.drive(state, turn, Some((step, Some(answer)))).await
         }
     }
+}
+
+/// Adds the model calls recorded after the job's last checkpoint to its
+/// usage: they happened, though the checkpoint does not show them
+/// (ADR-0031). A call that never returned is not counted.
+async fn recount(
+    components: &Components,
+    state: &mut LoopState,
+    io_timeout: std::time::Duration,
+) -> Result<(), RuntimeError> {
+    let after = state.job.progress.last_event_seq;
+    let calls = timed(
+        io_timeout,
+        "reading the calls after the checkpoint",
+        components.events.read_kinds(
+            &state.job.run_id,
+            after,
+            &[EventKind::MODEL_CALL_COMPLETED],
+            usize::MAX,
+        ),
+    )
+    .await?;
+    for event in calls {
+        if let EventPayload::ModelCallCompleted {
+            usage, model_id, ..
+        } = event.payload
+        {
+            let used = &mut state.job.budget_used;
+            used.input_tokens = used.input_tokens.saturating_add(usage.input_tokens);
+            used.output_tokens = used.output_tokens.saturating_add(usage.output_tokens);
+            used.steps += 1;
+            state.job.progress.steps_completed += 1;
+            if !state.model_ids.contains(&model_id) {
+                state.model_ids.push(model_id);
+            }
+        }
+    }
+    Ok(())
 }
 
 type Prepared<'a> = (
@@ -179,6 +261,7 @@ fn prepare<'a>(
         sdr: SdrTools {
             sdr: &c.sdr,
             evaluator: &c.evaluator,
+            evidence: c.evidence.as_ref(),
             gates,
             recorder,
             io_timeout,
@@ -297,16 +380,73 @@ struct Worker<'r> {
     reserved_tokens: u64,
     recorder: Recorder<'r>,
     forwarder: Forwarder<'r>,
+    sink: &'r dyn CheckpointSink,
     ctx: &'r ExecutionContext,
     deadline: Deadline,
 }
 
 impl Worker<'_> {
+    /// Appends `run_started`, which the log keeps once, then runs.
+    async fn begin(&self, mut state: LoopState) -> Result<RunOutcome, RuntimeError> {
+        let started = self
+            .recorder
+            .append(
+                EventPayload::RunStarted {
+                    task_id: self.task.id.clone(),
+                    agent_id: self.task.agent_id.clone(),
+                },
+                self.ctx,
+            )
+            .await;
+        if let Err(error) = started {
+            return Err(self.fail(&mut state, error).await);
+        }
+        self.drive(state, Vec::new(), None).await
+    }
+
+    /// The loop state of `record`, with the usage after it counted again.
+    async fn load(
+        &self,
+        job: Job,
+        record: &contracts::types::ContinuationRecord,
+    ) -> Result<continuation::Loaded, RuntimeError> {
+        let mut loaded = continuation::load(
+            job,
+            record,
+            &self.components.sdr,
+            self.components.evidence.as_ref(),
+            &self.task.project_id,
+            self.recorder.io_timeout,
+            self.ctx,
+        )
+        .await?;
+        recount(self.components, &mut loaded.state, self.recorder.io_timeout).await?;
+        Ok(loaded)
+    }
+
+    /// Saves the run's state as its next checkpoint.
+    async fn checkpoint(
+        &self,
+        state: &mut LoopState,
+        turn: &[Message],
+        step: Option<&OpenStep>,
+    ) -> Result<(), RuntimeError> {
+        self.tick(state);
+        state.checkpoint += 1;
+        let record = continuation::record(state, turn, step, None)?;
+        timed(
+            self.recorder.io_timeout,
+            "saving a checkpoint",
+            self.sink.checkpoint(&state.job, &record),
+        )
+        .await
+    }
+
     async fn drive(
         &self,
         mut state: LoopState,
         mut turn: Vec<Message>,
-        resumed: Option<(OpenStep, ApprovalAnswer)>,
+        resumed: Option<(OpenStep, Option<ApprovalAnswer>)>,
     ) -> Result<RunOutcome, RuntimeError> {
         let stopped = async {
             self.forwarder.forward(&mut state.job).await?;
@@ -332,12 +472,15 @@ impl Worker<'_> {
         &self,
         state: &mut LoopState,
         turn: &mut Vec<Message>,
-        resumed: Option<(OpenStep, ApprovalAnswer)>,
+        resumed: Option<(OpenStep, Option<ApprovalAnswer>)>,
     ) -> Result<Stop, RuntimeError> {
         if let Some((step, answer)) = resumed {
-            match self.calls(state, step, Some(answer)).await? {
+            match self.calls(state, turn, step, answer).await? {
                 Calls::Answered(step) => close_message(turn, *step),
-                Calls::TurnClosed => turn.clear(),
+                Calls::TurnClosed => {
+                    turn.clear();
+                    self.checkpoint(state, turn, None).await?;
+                }
                 Calls::Ask { step, approval_id } => {
                     return Ok(Stop::Approval {
                         turn: turn.clone(),
@@ -437,29 +580,14 @@ impl Worker<'_> {
             self.model_call_completed(&assembled, &call).await?;
             self.forwarder.forward(&mut state.job).await?;
 
-            let calls: Vec<ToolCallBlock> = call
-                .response
-                .content
-                .iter()
-                .filter_map(|block| match block {
-                    ContentBlock::ToolCall {
-                        id,
-                        name,
-                        arguments,
-                    } => Some(ToolCallBlock {
-                        id: id.clone(),
-                        name: name.clone(),
-                        arguments: arguments.clone(),
-                    }),
-                    _ => None,
-                })
-                .collect();
+            let calls = tool_calls(&call.response.content);
             if calls.is_empty() {
                 // The turn ends without success: whatever the reply says,
                 // only a final commit through the gates succeeds.
                 turn.clear();
                 state.failures += 1;
                 self.update_pending_work(state).await?;
+                self.checkpoint(state, turn, None).await?;
                 if budget::repairs_exhausted(budget, state.failures) {
                     return Ok(Stop::Failure);
                 }
@@ -477,9 +605,13 @@ impl Worker<'_> {
                 results: Vec::new(),
                 next: 0,
             };
-            match self.calls(state, step, None).await? {
+            self.checkpoint(state, turn, Some(&step)).await?;
+            match self.calls(state, turn, step, None).await? {
                 Calls::Answered(step) => close_message(turn, *step),
-                Calls::TurnClosed => turn.clear(),
+                Calls::TurnClosed => {
+                    turn.clear();
+                    self.checkpoint(state, turn, None).await?;
+                }
                 Calls::Ask { step, approval_id } => {
                     return Ok(Stop::Approval {
                         turn: turn.clone(),
@@ -492,11 +624,13 @@ impl Worker<'_> {
         }
     }
 
-    /// Runs the step's tool calls from `step.next`, in order. `answer` is a
-    /// human's answer for the first of them, when the run resumes.
+    /// Runs the step's tool calls from `step.next`, in order, and saves a
+    /// checkpoint after each result. `answer` is a human's answer for the
+    /// first of them, when the run resumes.
     async fn calls(
         &self,
         state: &mut LoopState,
+        turn: &[Message],
         mut step: OpenStep,
         mut answer: Option<ApprovalAnswer>,
     ) -> Result<Calls, RuntimeError> {
@@ -563,6 +697,7 @@ impl Worker<'_> {
                     state.committed.push(commit.transition_id.clone());
                     state.head = Some(commit.version.clone());
                     let view = CommitView {
+                        transition_id: commit.transition_id.clone(),
                         version: commit.version,
                         final_: commit.final_,
                         requirements: commit.document.requirements,
@@ -602,6 +737,7 @@ impl Worker<'_> {
             step.results
                 .push(tool_result(&call.id, &answered.content, answered.is_error)?);
             step.next = index + 1;
+            self.checkpoint(state, turn, Some(&step)).await?;
         }
         Ok(Calls::Answered(Box::new(step)))
     }
@@ -802,6 +938,13 @@ impl Worker<'_> {
             tool_calls = state.job.budget_used.tool_calls,
             "run stopped"
         );
+        state.checkpoint += 1;
+        let record = match &waiting {
+            Some((turn, step, approval_id)) => {
+                continuation::record(state, turn, Some(step), Some(approval_id))?
+            }
+            None => continuation::record(state, &[], None, None)?,
+        };
         let continuation = waiting.map(|(turn, step, approval_id)| Continuation {
             state: state.clone(),
             turn,
@@ -812,6 +955,7 @@ impl Worker<'_> {
             stop_reason,
             result,
             job: state.job.clone(),
+            record,
             continuation,
         })
     }

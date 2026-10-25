@@ -752,6 +752,7 @@ impl World {
             context_profiles: context_profiles(),
             tools: tools.clone(),
             evaluator,
+            evidence: evidence.clone(),
             commit_gates,
             models,
             events: events.clone(),

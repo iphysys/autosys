@@ -16,11 +16,13 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
+use async_trait::async_trait;
 use contracts::ids::{ApprovalId, EvidenceId, RunId, SdrVersion, TransitionId};
 use contracts::types::{
-    Event, Evidence, Job, NonEmptyString, Requirement, StopReason, TaskResult, VersionedHash,
+    ApprovalAnswer, ContinuationRecord, Event, Evidence, Job, NonEmptyString, Requirement,
+    StopReason, TaskResult, VersionedHash,
 };
-use contracts::{ContentBlock, EventLog, Message};
+use contracts::{ContentBlock, Error, EventLog, Message};
 use futures_core::Stream;
 use tokio::sync::mpsc;
 
@@ -56,9 +58,48 @@ pub struct RunOutcome {
     /// The job with its usage, progress and pending work. Its status and
     /// lease are the scheduler's: the loop never changes them.
     pub job: Job,
+    /// The run's state as it stopped, numbered after its last checkpoint:
+    /// for `approval_required`, the open step and the approval it waits for
+    /// (ADR-0031). The scheduler stores it before it records the stop.
+    pub record: ContinuationRecord,
     /// Set when the run waits for an approval: what
     /// [`crate::Orchestrator::resume`] continues from.
     pub continuation: Option<Continuation>,
+}
+
+/// Where a run starts.
+pub enum Start {
+    /// From the beginning.
+    New(Box<Job>),
+    /// From an in-memory [`Continuation`], with the human's answer.
+    Resume {
+        continuation: Box<Continuation>,
+        answer: ApprovalAnswer,
+    },
+    /// From the job as the job store holds it, and its last checkpoint, or
+    /// from the beginning if it has none: after a crash, a lost lease or a
+    /// requeue. Usage recorded after the checkpoint is counted again.
+    Recover {
+        job: Box<Job>,
+        record: Option<Box<ContinuationRecord>>,
+    },
+    /// From a checkpoint that waits for an approval, with the human's
+    /// answer: the call that asked goes through the gates again with it.
+    Answer {
+        job: Box<Job>,
+        record: Box<ContinuationRecord>,
+        answer: ApprovalAnswer,
+    },
+}
+
+impl Start {
+    /// The job the run starts with.
+    pub fn job(&self) -> &Job {
+        match self {
+            Start::New(job) | Start::Recover { job, .. } | Start::Answer { job, .. } => job,
+            Start::Resume { continuation, .. } => continuation.job(),
+        }
+    }
 }
 
 /// A run waiting for a human's answer: the open turn, the call that asked,
@@ -99,11 +140,14 @@ pub(crate) struct LoopState {
     /// The latest SDR version the run has seen or made.
     pub(crate) head: Option<SdrVersion>,
     pub(crate) last_commit: Option<CommitView>,
+    /// The number of the last checkpoint taken; 0 before the first.
+    pub(crate) checkpoint: u64,
 }
 
 /// The run's latest commit, as the success rule and `pending_work` see it.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct CommitView {
+    pub(crate) transition_id: TransitionId,
     pub(crate) version: SdrVersion,
     pub(crate) final_: bool,
     pub(crate) requirements: Vec<Requirement>,
@@ -120,6 +164,7 @@ impl LoopState {
             evidence_ids: Vec::new(),
             head: None,
             last_commit: None,
+            checkpoint: 0,
         }
     }
 
@@ -148,6 +193,26 @@ pub(crate) struct OpenStep {
     pub(crate) results: Vec<ContentBlock>,
     /// The index of the next call to run.
     pub(crate) next: usize,
+}
+
+/// Where a run's checkpoints go (ADR-0031): after each model reply, after
+/// each tool result, and when a turn closes or a commit lands. The scheduler
+/// stores each with its job, under the job's fence; an error, such as a lost
+/// lease, ends the run.
+#[async_trait]
+pub trait CheckpointSink: Send + Sync {
+    async fn checkpoint(&self, job: &Job, record: &ContinuationRecord) -> Result<(), Error>;
+}
+
+/// Keeps no checkpoint: for a run whose state lives only in memory.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NoCheckpoints;
+
+#[async_trait]
+impl CheckpointSink for NoCheckpoints {
+    async fn checkpoint(&self, _job: &Job, _record: &ContinuationRecord) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 /// Sends the run's events into its stream, read back from the log.

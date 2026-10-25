@@ -16,6 +16,10 @@
 //! - Success is decided by the checks and gates of a final commit, never by
 //!   the model. A run that waits for an approval returns a
 //!   [`Continuation`], which [`Orchestrator::resume`] continues.
+//! - [`Orchestrator::drive`] runs from a [`Start`] and saves the run's state
+//!   at every phase boundary through a [`CheckpointSink`], as a
+//!   `ContinuationRecord`; a run then continues from the job store alone,
+//!   after a crash, a requeue or an approval (ADR-0031).
 //!
 //! Only `SdrManager` writes design state; the runtime reaches the SDR
 //! through it alone.
@@ -24,6 +28,7 @@ mod agents;
 mod budget;
 mod cancellation;
 mod capability_router;
+mod continuation;
 mod error;
 mod events;
 mod orchestrator;
@@ -33,6 +38,9 @@ mod stop;
 mod tool_schemas;
 
 pub use agents::{AgentDefinition, AgentRegistry};
+pub use continuation::checkpoint_ref;
 pub use error::RuntimeError;
 pub use orchestrator::{Components, Orchestrator};
-pub use query_loop::{Continuation, RunEvent, RunOutcome, RunStream};
+pub use query_loop::{
+    CheckpointSink, Continuation, NoCheckpoints, RunEvent, RunOutcome, RunStream, Start,
+};
