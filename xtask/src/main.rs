@@ -472,7 +472,11 @@ mod tests {
         let dir = copy_of_the_repository();
         assert!(agent_problems(&loader(), dir.path()).is_empty());
         let path = dir.path().join("config/agents/main_orchestrator.yaml");
-        let text = fs::read_to_string(&path).expect("read");
+        // The edit matches whole lines ending in "\n"; a Windows checkout with
+        // core.autocrlf has CRLF, which would leave the text unedited.
+        let text = fs::read_to_string(&path)
+            .expect("read")
+            .replace("\r\n", "\n");
         assert!(
             text.contains("prompt: orchestrator/main.md\n"),
             "the fixture changed"
