@@ -10,7 +10,8 @@
     "request_timeout_ms",
     "max_body_bytes",
     "stream",
-    "database"
+    "database",
+    "artifact_root"
   ],
   "properties": {
     "schema_version": { "type": "string", "enum": ["0.1"] },
@@ -30,7 +31,12 @@
       "minimum": 1
     },
     "stream": { "$ref": "#/$defs/ApiStream" },
-    "database": { "$ref": "worker.schema.json#/$defs/WorkerDatabase" }
+    "database": { "$ref": "worker.schema.json#/$defs/WorkerDatabase" },
+    "artifact_root": {
+      "description": "The directory artifact files are read from: the artifact volume (ADR-0016). A relative path is taken from the working directory.",
+      "type": "string",
+      "minLength": 1
+    }
   },
   "$defs": {
     "ApiStream": {

@@ -8,8 +8,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use contracts::Environment;
 use contracts::ids::Identifier;
 use contracts::types::{
-    AgentSpec, AutonomyPolicy, ContextBudgets, ContextPolicy, GatesPolicy, ModelRouting,
-    RuntimeSettings, ToolOverlay, WorkerSettings,
+    AgentSpec, ApiSettings, AutonomyPolicy, ContextBudgets, ContextPolicy, GatesPolicy,
+    ModelRouting, RuntimeSettings, ToolOverlay, WorkerSettings,
 };
 use infra::config::{ConfigFile, ConfigLoader};
 use model_gateway::Env;
@@ -21,6 +21,9 @@ pub const WORKER_ID_ENV: &str = "SYNTH_WORKER_ID";
 /// The variable that holds the database URL. It may carry credentials, so
 /// it is never logged or written into config.
 pub const DATABASE_URL_ENV: &str = "DATABASE_URL";
+/// The variable that holds api-server's development token (ADR-0022). Its
+/// value is never logged.
+pub const API_TOKEN_ENV: &str = "SYNTH_API_TOKEN";
 
 /// The environment `SYNTH_ENVIRONMENT` names; unset is Production.
 pub fn environment(env: &dyn Env) -> Result<Environment, BootstrapError> {
@@ -54,6 +57,19 @@ pub fn worker_id(given: Option<&str>, env: &dyn Env) -> Result<Identifier, Boots
     })
 }
 
+/// The development token every request to api-server must carry. Unset or
+/// empty stops startup: the server never runs without one.
+pub(crate) fn api_token(env: &dyn Env) -> Result<api::DevToken, BootstrapError> {
+    let token = env.var(API_TOKEN_ENV).ok_or_else(|| {
+        BootstrapError::new(
+            "api token",
+            format!("{API_TOKEN_ENV} is not set; api-server needs the development token"),
+        )
+    })?;
+    api::DevToken::new(token)
+        .map_err(|_| BootstrapError::new("api token", format!("{API_TOKEN_ENV} is empty")))
+}
+
 /// Every section of `config/` the worker uses.
 pub(crate) struct Config {
     pub(crate) runtime: RuntimeSettings,
@@ -74,18 +90,7 @@ impl Config {
     /// problem at once, then reads each section.
     pub(crate) fn load(dir: &Path, environment: Environment) -> Result<Self, BootstrapError> {
         let config = |e| BootstrapError::check("config", e);
-        let loader = ConfigLoader::new(environment).map_err(config)?;
-        let problems = loader.validate_dir(dir).map_err(config)?;
-        if !problems.is_empty() {
-            return Err(BootstrapError::new(
-                "config",
-                format!(
-                    "{} is invalid for the {environment} environment: {}",
-                    dir.display(),
-                    problems.join("; ")
-                ),
-            ));
-        }
+        let loader = validated(dir, environment)?;
         let load = |path: &str| dir.join(path);
         Ok(Self {
             runtime: loader.load(&load("runtime.yaml")).map_err(config)?,
@@ -103,6 +108,47 @@ impl Config {
             agents: load_all(&loader, &load("agents"))?,
         })
     }
+}
+
+/// The sections of `config/` api-server uses.
+pub(crate) struct ApiConfig {
+    pub(crate) api: ApiSettings,
+    /// `config/tools/*.yaml`: the tools an agent may name.
+    pub(crate) overlays: Vec<ToolOverlay>,
+    pub(crate) agents: Vec<AgentSpec>,
+}
+
+impl ApiConfig {
+    /// Validates every file under `dir` for `environment`, like the
+    /// worker's, then reads the sections api-server uses.
+    pub(crate) fn load(dir: &Path, environment: Environment) -> Result<Self, BootstrapError> {
+        let loader = validated(dir, environment)?;
+        Ok(Self {
+            api: loader
+                .load(&dir.join("api.yaml"))
+                .map_err(|e| BootstrapError::check("config", e))?,
+            overlays: load_all(&loader, &dir.join("tools"))?,
+            agents: load_all(&loader, &dir.join("agents"))?,
+        })
+    }
+}
+
+/// A loader for `environment`, once every file under `dir` is valid for it.
+fn validated(dir: &Path, environment: Environment) -> Result<ConfigLoader, BootstrapError> {
+    let config = |e| BootstrapError::check("config", e);
+    let loader = ConfigLoader::new(environment).map_err(config)?;
+    let problems = loader.validate_dir(dir).map_err(config)?;
+    if !problems.is_empty() {
+        return Err(BootstrapError::new(
+            "config",
+            format!(
+                "{} is invalid for the {environment} environment: {}",
+                dir.display(),
+                problems.join("; ")
+            ),
+        ));
+    }
+    Ok(loader)
 }
 
 /// Every YAML file directly in `dir`, in file name order.
@@ -183,6 +229,26 @@ mod tests {
             Some(Environment::Test)
         );
         assert!(environment(&vars(&[(Environment::VAR, "staging")])).is_err());
+    }
+
+    #[test]
+    fn the_api_token_must_be_set_and_not_empty() {
+        let missing = api_token(&vars(&[])).err();
+        assert!(
+            matches!(&missing, Some(BootstrapError::Startup { check: "api token", message, .. }) if message.contains(API_TOKEN_ENV)),
+            "{missing:?}"
+        );
+        assert!(api_token(&vars(&[(API_TOKEN_ENV, "")])).is_err());
+        assert!(api_token(&vars(&[(API_TOKEN_ENV, "a-token")])).is_ok());
+    }
+
+    #[test]
+    fn the_committed_api_config_loads_for_production() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../config");
+        let config =
+            ApiConfig::load(&dir, Environment::Production).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(config.api.listen.as_str(), "127.0.0.1:8080");
+        assert_eq!(config.agents.len(), 1);
     }
 
     #[test]

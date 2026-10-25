@@ -230,6 +230,21 @@ cargo run -p synth-worker -- --config config --prompts prompts --id worker-1
 
 `cargo test -p synth-bootstrap --test system` runs every crash point and the worker scenarios on Postgres, with a scripted model and fake tools; it needs `DATABASE_URL`. `cargo xtask test-tools` also kills a real worker process mid-run against the build123d server.
 
+## API server
+
+The `api-server` binary (`apps/api-server`) serves the external HTTP API v0 that `schemas/api/openapi.yaml` describes ([ADR-0018](docs/adr/0018-schema-first-api-v0.md)). Clients start runs, stream their events, answer approvals, cancel, and read reports and artifacts; the worker does the running.
+
+```sh
+SYNTH_API_TOKEN=<a long random string> cargo run -p synth-api-server -- --config config --prompts prompts
+```
+
+- **Environment.** `DATABASE_URL` and `SYNTH_API_TOKEN` are required; without the token the server does not start (exit code 2). Every request sends it as `Authorization: Bearer <token>` ([ADR-0022](docs/adr/0022-dev-token-auth-increment-1.md)): it suits a developer's machine only. `SYNTH_ENVIRONMENT` and `RUST_LOG` work as for the worker.
+- **Settings.** `config/api.yaml` holds the listen address (loopback), the request time limit and body limit, the event stream's keep-alive and page size, the pool, and the artifact volume.
+- **Runs.** `POST /v0/runs` takes a brief and the requirements, with an `Idempotency-Key`: the same key and request return the same run. The requirements become the project's SDR version 0.
+- **Events.** `GET /v0/runs/{run_id}/events` streams the run's log as server-sent events. A client that reconnects with `Last-Event-ID` receives every later event exactly once. The stream ends once the run has stopped for good.
+
+`cargo test -p synth-api` checks every documented response against the OpenAPI document, in memory.
+
 ## Benchmarks
 
 Benchmark problems live in `evals/benchmarks/<split>/<id>/problem.yaml` and follow `schemas/benchmarks/benchmark-problem.schema.json` ([ADR-0025](docs/adr/0025-benchmark-problem-format.md)). Only `dev` problems are stored in the repository. The team writes them; values come from the specification each file cites in `source`, unchanged.

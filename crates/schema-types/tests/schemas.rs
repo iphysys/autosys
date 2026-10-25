@@ -34,7 +34,10 @@ const ROOT_TYPES: &[(&str, RoundTrip)] = &[
         "api/cancel.schema.json",
         round_trip::<schema_types::CancelRequest>,
     ),
-    ("api/error.schema.json", round_trip::<schema_types::ApiError>),
+    (
+        "api/error.schema.json",
+        round_trip::<schema_types::ApiError>,
+    ),
     (
         "api/run-request.schema.json",
         round_trip::<schema_types::RunRequest>,

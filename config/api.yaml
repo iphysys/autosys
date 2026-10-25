@@ -18,3 +18,6 @@ database:
   max_connections: 8
   acquire_timeout_ms: 5000
   operation_timeout_ms: 10000
+# The artifact volume (ADR-0016): artifact files are read from here; their
+# metadata is in the database.
+artifact_root: runtime-data/artifacts

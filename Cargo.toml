@@ -2,6 +2,7 @@
 resolver = "3"
 # Crates are added when their component is first built (blueprint §10.1, §24).
 members = [
+    "apps/api-server",
     "apps/worker",
     "crates/api",
     "crates/artifacts",

@@ -2388,6 +2388,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "synth-api-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "synth-api",
+ "synth-bootstrap",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "synth-artifacts"
 version = "0.1.0"
 dependencies = [
@@ -2411,6 +2423,7 @@ dependencies = [
  "rustls",
  "serde_json",
  "sqlx",
+ "synth-api",
  "synth-artifacts",
  "synth-context",
  "synth-contracts",

@@ -3,5 +3,6 @@
   "listen": "127.0.0.1:8080",
   "request_timeout_ms": 30000,
   "max_body_bytes": 1048576,
-  "database": { "max_connections": 8, "acquire_timeout_ms": 5000, "operation_timeout_ms": 10000 }
+  "database": { "max_connections": 8, "acquire_timeout_ms": 5000, "operation_timeout_ms": 10000 },
+  "artifact_root": "runtime-data/artifacts"
 }

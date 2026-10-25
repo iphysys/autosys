@@ -24,7 +24,6 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
-use axum::Router;
 use axum::extract::DefaultBodyLimit;
 use axum::middleware;
 use axum::routing::{get, post};
@@ -36,6 +35,7 @@ use contracts::{
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 
+pub use axum::Router;
 pub use error::ApiError;
 
 /// The development token every request must carry (ADR-0022). Its value is
