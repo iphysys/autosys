@@ -454,6 +454,10 @@ pub struct BuildRequest<'a> {
     pub job: &'a Job,
     /// The agent's prompt, for example `orchestrator/main.md`.
     pub prompt: &'a str,
+    /// The agent's spec, by hash, recorded with the context (ADR-0033).
+    pub agent_spec: &'a VersionedHash,
+    /// The skills in the agent's context, by hash. None until skills exist.
+    pub skills: &'a [VersionedHash],
     /// A profile in `config/context.yaml`; `None` is `default`.
     pub profile: Option<&'a str>,
     /// The in-flight tool turn, starting with an assistant message. Empty
@@ -629,9 +633,9 @@ impl ContextBuilder {
                         total_tokens: assembled.total_tokens,
                         sdr_version: snapshot.sdr_version.clone(),
                         last_event_seq: snapshot.last_event_seq,
-                        prompts: Vec::new(),
-                        skills: Vec::new(),
-                        agent_spec: None,
+                        prompts: assembled.manifest().prompts.clone(),
+                        skills: req.skills.to_vec(),
+                        agent_spec: Some(req.agent_spec.clone()),
                     },
                 },
                 ctx.write_authority(),

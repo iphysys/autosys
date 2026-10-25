@@ -68,7 +68,7 @@ impl EventLog for InMemoryEventLog {
             let seq = NonZeroU64::new(events.len() as u64 + 1)
                 .ok_or_else(|| Error::new(ErrorCode::Internal, "sequence overflow"))?;
             let stored = Event {
-                schema_version: EventSchemaVersion::X01,
+                schema_version: EventSchemaVersion::X02,
                 run_id: event.run_id,
                 seq,
                 occurred_at: event.occurred_at,

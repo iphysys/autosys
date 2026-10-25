@@ -309,7 +309,8 @@ impl Scheduler {
         {
             return self.finish_decided(held, job, *seq, to).await;
         }
-        for payload in transition::missing(last.as_ref().map(|(_, _, to)| to), interrupted) {
+        let build = self.orchestrator.harness_build();
+        for payload in transition::missing(last.as_ref().map(|(_, _, to)| to), interrupted, build) {
             self.record(held, &job.run_id, payload).await?;
         }
         let stored = self.jobs.continuation(&job.id).await?;

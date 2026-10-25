@@ -122,6 +122,30 @@ async fn assert_rests_on_its_record(world: &World) {
     assert_eq!(checkpoint_ref(&record).unwrap(), named);
 }
 
+/// The record's harness is the projection of run-2's log (ADR-0033), with
+/// one build per segment the run had.
+async fn assert_harness_is_the_logs(world: &World, segments: usize) {
+    let job = stored(world).await;
+    let record = world
+        .leased
+        .jobs()
+        .continuation(&job.id)
+        .await
+        .unwrap()
+        .expect("a record");
+    let events = world
+        .events
+        .read(&id::<RunId>(RUN_2), 0, 10_000)
+        .await
+        .unwrap();
+    let harness = record.harness.expect("a 0.2 record");
+    assert_eq!(harness, contracts::provenance::fold(&events));
+    assert_eq!(harness.harness_builds.len(), segments, "{harness:?}");
+    assert!(!harness.model_ids.is_empty(), "{harness:?}");
+    assert!(!harness.prompts.is_empty(), "{harness:?}");
+    assert_eq!(harness.agent_specs.len(), 1, "{harness:?}");
+}
+
 use JobState::{Cancelled, Completed, Failed, Queued, Running, Suspended};
 
 #[tokio::test]
@@ -145,6 +169,7 @@ async fn a_submitted_job_runs_to_completion() {
     );
     assert_eq!(job.lease, None);
     assert_rests_on_its_record(&world).await;
+    assert_harness_is_the_logs(&world, 1).await;
     assert_eq!(
         chain(&world).await,
         [
@@ -233,6 +258,7 @@ async fn a_suspended_job_wakes_on_its_answer_and_completes() {
             (Some(Running), Completed)
         ]
     );
+    assert_harness_is_the_logs(&world, 2).await;
 }
 
 #[tokio::test]
@@ -538,6 +564,26 @@ async fn a_stop_a_dead_worker_recorded_is_finished_on_claim() {
         .await
         .unwrap();
     assert_eq!(stops.len(), 1, "the run stopped twice");
+
+    // Worker B's claim records its build, but finishing the stop must not
+    // change the record its status names; so the record's harness lacks that
+    // segment and the log has it. The run report folds the log (ADR-0033).
+    let job = stored(&world).await;
+    let record = world.leased.jobs().continuation(&job.id).await.unwrap();
+    let cached = record.and_then(|r| r.harness).expect("a 0.2 record");
+    let all = world
+        .events
+        .read(&id::<RunId>(RUN_2), 0, 10_000)
+        .await
+        .unwrap();
+    let logged = contracts::provenance::fold(&all);
+    assert_eq!(cached.harness_builds.len(), 1);
+    assert_eq!(logged.harness_builds.len(), 2, "{logged:?}");
+    assert_eq!(
+        (cached.model_ids, cached.prompts),
+        (logged.model_ids, logged.prompts),
+        "only the build of the recovery-only segment differs"
+    );
 }
 
 /// A submit that crashed after its insert left no record; the claim adds it.
