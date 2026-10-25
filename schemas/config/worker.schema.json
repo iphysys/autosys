@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "WorkerSettings",
+  "description": "config/worker.yaml: how a worker process leases, polls, retries and connects (blueprint sections 6.2 and 13.1, ADR-0031). The rules between the intervals, and the floors outside the Test environment, are checked by validate-config and at startup.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "lease_ms",
+    "heartbeat_ms",
+    "poll_interval_ms",
+    "poll_jitter_ms",
+    "max_attempts",
+    "retry_backoff_min_ms",
+    "retry_backoff_max_ms",
+    "database",
+    "tool_servers"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "lease_ms": {
+      "description": "How long a claim or a renewal leases the job. At most a third of it may pass between heartbeats.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "heartbeat_ms": {
+      "description": "How often the worker renews the lease of the job it runs.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "poll_interval_ms": {
+      "description": "How often an idle worker tries a claim and scans parked jobs. Shorter than the heartbeat.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "poll_jitter_ms": {
+      "description": "Each poll waits up to this much more or less, so workers do not poll in step.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "max_attempts": {
+      "description": "Failed attempts after which a job fails with attempts_exhausted.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "retry_backoff_min_ms": {
+      "description": "The delay before a job's first retry; it doubles with each failed attempt.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "retry_backoff_max_ms": {
+      "description": "The longest delay before a retry. At least retry_backoff_min_ms.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "database": { "$ref": "#/$defs/WorkerDatabase" },
+    "tool_servers": {
+      "description": "The MCP servers the worker connects to. Their governance overlays are in config/tools/.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/ToolServerConnection" }
+    }
+  },
+  "$defs": {
+    "WorkerDatabase": {
+      "description": "The connection pool. The URL comes from DATABASE_URL, never from here.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_connections", "acquire_timeout_ms", "operation_timeout_ms"],
+      "properties": {
+        "max_connections": { "type": "integer", "minimum": 1 },
+        "acquire_timeout_ms": {
+          "description": "How long an operation waits for a free connection.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "operation_timeout_ms": {
+          "description": "The limit on each store operation; the server cancels a statement that runs longer.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "ToolServerConnection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["server_id", "url", "connect_timeout_ms", "call_timeout_ms"],
+      "properties": {
+        "server_id": {
+          "description": "The server's id, as its overlay in config/tools/ names it.",
+          "$ref": "../common/types.schema.json#/$defs/Identifier"
+        },
+        "url": {
+          "description": "The server's streamable-HTTP MCP endpoint, inside the sandbox network.",
+          "type": "string",
+          "pattern": "^https?://[^\\s]+$"
+        },
+        "connect_timeout_ms": {
+          "description": "Bounds connecting and listing the server's tools.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "call_timeout_ms": {
+          "description": "Bounds any single call; each tool's own timeout also applies.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ContinuationRecord",
+  "description": "A run's agent execution state at its last checkpoint: what a new worker needs to continue it after a crash, a requeue or an approval (blueprint section 6.3, ADR-0031). The job store keeps it beside the job; the job's status names it by checkpoint and sha256. The open turn is kept as the model produced it, opaque provider blocks included and uninterpreted (ADR-0027).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "checkpoint",
+    "run_id",
+    "failures",
+    "model_ids",
+    "committed",
+    "evidence_ids",
+    "turn"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "checkpoint": {
+      "description": "Raised by one on every save while the job runs, so a status can name this record.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "run_id": { "$ref": "../common/types.schema.json#/$defs/RunId" },
+    "failures": {
+      "description": "Failures since the last commit, toward the repair bound.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "model_ids": {
+      "description": "Every model that answered, for commit provenance.",
+      "type": "array",
+      "items": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" }
+    },
+    "committed": {
+      "type": "array",
+      "items": { "$ref": "../common/types.schema.json#/$defs/TransitionId" }
+    },
+    "evidence_ids": {
+      "type": "array",
+      "items": { "$ref": "../common/types.schema.json#/$defs/EvidenceId" }
+    },
+    "head": {
+      "description": "The latest SDR version the run has seen or made.",
+      "$ref": "../common/types.schema.json#/$defs/SdrVersion"
+    },
+    "last_commit": { "$ref": "#/$defs/ContinuationCommit" },
+    "turn": {
+      "description": "The messages of the open turn, in order.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/TurnMessage" }
+    },
+    "open_step": { "$ref": "#/$defs/ContinuationStep" },
+    "approval_id": {
+      "description": "Set while the run waits for this approval; the open step's next call is the one that asked.",
+      "$ref": "../common/types.schema.json#/$defs/ApprovalId"
+    }
+  },
+  "dependentRequired": { "approval_id": ["open_step"] },
+  "$defs": {
+    "ContinuationCommit": {
+      "description": "The run's latest commit. Its requirements and evidence are read back from the SDR and the evidence store.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transition_id", "version", "final", "evidence_ids"],
+      "properties": {
+        "transition_id": { "$ref": "../common/types.schema.json#/$defs/TransitionId" },
+        "version": { "$ref": "../common/types.schema.json#/$defs/SdrVersion" },
+        "final": { "type": "boolean" },
+        "evidence_ids": {
+          "type": "array",
+          "items": { "$ref": "../common/types.schema.json#/$defs/EvidenceId" }
+        }
+      }
+    },
+    "ContinuationStep": {
+      "description": "The model step whose tool calls are being run. Its calls are the tool_call blocks of `assistant`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["number", "sdr_version", "prompts", "assistant", "results", "next"],
+      "properties": {
+        "number": {
+          "description": "The step's number: its id is step-{number}.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "sdr_version": {
+          "description": "The SDR version of the step's context.",
+          "$ref": "../common/types.schema.json#/$defs/SdrVersion"
+        },
+        "prompts": {
+          "description": "The prompts of the step's context, for commit provenance.",
+          "type": "array",
+          "items": { "$ref": "../common/types.schema.json#/$defs/VersionedHash" }
+        },
+        "assistant": {
+          "description": "The model's message, unchanged.",
+          "$ref": "#/$defs/TurnMessage"
+        },
+        "results": {
+          "description": "The results of the calls run so far, in order.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/TurnBlock" }
+        },
+        "next": {
+          "description": "The index of the next call to run.",
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "TurnMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "content"],
+      "properties": {
+        "role": { "type": "string", "enum": ["user", "assistant"] },
+        "content": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/TurnBlock" }
+        }
+      }
+    },
+    "TurnBlock": {
+      "description": "One block of a message, as the model gateway's contract carries it.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "text"],
+          "properties": {
+            "type": { "const": "text" },
+            "text": { "type": "string" }
+          }
+        },
+        {
+          "description": "A tool call the model asked for.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "id", "name", "arguments"],
+          "properties": {
+            "type": { "const": "tool_call" },
+            "id": { "type": "string" },
+            "name": { "$ref": "../common/types.schema.json#/$defs/ToolName" },
+            "arguments": { "type": "object" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "call_id", "content", "is_error"],
+          "properties": {
+            "type": { "const": "tool_result" },
+            "call_id": { "type": "string" },
+            "content": { "type": "string" },
+            "is_error": { "type": "boolean" }
+          }
+        },
+        {
+          "description": "Provider content the harness does not interpret, such as a model's thinking, returned to that provider unchanged.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "provider", "data"],
+          "properties": {
+            "type": { "const": "opaque" },
+            "provider": { "$ref": "../common/types.schema.json#/$defs/Identifier" },
+            "data": { "type": "object" }
+          }
+        }
+      ]
+    }
+  }
+}

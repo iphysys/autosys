@@ -1,0 +1,37 @@
+{
+  "schema_version": "0.1",
+  "checkpoint": 7,
+  "run_id": "run-0001",
+  "failures": 1,
+  "model_ids": [
+    "claude-haiku-4-5"
+  ],
+  "committed": [
+    "tr-5f0e3c2a9b8d7e6f5a4b3c2d1e0f9a8b"
+  ],
+  "evidence_ids": [
+    "ev-run-0001-step-2.1",
+    "ev-run-0001-step-2.2"
+  ],
+  "head": 2,
+  "last_commit": {
+    "transition_id": "tr-5f0e3c2a9b8d7e6f5a4b3c2d1e0f9a8b",
+    "version": 2,
+    "final": false,
+    "evidence_ids": [
+      "ev-run-0001-step-2.2"
+    ]
+  },
+  "turn": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "Size the bracket."
+        }
+      ]
+    }
+  ],
+  "approval_id": "appr-0001"
+}

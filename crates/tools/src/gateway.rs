@@ -364,6 +364,7 @@ impl ToolGateway {
                 error,
                 evidence_ids,
                 duration_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+                recovered: None,
             },
         )
         .await?;

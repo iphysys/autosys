@@ -39,7 +39,15 @@
           "description": "True if a call changes anything outside the sandbox and artifact store.",
           "type": "boolean"
         },
-        "idempotent": { "type": "boolean" },
+        "idempotent": {
+          "description": "True if calling again with the same idempotency key has no second effect and returns the first result. Recovery re-runs an interrupted call only for such a tool (ADR-0026). True needs idempotency_test.",
+          "type": "boolean"
+        },
+        "idempotency_test": {
+          "description": "The test under the server that repeats a call with the same idempotency key and shows one effect, as <file>::<test>, the file relative to mcp_servers/<server_id>/. validate-config checks that it exists.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_./-]+\\.py::[A-Za-z_][A-Za-z0-9_]*$"
+        },
         "concurrency_safe": { "type": "boolean" },
         "timeout_seconds": { "type": "integer", "minimum": 1 },
         "requires_approval": { "type": "boolean" },

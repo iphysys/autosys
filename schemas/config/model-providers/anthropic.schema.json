@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["base_url", "api_key_env"],
   "properties": {
-    "base_url": { "$ref": "#/$defs/HttpsUrl" },
+    "base_url": { "$ref": "#/$defs/ProviderBaseUrl" },
     "api_key_env": { "$ref": "../model-routing.schema.json#/$defs/EnvVarName" },
     "workspace_id_env": {
       "description": "When this variable is set, its value is sent as the anthropic-workspace-id header.",
@@ -18,9 +18,10 @@
     "headers": { "$ref": "../model-routing.schema.json#/$defs/ModelHeaders" }
   },
   "$defs": {
-    "HttpsUrl": {
+    "ProviderBaseUrl": {
+      "description": "An https URL, or plain http on a loopback host for a local test server. The gateway accepts the loopback form only in the Test environment.",
       "type": "string",
-      "pattern": "^https://[^\\s]+$"
+      "pattern": "^(https://[^\\s]+|http://(localhost|127\\.0\\.0\\.1|\\[::1\\])(:[0-9]{1,5})?(/[^\\s]*)?)$"
     },
     "ModelEffort": {
       "description": "How much the model thinks before answering.",

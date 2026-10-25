@@ -219,6 +219,7 @@ impl SdrTools<'_> {
                             base_version: base_version.clone(),
                             new_version: Some(record.version.clone()),
                             reasons: Vec::new(),
+                            recovered: None,
                         },
                         ctx,
                     )
@@ -291,6 +292,7 @@ impl SdrTools<'_> {
                     base_version: base_version.clone(),
                     new_version: None,
                     reasons: reasons.clone(),
+                    recovered: None,
                 },
                 ctx,
             )

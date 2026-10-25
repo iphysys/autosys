@@ -1,0 +1,4 @@
+{
+  "base_url": "http://127.0.0.1:18080",
+  "api_key_env": "ANTHROPIC_API_KEY"
+}
