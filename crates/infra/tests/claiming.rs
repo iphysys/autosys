@@ -11,15 +11,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{TimeDelta, TimeZone, Utc};
+use contracts::JobStore;
 use contracts::ids::Identifier;
-use contracts::{JobStore, UnfencedReason, WriteAuthority};
 use infra::persistence::PgJobStore;
 use support::TestDb;
 use testkit::builders::{id, job};
+use testkit::leases::job_insert;
 
 const LEASE: Duration = Duration::from_secs(30);
-/// Submitting a job is a write from outside any job.
-const INSERT: Option<&WriteAuthority> = Some(&WriteAuthority::Unfenced(UnfencedReason::JobInsert));
 
 /// Two pools stand in for two worker processes, each running several claim
 /// loops at once, all racing for the same jobs.
@@ -34,7 +33,9 @@ async fn two_workers_never_claim_the_same_job() {
     let created = Utc::now();
     for n in 0..JOBS {
         let new = job(&format!("job-{n:03}"), &format!("run-{n:03}"), created);
-        seed.insert(&new, INSERT).await.expect("insert");
+        seed.insert(&new, Some(&job_insert()))
+            .await
+            .expect("insert");
     }
 
     let mut loops = Vec::new();
@@ -78,7 +79,7 @@ async fn lease_times_come_from_the_database_clock() {
     db.stop_clock_at(stopped_at).await;
     let store = PgJobStore::new(db.database());
     store
-        .insert(&job("job-1", "run-1", Utc::now()), INSERT)
+        .insert(&job("job-1", "run-1", Utc::now()), Some(&job_insert()))
         .await
         .expect("insert");
 
@@ -107,7 +108,7 @@ async fn leases_expire_on_the_real_database_clock() {
     let db = TestDb::create().await;
     let store = PgJobStore::new(db.database());
     store
-        .insert(&job("job-1", "run-1", Utc::now()), INSERT)
+        .insert(&job("job-1", "run-1", Utc::now()), Some(&job_insert()))
         .await
         .expect("insert");
 

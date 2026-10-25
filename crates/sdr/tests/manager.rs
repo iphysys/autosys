@@ -10,14 +10,14 @@ use std::time::Duration;
 
 use contracts::ids::{ProjectId, SdrVersion};
 use contracts::types::{ElementKind, Operation, SdrSlice, Timestamp};
-use contracts::{Clock, ErrorCode, ExecutionContext, JobStore, SdrRepository, UnfencedReason};
+use contracts::{Clock, ErrorCode, ExecutionContext, JobStore, SdrRepository};
 use sdr::{InvalidTransition, ProblemKind, SdrManager, ValidatedTransition, Validation};
 use serde_json::json;
 use sha2::Digest;
 use support::*;
 use testkit::builders::{id, parse};
 use testkit::clock::ManualClock;
-use testkit::leases::{LONG_LEASE, fenced_ctx, unfenced_ctx};
+use testkit::leases::{LONG_LEASE, fenced_ctx, project_create, unfenced_ctx};
 use testkit::stores::InMemorySdrRepository;
 
 fn invalid(validation: Validation) -> InvalidTransition {
@@ -370,7 +370,7 @@ async fn a_project_is_created_without_a_fence() {
     let manager = SdrManager::new(Arc::new(InMemorySdrRepository::new()), clock)
         .expect("the embedded schemas compile");
     let project: ProjectId = id("p2");
-    let ctx = unfenced_ctx(UnfencedReason::ProjectCreate, id("corr-create"));
+    let ctx = unfenced_ctx(project_create(), id("corr-create"));
     let record = manager
         .create_project(&project, initial(), &ctx)
         .await

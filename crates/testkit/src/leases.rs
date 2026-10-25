@@ -1,7 +1,8 @@
-//! Fenced contexts for tests (ADR-0032). Outside testkit only the scheduler
-//! gives a context its write authority (arch-check), so the tests of other
-//! crates get theirs here, as they get SDR storage from
-//! [`crate::stores::sdr_storage`].
+//! Write authority for tests (ADR-0032). Outside testkit only the scheduler
+//! gives a context its write authority, and only contracts, testkit,
+//! bootstrap and the scheduler name `UnfencedReason` (arch-check). So the
+//! tests of other crates get fenced contexts and each unfenced authority
+//! here, as they get SDR storage from [`crate::stores::sdr_storage`].
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -44,11 +45,8 @@ impl LeasedJob {
     ) -> Self {
         let created: DateTime<Utc> = clock.now();
         let jobs = Arc::new(InMemoryJobStore::new(clock));
-        jobs.insert_now(
-            &job("job-1", run_id, created),
-            Some(&WriteAuthority::Unfenced(UnfencedReason::JobInsert)),
-        )
-        .expect("insert the leased job");
+        jobs.insert_now(&job("job-1", run_id, created), Some(&job_insert()))
+            .expect("insert the leased job");
         let claimed = jobs
             .claim_now(holder, lease_for)
             .expect("claim the leased job")
@@ -82,10 +80,30 @@ pub fn fenced_ctx(claimed: &Claimed, correlation_id: CorrelationId) -> Execution
         .build()
 }
 
-/// A root context for a write from outside any job, such as a client's
-/// cancel or the creation of a project.
-pub fn unfenced_ctx(reason: UnfencedReason, correlation_id: CorrelationId) -> ExecutionContext {
+/// A root context with `authority`, normally one of the unfenced ones
+/// below, for a write from outside any job.
+pub fn unfenced_ctx(authority: WriteAuthority, correlation_id: CorrelationId) -> ExecutionContext {
     ExecutionContext::builder(correlation_id)
-        .authorized_by(WriteAuthority::Unfenced(reason))
+        .authorized_by(authority)
         .build()
+}
+
+/// Submitting a job: `JobStore::insert`.
+pub fn job_insert() -> WriteAuthority {
+    WriteAuthority::Unfenced(UnfencedReason::JobInsert)
+}
+
+/// Waking a waiting or suspended job: `JobStore::wake`.
+pub fn job_wake() -> WriteAuthority {
+    WriteAuthority::Unfenced(UnfencedReason::JobWake)
+}
+
+/// A client's command: appending `approval_answered` or `cancel_requested`.
+pub fn api_command() -> WriteAuthority {
+    WriteAuthority::Unfenced(UnfencedReason::ApiCommand)
+}
+
+/// Creating a project: appending SDR version 0.
+pub fn project_create() -> WriteAuthority {
+    WriteAuthority::Unfenced(UnfencedReason::ProjectCreate)
 }

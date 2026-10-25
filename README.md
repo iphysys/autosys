@@ -41,7 +41,7 @@ It needs Postgres running and `DATABASE_URL` set (see [Database](#database)), uv
 
 Clippy and the tests build with `SQLX_OFFLINE=true`, so they use the committed query data rather than the live database. CI starts Postgres from the same compose file and then runs only `cargo xtask ci`, so a local pass means a CI pass.
 
-`cargo xtask arch-check` fails when a crate depends on a workspace crate that blueprint §10.3 does not allow, when `synth-testkit` is used as anything but a dev-dependency, or when a crate other than `contracts`, `testkit`, `sdr`, `infra` or `bootstrap` names `SdrRepository` (§7.2).
+`cargo xtask arch-check` fails when a crate depends on a workspace crate that blueprint §10.3 does not allow, when `synth-testkit` is used as anything but a dev-dependency, or when a crate other than `contracts`, `testkit`, `sdr`, `infra` or `bootstrap` names `SdrRepository` (§7.2). It also limits lease fencing (ADR-0032): only `contracts`, `testkit` and `infra` may call `FenceToken::issue_for_claim`; only `contracts`, `testkit`, `bootstrap` and `runtime/src/scheduler/` may name `authorized_by` or `UnfencedReason`, so other crates' tests get write authority from `testkit::leases`; and only `tools/src/gateway.rs` and `testkit` may call `.invoke(` on a tool. Paths are compared by component, so the rules hold on Windows too.
 
 ## Implementing a contract
 

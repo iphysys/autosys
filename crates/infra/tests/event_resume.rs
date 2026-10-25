@@ -12,10 +12,11 @@ use std::time::Duration;
 use chrono::Utc;
 use contracts::ids::RunId;
 use contracts::types::{Event, EventPayload};
-use contracts::{EventLog, ExecutionContext, UnfencedReason, WriteAuthority};
+use contracts::{EventLog, ExecutionContext};
 use infra::persistence::PgEventLog;
 use support::TestDb;
 use testkit::builders::{id, marker_payload, new_event};
+use testkit::leases::api_command;
 
 const WRITERS: usize = 4;
 const PER_WRITER: usize = 50;
@@ -47,7 +48,7 @@ async fn a_resumed_reader_sees_every_later_event_exactly_once() {
                 // The markers are cancel_requested events, a client command.
                 log.append(
                     new_event("run-1", Utc::now(), marker_payload(marker)),
-                    Some(&WriteAuthority::Unfenced(UnfencedReason::ApiCommand)),
+                    Some(&api_command()),
                 )
                 .await
                 .expect("append");
