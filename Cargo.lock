@@ -2440,6 +2440,7 @@ dependencies = [
  "serde-saphyr",
  "serde_json",
  "sha2 0.11.0",
+ "synth-artifacts",
  "synth-context",
  "synth-contracts",
  "synth-evaluation",

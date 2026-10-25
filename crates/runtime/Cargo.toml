@@ -11,6 +11,7 @@ publish.workspace = true
 name = "runtime"
 
 [dependencies]
+synth-artifacts.workspace = true
 synth-context.workspace = true
 synth-contracts.workspace = true
 synth-evaluation.workspace = true
