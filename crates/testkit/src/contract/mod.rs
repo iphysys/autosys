@@ -75,7 +75,7 @@ async fn lease_one<J: JobStore>(jobs: &J, clock: &ManualClock) -> Claimed {
     use contracts::Clock;
     jobs.insert(
         &job("job-1", "run-1", clock.now()),
-        Some(&unfenced(UnfencedReason::JobInsert)),
+        Some(&unfenced(UnfencedReason::JobSubmit)),
     )
     .await
     .expect("insert the job that fences the suite");

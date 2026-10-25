@@ -6,26 +6,67 @@ use std::time::Duration;
 use chrono::{TimeZone, Utc};
 use contracts::ids::RunId;
 use contracts::types::{Event, EventPayload};
-use contracts::{ErrorCode, EventLog, UnfencedReason};
+use contracts::{Clock, ErrorCode, EventKind, EventLog, JobStore, UnfencedReason, WriteAuthority};
+use serde_json::{Value, json};
 
-use super::{WAIT, assert_code, cancelled_ctx, ctx, unfenced};
+use super::{WAIT, assert_code, cancelled_ctx, ctx, fenced, lease_one, unfenced};
 use crate::builders::{id, marker_payload, new_event};
+use crate::clock::ManualClock;
 
-/// The `EventLog` contract. `make` builds an empty log. Its markers are
-/// `cancel_requested` events, appended unfenced as client commands; the
-/// fencing suite covers fenced appends.
-pub async fn event_log<S, F, Fut>(make: F)
+/// A log, and the fence of a job claimed for the whole case, for the events
+/// no unfenced reason permits.
+struct Fenced<S> {
+    log: Arc<S>,
+    authority: WriteAuthority,
+}
+
+impl<S: EventLog> Fenced<S> {
+    async fn append(&self, payload: Value) -> Event {
+        let at = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        self.log
+            .append(new_event("run-1", at, payload), Some(&self.authority))
+            .await
+            .expect("fenced append")
+    }
+}
+
+async fn fenced_log<S, J, F, Fut>(make: &F) -> Fenced<S>
+where
+    J: JobStore,
+    F: Fn(Arc<dyn Clock>) -> Fut,
+    Fut: Future<Output = (S, J)>,
+{
+    let clock = Arc::new(ManualClock::at_epoch());
+    let (log, jobs) = make(clock.clone()).await;
+    let claimed = lease_one(&jobs, &clock).await;
+    Fenced {
+        log: Arc::new(log),
+        authority: fenced(&claimed),
+    }
+}
+
+/// The `EventLog` contract. `make` builds an empty log, and a job store
+/// whose fences it checks, on the given clock. Its markers are
+/// `cancel_requested` events, appended unfenced as client commands; events
+/// no unfenced reason permits are appended under a current fence, and the
+/// fencing suite covers stale ones.
+pub async fn event_log<S, J, F, Fut>(make: F)
 where
     S: EventLog + 'static,
-    F: Fn() -> Fut,
-    Fut: Future<Output = S>,
+    J: JobStore,
+    F: Fn(Arc<dyn Clock>) -> Fut,
+    Fut: Future<Output = (S, J)>,
 {
-    sequence_starts_at_one(make().await).await;
-    runs_are_independent(make().await).await;
-    concurrent_appends_are_gap_free(Arc::new(make().await)).await;
-    reading_resumes_after_a_sequence_number(make().await).await;
-    wait_for_resolves_on_append(Arc::new(make().await)).await;
-    wait_for_honors_cancellation(Arc::new(make().await)).await;
+    let log = || async { make(Arc::new(ManualClock::at_epoch())).await.0 };
+    sequence_starts_at_one(log().await).await;
+    runs_are_independent(log().await).await;
+    concurrent_appends_are_gap_free(Arc::new(log().await)).await;
+    reading_resumes_after_a_sequence_number(log().await).await;
+    wait_for_resolves_on_append(Arc::new(log().await)).await;
+    wait_for_honors_cancellation(Arc::new(log().await)).await;
+    completion_events_are_stored_once(fenced_log(&make).await).await;
+    concurrent_completions_are_stored_once(fenced_log(&make).await).await;
+    reading_by_kind_returns_only_those_kinds(fenced_log(&make).await).await;
 }
 
 fn run(name: &str) -> RunId {
@@ -194,6 +235,153 @@ async fn wait_for_resolves_on_append<S: EventLog + 'static>(log: Arc<S>) {
         .await
         .expect("wait_for: did not resolve for an existing event")
         .expect("wait_for: returned an error");
+}
+
+fn run_started() -> Value {
+    json!({ "type": "run_started", "task_id": "task-1", "agent_id": "test_agent" })
+}
+
+fn tool_call_completed(step: &str, duration_ms: u64, recovered: Option<bool>) -> Value {
+    let mut payload = json!({
+        "type": "tool_call_completed", "step_id": step, "tool": "measure",
+        "outcome": "ok", "evidence_ids": [], "duration_ms": duration_ms
+    });
+    if let Some(recovered) = recovered {
+        payload["recovered"] = json!(recovered);
+    }
+    payload
+}
+
+fn sdr_transition(transition: &str) -> Value {
+    json!({
+        "type": "sdr_transition", "transition_id": transition, "outcome": "committed",
+        "base_version": 1, "new_version": 2, "reasons": []
+    })
+}
+
+fn approval_requested(approval: &str) -> Value {
+    json!({
+        "type": "approval_requested", "approval_id": approval, "gate": "approval",
+        "subject_id": "tr-1", "summary": "Commit the final design."
+    })
+}
+
+/// A completion event appended again, even as a recovered copy, returns the
+/// one stored and takes no sequence number; other events are all stored.
+async fn completion_events_are_stored_once<S: EventLog>(f: Fenced<S>) {
+    let first = f.append(run_started()).await;
+    assert_eq!(
+        f.append(run_started()).await,
+        first,
+        "completions: run_started again"
+    );
+    let completed = f.append(tool_call_completed("step-1.1", 40, None)).await;
+    assert_eq!(
+        f.append(tool_call_completed("step-1.1", 0, Some(true)))
+            .await,
+        completed,
+        "completions: a recovered tool_call_completed returns the first"
+    );
+    let other_step = f.append(tool_call_completed("step-1.2", 40, None)).await;
+    assert_ne!(other_step.seq, completed.seq, "completions: another step");
+    let transition = f.append(sdr_transition("tr-1")).await;
+    assert_eq!(
+        f.append(sdr_transition("tr-1")).await,
+        transition,
+        "completions: sdr_transition again"
+    );
+    let asked = f.append(approval_requested("appr-1")).await;
+    assert_eq!(
+        f.append(approval_requested("appr-1")).await,
+        asked,
+        "completions: approval_requested again"
+    );
+    append_marker(f.log.as_ref(), "run-1", 7).await;
+    append_marker(f.log.as_ref(), "run-1", 7).await;
+
+    let all = f.log.read(&run("run-1"), 0, 100).await.expect("read");
+    assert_eq!(
+        seqs(&all),
+        (1..=7).collect::<Vec<u64>>(),
+        "completions: one of each completion, both markers, no gap"
+    );
+    assert_eq!(
+        f.log.last_seq(&run("run-1")).await.expect("last_seq"),
+        7,
+        "completions: last_seq"
+    );
+}
+
+async fn concurrent_completions_are_stored_once<S: EventLog + 'static>(f: Fenced<S>) {
+    const WRITERS: usize = 16;
+    let f = Arc::new(f);
+    let mut handles = Vec::new();
+    for marker in 0..WRITERS {
+        let f = Arc::clone(&f);
+        handles.push(tokio::spawn(async move {
+            let completed = f
+                .append(tool_call_completed("step-1.1", marker as u64, None))
+                .await;
+            append_marker(f.log.as_ref(), "run-1", marker).await;
+            completed.seq.get()
+        }));
+    }
+    let mut completions = HashSet::new();
+    for handle in handles {
+        completions.insert(handle.await.expect("concurrent completions: task panicked"));
+    }
+    assert_eq!(
+        completions.len(),
+        1,
+        "concurrent completions: every writer got the same stored event"
+    );
+    let all = f.log.read(&run("run-1"), 0, 1000).await.expect("read");
+    assert_eq!(
+        seqs(&all),
+        (1..=WRITERS as u64 + 1).collect::<Vec<u64>>(),
+        "concurrent completions: one completion and every marker, no gap"
+    );
+}
+
+async fn reading_by_kind_returns_only_those_kinds<S: EventLog>(f: Fenced<S>) {
+    let at = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+    let answered =
+        json!({ "type": "approval_answered", "approval_id": "appr-1", "answer": "approve" });
+    f.append(run_started()).await; // 1
+    append_marker(f.log.as_ref(), "run-1", 0).await; // 2
+    f.append(tool_call_completed("step-1.1", 5, None)).await; // 3
+    f.log
+        .append(
+            new_event("run-1", at, answered),
+            Some(&unfenced(UnfencedReason::ApiCommand)),
+        )
+        .await
+        .expect("append an answer"); // 4
+    append_marker(f.log.as_ref(), "run-1", 1).await; // 5
+    append_marker(f.log.as_ref(), "run-other", 2).await;
+
+    const WAKE: &[EventKind] = &[EventKind::APPROVAL_ANSWERED, EventKind::CANCEL_REQUESTED];
+    let read = |after, kinds: &'static [EventKind], limit| {
+        let log = Arc::clone(&f.log);
+        async move {
+            log.read_kinds(&run("run-1"), after, kinds, limit)
+                .await
+                .expect("read_kinds")
+        }
+    };
+    assert_eq!(seqs(&read(0, WAKE, 100).await), [2, 4, 5], "by kind: all");
+    assert_eq!(seqs(&read(2, WAKE, 100).await), [4, 5], "by kind: after 2");
+    assert_eq!(seqs(&read(0, WAKE, 2).await), [2, 4], "by kind: limit");
+    assert_eq!(
+        seqs(&read(0, &[EventKind::RUN_STARTED], 100).await),
+        [1],
+        "by kind: one kind"
+    );
+    assert!(read(0, &[], 100).await.is_empty(), "by kind: no kinds");
+    assert!(
+        read(0, &[EventKind::SDR_TRANSITION], 100).await.is_empty(),
+        "by kind: a kind the run has none of"
+    );
 }
 
 async fn wait_for_honors_cancellation<S: EventLog + 'static>(log: Arc<S>) {

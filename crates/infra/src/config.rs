@@ -11,11 +11,13 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use std::collections::BTreeSet;
+
 use contracts::types::{
     AgentSpec, AutonomyPolicy, ContextBudgets, ContextPolicy, GatesPolicy, ModelRouting,
-    RuntimeSettings, SCHEMA_FILES, ToolOverlay,
+    RuntimeSettings, SCHEMA_FILES, ToolOverlay, WorkerSettings,
 };
-use contracts::{Error, ErrorCode, SchemaSet};
+use contracts::{Environment, Error, ErrorCode, SchemaSet};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use serde_saphyr::{DuplicateKeyPolicy, MergeKeyPolicy, Options};
@@ -24,6 +26,13 @@ use serde_saphyr::{DuplicateKeyPolicy, MergeKeyPolicy, Options};
 pub trait ConfigFile: DeserializeOwned {
     /// The schema, relative to `schemas/`.
     const SCHEMA: &'static str;
+
+    /// The rules of this section that its schema cannot state, for the
+    /// environment the harness runs in: one message per problem, none if
+    /// the section is valid. Runs after the schema check.
+    fn validate(&self, _environment: Environment) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 impl ConfigFile for AutonomyPolicy {
@@ -44,6 +53,22 @@ impl ConfigFile for GatesPolicy {
 
 impl ConfigFile for ToolOverlay {
     const SCHEMA: &'static str = "config/tool-overlay.schema.json";
+
+    /// A tool promises idempotency only with a named test that repeats a
+    /// call with one key and shows one effect (ADR-0031); validate-config
+    /// checks that the test exists.
+    fn validate(&self, _environment: Environment) -> Vec<String> {
+        self.tools
+            .iter()
+            .filter(|tool| tool.idempotent && tool.idempotency_test.is_none())
+            .map(|tool| {
+                format!(
+                    "tool {}: idempotent: true needs an idempotency_test",
+                    tool.name.as_str()
+                )
+            })
+            .collect()
+    }
 }
 
 impl ConfigFile for AgentSpec {
@@ -58,14 +83,82 @@ impl ConfigFile for RuntimeSettings {
     const SCHEMA: &'static str = "config/runtime.schema.json";
 }
 
-/// Validates and loads configuration files.
+/// Fastest intervals a worker may use outside the Test environment.
+const MIN_LEASE_MS: u64 = 10_000;
+const MIN_HEARTBEAT_MS: u64 = 1_000;
+const MIN_POLL_INTERVAL_MS: u64 = 200;
+
+impl ConfigFile for WorkerSettings {
+    const SCHEMA: &'static str = "config/worker.schema.json";
+
+    /// A heartbeat at most a third of the lease, so two renewals can fail
+    /// before the lease runs out; polls more often than heartbeats; jitter
+    /// smaller than the poll; a backoff that does not shrink; each tool
+    /// server once. Outside Test, intervals no shorter than the floors.
+    fn validate(&self, environment: Environment) -> Vec<String> {
+        let lease = self.lease_ms.get();
+        let heartbeat = self.heartbeat_ms.get();
+        let poll = self.poll_interval_ms.get();
+        let mut problems = Vec::new();
+        if heartbeat.saturating_mul(3) > lease {
+            problems.push(format!(
+                "heartbeat_ms ({heartbeat}) must be at most a third of lease_ms ({lease})"
+            ));
+        }
+        if poll >= heartbeat {
+            problems.push(format!(
+                "poll_interval_ms ({poll}) must be shorter than heartbeat_ms ({heartbeat})"
+            ));
+        }
+        if self.poll_jitter_ms >= poll {
+            problems.push(format!(
+                "poll_jitter_ms ({}) must be smaller than poll_interval_ms ({poll})",
+                self.poll_jitter_ms
+            ));
+        }
+        if self.retry_backoff_max_ms < self.retry_backoff_min_ms {
+            problems.push(format!(
+                "retry_backoff_max_ms ({}) must be at least retry_backoff_min_ms ({})",
+                self.retry_backoff_max_ms, self.retry_backoff_min_ms
+            ));
+        }
+        let mut servers = BTreeSet::new();
+        for server in &self.tool_servers {
+            if !servers.insert(server.server_id.as_str()) {
+                problems.push(format!(
+                    "tool server {} is listed twice",
+                    server.server_id.as_str()
+                ));
+            }
+        }
+        if environment != Environment::Test {
+            for (field, value, floor) in [
+                ("lease_ms", lease, MIN_LEASE_MS),
+                ("heartbeat_ms", heartbeat, MIN_HEARTBEAT_MS),
+                ("poll_interval_ms", poll, MIN_POLL_INTERVAL_MS),
+            ] {
+                if value < floor {
+                    problems.push(format!(
+                        "{field} ({value}) is below {floor}, allowed only in the test environment"
+                    ));
+                }
+            }
+        }
+        problems
+    }
+}
+
+/// Validates and loads configuration files, for one environment.
 pub struct ConfigLoader {
     schemas: SchemaSet,
+    environment: Environment,
 }
 
 impl ConfigLoader {
-    pub fn new() -> Result<Self, Error> {
+    /// A loader that checks each section's rules for `environment`.
+    pub fn new(environment: Environment) -> Result<Self, Error> {
         Ok(Self {
+            environment,
             schemas: SchemaSet::compile(&[
                 AutonomyPolicy::SCHEMA,
                 ContextBudgets::SCHEMA,
@@ -75,8 +168,14 @@ impl ConfigLoader {
                 AgentSpec::SCHEMA,
                 ModelRouting::SCHEMA,
                 RuntimeSettings::SCHEMA,
+                WorkerSettings::SCHEMA,
             ])?,
         })
+    }
+
+    /// The environment whose rules this loader applies.
+    pub fn environment(&self) -> Environment {
+        self.environment
     }
 
     /// Reads and validates the file at `path`.
@@ -85,7 +184,8 @@ impl ConfigLoader {
         self.parse(&read_text(path)?, &origin)
     }
 
-    /// Validates YAML text. `origin` names it in errors, usually its path.
+    /// Validates YAML text against its schema and its section's rules.
+    /// `origin` names it in errors, usually its path.
     pub fn parse<T: ConfigFile>(&self, text: &str, origin: &str) -> Result<T, Error> {
         let value = yaml_value(text, origin)?;
         let problems = self.schemas.errors(T::SCHEMA, &value)?;
@@ -99,12 +199,24 @@ impl ConfigLoader {
                 ),
             ));
         }
-        serde_json::from_value(value).map_err(|e| {
+        let typed: T = serde_json::from_value(value).map_err(|e| {
             Error::new(
                 ErrorCode::InvalidInput,
                 format!("{origin}: does not match the configuration type: {e}"),
             )
-        })
+        })?;
+        let problems = typed.validate(self.environment);
+        if !problems.is_empty() {
+            return Err(Error::new(
+                ErrorCode::InvalidInput,
+                format!(
+                    "{origin}: invalid for the {} environment: {}",
+                    self.environment,
+                    problems.join("; ")
+                ),
+            ));
+        }
+        Ok(typed)
     }
 
     /// Validates every file under `config_dir` against the schema its
@@ -125,6 +237,7 @@ impl ConfigLoader {
                 "policies/gates.yaml" => self.load::<GatesPolicy>(&path).map(|_| ()),
                 "models/routing.yaml" => self.load::<ModelRouting>(&path).map(|_| ()),
                 "runtime.yaml" => self.load::<RuntimeSettings>(&path).map(|_| ()),
+                "worker.yaml" => self.load::<WorkerSettings>(&path).map(|_| ()),
                 _ if in_dir(&relative, "tools") => self
                     .load::<ToolOverlay>(&path)
                     .and_then(|overlay| overlay_schemas_exist(&overlay, &path)),

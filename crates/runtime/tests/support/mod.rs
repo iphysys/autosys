@@ -178,14 +178,16 @@ pub fn task() -> Task {
 /// A running job of run `run-1` for `task`, with nothing used yet.
 pub fn job_for(task: Value) -> Job {
     parse(json!({
-        "schema_version": "0.1",
+        "schema_version": "0.2",
         "id": "job-1",
         "run_id": RUN,
         "project_id": PROJECT,
-        "state": "running",
+        "status": { "state": "running" },
         "task": task,
         "idempotency_key": "job-1",
         "attempt": 1,
+        "failed_attempts": 0,
+        "attempt_history": [],
         "created_at": "2026-01-01T00:00:00Z",
         "updated_at": "2026-01-01T00:00:00Z",
         "sdr_base_version": 1,
@@ -595,7 +597,7 @@ impl Setup {
 }
 
 pub struct World {
-    pub orchestrator: Orchestrator,
+    pub orchestrator: Arc<Orchestrator>,
     pub sdr: Arc<SdrManager>,
     pub events: Arc<InMemoryEventLog>,
     pub evidence: Arc<InMemoryEvidenceStore>,
@@ -722,6 +724,7 @@ impl World {
         let routing = Routing::new(
             routing_config,
             Arc::new(model_gateway::providers::default_registry().expect("providers")),
+            contracts::Environment::Test,
         )
         .expect("routing");
         let (profile, provider) = setup.provider.unwrap_or_else(|| {
@@ -742,21 +745,24 @@ impl World {
         );
         let settings: RuntimeSettings = committed("runtime.yaml");
 
-        let orchestrator = Orchestrator::new(Components {
-            agents,
-            sdr: sdr.clone(),
-            context,
-            context_profiles: context_profiles(),
-            tools: tools.clone(),
-            evaluator,
-            commit_gates,
-            models,
-            events: events.clone(),
-            clock: clock.clone(),
-            settings,
-            harness_build: parse(json!("test-build")),
-        })
-        .expect("orchestrator");
+        let orchestrator = Arc::new(
+            Orchestrator::new(Components {
+                agents,
+                sdr: sdr.clone(),
+                context,
+                context_profiles: context_profiles(),
+                tools: tools.clone(),
+                evaluator,
+                evidence: evidence.clone(),
+                commit_gates,
+                models,
+                events: events.clone(),
+                clock: clock.clone(),
+                settings,
+                harness_build: parse(json!("test-build")),
+            })
+            .expect("orchestrator"),
+        );
         Self {
             orchestrator,
             sdr,

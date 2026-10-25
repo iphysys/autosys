@@ -353,11 +353,11 @@ async fn ids_are_deterministic() {
     assert_eq!(first, second);
     assert_eq!(first_result, second_result);
     assert!(
-        first.contains(&"step-1.1=run-1:step-1.1".to_owned()),
+        first.contains(&"step-1.1=job-1:step-1.1".to_owned()),
         "{first:?}"
     );
     assert!(
-        first.contains(&"step-2.1=run-1:step-2.1".to_owned()),
+        first.contains(&"step-2.1=job-1:step-2.1".to_owned()),
         "{first:?}"
     );
     let transition = first_result.committed_transition_ids[0].as_str().to_owned();

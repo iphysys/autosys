@@ -6,14 +6,15 @@ use async_trait::async_trait;
 use contracts::ids::RunId;
 use contracts::types::{Event, EventSchemaVersion};
 use contracts::{
-    Error, ErrorCode, EventLog, ExecutionContext, NewEvent, StoreWrite, WriteAuthority, authorize,
+    Error, ErrorCode, EventKind, EventLog, ExecutionContext, NewEvent, StoreWrite, WriteAuthority,
+    authorize, completion_key,
 };
 use tokio::sync::Notify;
 
 use super::leases::Leases;
 
 /// [`EventLog`] in memory. Appends are fenced by the [`Leases`] it was built
-/// with.
+/// with. A completion event already stored is returned instead of appended.
 #[derive(Default)]
 pub struct InMemoryEventLog {
     leases: Leases,
@@ -53,9 +54,17 @@ impl EventLog for InMemoryEventLog {
         authority: Option<&WriteAuthority>,
     ) -> Result<Event, Error> {
         let fence = authorize(authority, StoreWrite::Event(&event.payload))?;
+        let key = completion_key(&event.payload);
         let stored = self.leases.guard(fence, |_| {
             let mut runs = self.runs.lock().unwrap();
             let events = runs.entry(event.run_id.as_str().to_owned()).or_default();
+            if let Some(key) = &key
+                && let Some(first) = events
+                    .iter()
+                    .find(|e| completion_key(&e.payload).as_ref() == Some(key))
+            {
+                return Ok(first.clone());
+            }
             let seq = NonZeroU64::new(events.len() as u64 + 1)
                 .ok_or_else(|| Error::new(ErrorCode::Internal, "sequence overflow"))?;
             let stored = Event {
@@ -84,6 +93,29 @@ impl EventLog for InMemoryEventLog {
                 events
                     .iter()
                     .filter(|e| e.seq.get() > after)
+                    .take(limit)
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default())
+    }
+
+    async fn read_kinds(
+        &self,
+        run_id: &RunId,
+        after: u64,
+        kinds: &[EventKind],
+        limit: usize,
+    ) -> Result<Vec<Event>, Error> {
+        Ok(self
+            .runs
+            .lock()
+            .unwrap()
+            .get(run_id.as_str())
+            .map(|events| {
+                events
+                    .iter()
+                    .filter(|e| e.seq.get() > after && kinds.contains(&EventKind::of(&e.payload)))
                     .take(limit)
                     .cloned()
                     .collect()

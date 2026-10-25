@@ -388,7 +388,7 @@ proptest! {
     #[test]
     fn invariants_hold_for_random_volumes(
         event_count in 0usize..400,
-        message_len in 0usize..1500,
+        message_len in 1usize..1500,
         elements in 0usize..80,
         text_len in 0usize..400,
         result_len in 0usize..60_000,

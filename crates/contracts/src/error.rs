@@ -34,12 +34,16 @@ pub enum ErrorCode {
     /// marks the job failed, retries, or shows the error to the model
     /// (ADR-0032).
     LeaseLost,
+    /// A tool call was interrupted after it started, and the tool is not
+    /// idempotent: whether it had its effect is unknown, so it is not called
+    /// again (ADR-0026, ADR-0031). Calling again could repeat the effect.
+    OutcomeUnknown,
     /// A bug or broken invariant.
     Internal,
 }
 
 impl ErrorCode {
-    pub const ALL: [ErrorCode; 11] = [
+    pub const ALL: [ErrorCode; 12] = [
         ErrorCode::InvalidInput,
         ErrorCode::NotFound,
         ErrorCode::Conflict,
@@ -50,6 +54,7 @@ impl ErrorCode {
         ErrorCode::ToolFailed,
         ErrorCode::ContextOverflow,
         ErrorCode::LeaseLost,
+        ErrorCode::OutcomeUnknown,
         ErrorCode::Internal,
     ];
 
@@ -65,6 +70,7 @@ impl ErrorCode {
             ErrorCode::ToolFailed => "tool_failed",
             ErrorCode::ContextOverflow => "context_overflow",
             ErrorCode::LeaseLost => "lease_lost",
+            ErrorCode::OutcomeUnknown => "outcome_unknown",
             ErrorCode::Internal => "internal",
         }
     }
@@ -204,8 +210,18 @@ mod tests {
     }
 
     #[test]
-    fn there_are_eleven_codes() {
-        assert_eq!(ErrorCode::ALL.len(), 11);
+    fn outcome_unknown_has_a_stable_string_and_is_not_retryable() {
+        assert_eq!(ErrorCode::OutcomeUnknown.as_str(), "outcome_unknown");
+        assert!(!ErrorCode::OutcomeUnknown.is_retryable());
+        let info =
+            Error::new(ErrorCode::OutcomeUnknown, "create_plate is not idempotent").to_info();
+        assert_eq!(info.code.as_str(), "outcome_unknown");
+        assert!(!info.retryable);
+    }
+
+    #[test]
+    fn there_are_twelve_codes() {
+        assert_eq!(ErrorCode::ALL.len(), 12);
     }
 
     #[test]

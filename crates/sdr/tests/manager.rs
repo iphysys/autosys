@@ -399,3 +399,51 @@ async fn a_project_is_created_without_a_fence() {
         .expect_err("no authority, no project");
     assert_eq!(error.code(), ErrorCode::LeaseLost, "{error}");
 }
+
+/// After a crash, a transition is found where it committed, and only there.
+#[tokio::test]
+async fn a_commit_is_found_by_its_transition_id() {
+    let f = fixture().await;
+    let tr1 = id("tr-1");
+    assert_eq!(
+        f.manager
+            .find_commit(&f.project, &tr1, &SdrVersion(0), &f.ctx)
+            .await
+            .expect("find"),
+        None,
+        "nothing is committed yet"
+    );
+    let validated = valid(
+        f.validate(transition("tr-1", 0, vec![add_requirement("req-1")]))
+            .await,
+    );
+    let record = f
+        .manager
+        .commit(validated, commit_info(&["ev-gate"]), &f.ctx)
+        .await
+        .expect("commit");
+    assert_eq!(
+        f.manager
+            .find_commit(&f.project, &tr1, &SdrVersion(0), &f.ctx)
+            .await
+            .expect("find"),
+        Some(record),
+        "found at base + 1"
+    );
+    assert_eq!(
+        f.manager
+            .find_commit(&f.project, &id("tr-other"), &SdrVersion(0), &f.ctx)
+            .await
+            .expect("find"),
+        None,
+        "another transition made version 1"
+    );
+    assert_eq!(
+        f.manager
+            .find_commit(&f.project, &tr1, &SdrVersion(1), &f.ctx)
+            .await
+            .expect("find"),
+        None,
+        "not on another base"
+    );
+}

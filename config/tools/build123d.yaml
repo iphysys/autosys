@@ -5,6 +5,12 @@
 # Both tools take only typed numbers and keep no state between calls: the
 # part handle carries the parameters, so neither call changes anything,
 # inside or outside the sandbox.
+#
+# Neither is marked idempotent yet: a tool may promise that only with an
+# idempotency_test, a test under mcp_servers/build123d/ that repeats a call
+# with one idempotency key and shows one effect (ADR-0031). Until those
+# tests exist, a call interrupted by a crash is not repeated: it fails with
+# outcome_unknown and costs the run one repair.
 schema_version: "0.1"
 server_id: build123d
 description: Typed parametric CAD with build123d. No tool accepts or executes code.
@@ -13,7 +19,7 @@ tools:
     description: Builds a rectangular plate with four corner through holes and returns its part handle.
     access: read_only
     external_side_effects: false
-    idempotent: true
+    idempotent: false
     concurrency_safe: true
     timeout_seconds: 60
     requires_approval: false
@@ -23,7 +29,7 @@ tools:
     description: Reports a part's volume, mass from a density, and bounding box.
     access: read_only
     external_side_effects: false
-    idempotent: true
+    idempotent: false
     concurrency_safe: true
     timeout_seconds: 60
     requires_approval: false

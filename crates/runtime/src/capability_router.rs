@@ -12,7 +12,9 @@
 //! - A result's content follows `schemas/tools/tool-result.schema.json` and
 //!   is passed raw; the context builder wraps it as untrusted.
 
-use contracts::ids::{ApprovalId, EvidenceId, Identifier, RunId, SdrVersion, StepId, ToolName};
+use contracts::ids::{
+    ApprovalId, EvidenceId, Identifier, JobId, RunId, SdrVersion, StepId, ToolName,
+};
 use contracts::types::{
     ApprovalAnswer, Evidence, NonEmptyString, SdrDocument, SdrProposeRequest, SdrReadRequest, Task,
     ToolResultContent,
@@ -286,11 +288,11 @@ impl CapabilityRouter<'_> {
         approval: Option<ApprovalAnswer>,
         ctx: &ExecutionContext,
     ) -> Result<Routed, RuntimeError> {
-        let run = run_id(ctx)?;
+        let job = job_id(ctx)?;
         let request = ToolRequest {
             tool: call.name.clone(),
             step_id: call_step.clone(),
-            idempotency_key: idempotency_key(&run, call_step)?,
+            idempotency_key: idempotency_key(&job, call_step)?,
             arguments: call.arguments.clone(),
         };
         let observation = self
@@ -414,11 +416,11 @@ pub(crate) fn call_step_id(step: u64, call: usize) -> Result<StepId, RuntimeErro
         .map_err(|_| RuntimeError::Internal("a generated step id is invalid".to_owned()))
 }
 
-/// `{run}:{step}`, or `sha256:` and the hex digest of that when it is longer
-/// than an identifier may be. A retry is a later step, so it gets a new key
-/// (ADR-0026).
-pub(crate) fn idempotency_key(run: &RunId, step: &StepId) -> Result<Identifier, RuntimeError> {
-    let key = format!("{}:{}", run.as_str(), step.as_str());
+/// `{job}:{step}`, or `sha256:` and the hex digest of that when it is longer
+/// than an identifier may be. Every attempt of a step uses the same key; a
+/// retry is a later step, so it gets a new one (ADR-0026, ADR-0031).
+pub(crate) fn idempotency_key(job: &JobId, step: &StepId) -> Result<Identifier, RuntimeError> {
+    let key = format!("{}:{}", job.as_str(), step.as_str());
     let key = if key.len() <= 128 {
         key
     } else {
@@ -436,6 +438,31 @@ fn run_id(ctx: &ExecutionContext) -> Result<RunId, RuntimeError> {
     ctx.run_id()
         .cloned()
         .ok_or_else(|| RuntimeError::Internal("a tool call without a run".to_owned()))
+}
+
+fn job_id(ctx: &ExecutionContext) -> Result<JobId, RuntimeError> {
+    ctx.job_id()
+        .cloned()
+        .ok_or_else(|| RuntimeError::Internal("a tool call without a job".to_owned()))
+}
+
+/// The tool calls of a reply, in order.
+pub(crate) fn tool_calls(content: &[ContentBlock]) -> Vec<ToolCallBlock> {
+    content
+        .iter()
+        .filter_map(|block| match block {
+            ContentBlock::ToolCall {
+                id,
+                name,
+                arguments,
+            } => Some(ToolCallBlock {
+                id: id.clone(),
+                name: name.clone(),
+                arguments: arguments.clone(),
+            }),
+            _ => None,
+        })
+        .collect()
 }
 
 fn ids(evidence: &[Evidence]) -> Vec<EvidenceId> {
@@ -464,15 +491,15 @@ mod tests {
 
     #[test]
     fn call_ids_and_idempotency_keys_are_deterministic() {
-        let run: RunId = "run-1".parse().expect("id");
+        let job: JobId = "job-1".parse().expect("id");
         let call = call_step_id(4, 2).expect("id");
         assert_eq!(call.as_str(), "step-4.2");
         assert_eq!(
-            idempotency_key(&run, &call).expect("key").as_str(),
-            "run-1:step-4.2"
+            idempotency_key(&job, &call).expect("key").as_str(),
+            "job-1:step-4.2"
         );
 
-        let long: RunId = format!("run-{}", "x".repeat(120)).parse().expect("id");
+        let long: JobId = format!("job-{}", "x".repeat(120)).parse().expect("id");
         let key = idempotency_key(&long, &call).expect("key");
         assert!(key.as_str().starts_with("sha256:"), "{}", key.as_str());
         assert_eq!(key, idempotency_key(&long, &call).expect("key"));

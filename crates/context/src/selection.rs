@@ -105,6 +105,8 @@ pub(crate) fn view(event: &Event) -> Option<EventView> {
         }
         P::ToolCallCompleted {
             duration_ms: _,
+            // A recovered event tells the model nothing a first one would not.
+            recovered: _,
             error,
             evidence_ids,
             outcome,
@@ -184,6 +186,7 @@ pub(crate) fn view(event: &Event) -> Option<EventView> {
             outcome,
             reasons: transition_reasons,
             transition_id,
+            recovered: _,
         } => {
             let line = Line::new(seq, "sdr_transition")
                 .field("transition", transition_id.as_str())
@@ -413,7 +416,7 @@ mod tests {
     #[test]
     fn bookkeeping_and_duplicate_events_are_left_out() {
         for payload in [
-            json!({ "type": "job_state_changed", "to": "running" }),
+            json!({ "type": "job_state_changed", "to": { "state": "running" } }),
             json!({
                 "type": "context_assembled",
                 "context_hash": format!("sha256:{}", "0".repeat(64)),

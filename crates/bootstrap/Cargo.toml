@@ -1,0 +1,52 @@
+[package]
+name = "synth-bootstrap"
+version = "0.1.0"
+description = "The composition root: builds a worker from config/, prompts/ and the environment, after its startup checks (blueprint section 13.1, ADR-0031)."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "bootstrap"
+
+[dependencies]
+synth-context.workspace = true
+synth-contracts.workspace = true
+synth-evaluation.workspace = true
+synth-governance.workspace = true
+synth-infra.workspace = true
+synth-model-gateway.workspace = true
+synth-runtime.workspace = true
+synth-sdr.workspace = true
+synth-tools.workspace = true
+
+# ProviderAdapter is an async trait object (ADR-0015).
+async-trait.workspace = true
+# The process-wide TLS crypto provider: the model gateway builds reqwest
+# without one (ADR-0027), and rmcp's client then needs the process default.
+rustls.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt"] }
+# TaskTracker for the tasks a worker spawns; CancellationToken for shutdown.
+tokio-util = { workspace = true, features = ["rt"] }
+tracing.workspace = true
+
+[dev-dependencies]
+synth-testkit.workspace = true
+
+chrono = { workspace = true, features = ["clock"] }
+serde_json.workspace = true
+# The system tests create and drop their own database.
+sqlx = { workspace = true, features = ["postgres", "runtime-tokio"] }
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "sync", "time"] }
+
+# Workers built by bootstrap on Postgres (blueprint section 16.1). They live
+# at the root, beside the other system-level material.
+[[test]]
+name = "system"
+path = "../../tests/system/main.rs"
+
+[lints]
+workspace = true

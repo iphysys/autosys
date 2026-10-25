@@ -9,6 +9,7 @@
       "access": "mutating",
       "external_side_effects": false,
       "idempotent": true,
+      "idempotency_test": "tests/test_tools.py::test_create_part_twice_with_one_key_makes_one_part",
       "concurrency_safe": true,
       "timeout_seconds": 120,
       "requires_approval": false

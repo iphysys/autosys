@@ -32,14 +32,24 @@ async fn postgres_job_store() {
     db.drop().await;
 }
 
+/// Completion events are fenced by a job the suite claims, so the log and its
+/// job store share the database, whose clock follows the suite's.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn postgres_event_log() {
     let db = TestDb::create().await;
-    contract::event_log(|| async {
-        db.empty().await;
-        PgEventLog::connect(db.database())
-            .await
-            .expect("cannot start the event listener")
+    db.use_session_clock().await;
+    contract::event_log(|clock| {
+        let db = &db;
+        async move {
+            db.empty().await;
+            let database = db.following(clock);
+            (
+                PgEventLog::connect(database.clone())
+                    .await
+                    .expect("cannot start the event listener"),
+                PgJobStore::new(database),
+            )
+        }
     })
     .await;
     db.drop().await;

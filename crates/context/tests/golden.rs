@@ -117,7 +117,7 @@ async fn typical() {
             "type": "artifact_published", "artifact_id": "art-1", "format": "step",
             "source_sdr_version": 2
         }),
-        json!({ "type": "job_state_changed", "from": "queued", "to": "running" }),
+        json!({ "type": "job_state_changed", "from": "queued", "to": { "state": "running" } }),
     ] {
         world.event(payload).await;
     }

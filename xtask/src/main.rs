@@ -201,16 +201,26 @@ fn arch_check(root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Validates `config/` with the same loader the harness uses, then the model
-/// routing with the gateway's own checks, including every agent's profile.
+/// The environment `SYNTH_ENVIRONMENT` names; unset is production, which is
+/// what the committed `config/` is.
+fn environment() -> Result<contracts::Environment> {
+    let value = std::env::var(contracts::Environment::VAR).ok();
+    contracts::Environment::from_var(value.as_deref()).map_err(|e| anyhow::anyhow!("{e}"))
+}
+
+/// Validates `config/` with the same loader the harness uses, for the
+/// environment `SYNTH_ENVIRONMENT` names, then the model routing with the
+/// gateway's own checks, including every agent's profile.
 fn validate_config(root: &Path) -> Result<()> {
     let config = root.join("config");
-    let loader = infra::config::ConfigLoader::new().context("loading the config schemas")?;
+    let loader =
+        infra::config::ConfigLoader::new(environment()?).context("loading the config schemas")?;
     let mut problems = loader.validate_dir(&config).context("reading config/")?;
     if problems.is_empty() {
         problems.extend(model_routing_problems(&loader, &config));
         problems.extend(context_problems(&loader, root));
         problems.extend(agent_problems(&loader, root));
+        problems.extend(idempotency_test_problems(&loader, root));
     }
     if !problems.is_empty() {
         bail!("invalid configuration:\n  - {}", problems.join("\n  - "));
@@ -257,7 +267,13 @@ fn model_routing_problems(loader: &infra::config::ConfigLoader, config: &Path) -
     let routing = match model_gateway::providers::default_registry().and_then(|registry| {
         loader
             .load::<contracts::types::ModelRouting>(&routing_path)
-            .and_then(|config| model_gateway::Routing::new(config, std::sync::Arc::new(registry)))
+            .and_then(|config| {
+                model_gateway::Routing::new(
+                    config,
+                    std::sync::Arc::new(registry),
+                    loader.environment(),
+                )
+            })
     }) {
         Ok(routing) => routing,
         Err(e) => return vec![format!("{}: {}", routing_path.display(), e.message())],
@@ -307,6 +323,47 @@ fn agent_problems(loader: &infra::config::ConfigLoader, root: &Path) -> Vec<Stri
     }
 }
 
+/// Every `idempotency_test` in `config/tools/` names a test that exists:
+/// `<file>::<test>`, the file under `mcp_servers/<server_id>/` and defining
+/// `def <test>(` (ADR-0031). The test itself runs with the server's tests.
+fn idempotency_test_problems(loader: &infra::config::ConfigLoader, root: &Path) -> Vec<String> {
+    let overlays: Vec<contracts::types::ToolOverlay> =
+        match load_all(loader, &root.join("config/tools")) {
+            Ok(overlays) => overlays,
+            Err(problem) => return vec![problem],
+        };
+    overlays
+        .iter()
+        .flat_map(|overlay| {
+            let server = root.join("mcp_servers").join(overlay.server_id.as_str());
+            overlay.tools.iter().filter_map(move |tool| {
+                let named = tool.idempotency_test.as_ref()?.as_str();
+                missing_test(&server, named).map(|why| {
+                    format!(
+                        "config/tools/: tool {}: idempotency_test {named}: {why}",
+                        tool.name.as_str()
+                    )
+                })
+            })
+        })
+        .collect()
+}
+
+/// Why `named` (`<file>::<test>`) is not a test under `server`, if it is not.
+fn missing_test(server: &Path, named: &str) -> Option<String> {
+    let Some((file, test)) = named.split_once("::") else {
+        return Some("not <file>::<test>".to_owned());
+    };
+    let path = server.join(file);
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return Some(format!("{} does not exist", path.display()));
+    };
+    let defined = text
+        .lines()
+        .any(|line| line.trim_start().starts_with(&format!("def {test}(")));
+    (!defined).then(|| format!("{} defines no test {test}", path.display()))
+}
+
 /// Every `*.yaml` file directly in `dir`, loaded as `T`.
 fn load_all<T: infra::config::ConfigFile>(
     loader: &infra::config::ConfigLoader,
@@ -334,7 +391,8 @@ fn yaml_files(dir: &Path) -> Vec<PathBuf> {
 /// Validates `evals/benchmarks/` with the loader the evaluation runs use.
 /// Approval outcomes must name rules of the autonomy policy.
 fn validate_benchmarks(root: &Path) -> Result<()> {
-    let config = infra::config::ConfigLoader::new().context("loading the config schemas")?;
+    let config =
+        infra::config::ConfigLoader::new(environment()?).context("loading the config schemas")?;
     let policy: contracts::types::AutonomyPolicy = config
         .load(&root.join("config/policies/autonomy.yaml"))
         .context("loading the autonomy policy")?;
@@ -401,7 +459,30 @@ mod tests {
     use super::*;
 
     fn loader() -> infra::config::ConfigLoader {
-        infra::config::ConfigLoader::new().expect("config schemas compile")
+        infra::config::ConfigLoader::new(contracts::Environment::Production)
+            .expect("config schemas compile")
+    }
+
+    #[test]
+    fn an_idempotency_test_must_exist() {
+        let server = tempfile::tempdir().expect("a temporary directory");
+        fs::create_dir_all(server.path().join("tests")).expect("tests/");
+        fs::write(
+            server.path().join("tests/test_tools.py"),
+            "import pytest\n\ndef test_create_twice_with_one_key(client):\n    pass\n",
+        )
+        .expect("a test file");
+        assert_eq!(
+            missing_test(
+                server.path(),
+                "tests/test_tools.py::test_create_twice_with_one_key"
+            ),
+            None
+        );
+        let why = |named| missing_test(server.path(), named).expect("a problem");
+        assert!(why("tests/test_tools.py::test_other").contains("defines no test test_other"));
+        assert!(why("tests/test_missing.py::test_x").contains("does not exist"));
+        assert!(why("test_tools.py").contains("not <file>::<test>"));
     }
 
     #[test]

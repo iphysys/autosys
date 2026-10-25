@@ -19,7 +19,10 @@
 //!    probes from a sibling, with the server as the control), lint and
 //!    strict type check;
 //! 5. runs the tool gateway's tests against the server, from the host
-//!    through the forwarder (`crates/tools/tests/`).
+//!    through the forwarder (`crates/tools/tests/`);
+//! 6. builds the `worker` binary and runs the system test that kills a
+//!    worker process mid-run, against the server through the forwarder
+//!    (`tests/system/worker_process.rs`). It needs `DATABASE_URL`.
 //!
 //! The stack is taken down afterwards, pass or fail.
 
@@ -49,6 +52,9 @@ struct ToolServer {
     /// variable that tells it the server's URL.
     gateway_test: &'static str,
     url_env: &'static str,
+    /// The ignored test of `synth-bootstrap`'s `system` target that runs
+    /// worker processes against this server, if any.
+    worker_test: Option<&'static str>,
 }
 
 const SERVERS: &[ToolServer] = &[ToolServer {
@@ -61,6 +67,7 @@ const SERVERS: &[ToolServer] = &[ToolServer {
     control: "127.0.0.1:8000",
     gateway_test: "build123d",
     url_env: "BUILD123D_URL",
+    worker_test: Some("worker_process"),
 }];
 
 pub fn run(root: &Path) -> Result<()> {
@@ -169,7 +176,42 @@ fn test_server(root: &Path, server: &ToolServer) -> Result<()> {
     if !status.success() {
         bail!("tool gateway tests against {name} failed ({status})");
     }
+
+    if let Some(filter) = server.worker_test {
+        eprintln!("xtask: test-tools: {name}: worker processes through {forwarder} ({url})");
+        let built = cargo(root)
+            .args(["build", "--locked", "-p", "synth-worker"])
+            .status()
+            .context("failed to build the worker binary")?;
+        if !built.success() {
+            bail!("building the worker binary failed ({built})");
+        }
+        let status = cargo(root)
+            .env(server.url_env, &url)
+            .args([
+                "test",
+                "--locked",
+                "-p",
+                "synth-bootstrap",
+                "--test",
+                "system",
+                filter,
+                "--",
+                "--ignored",
+            ])
+            .status()
+            .context("failed to run the worker process test")?;
+        if !status.success() {
+            bail!("the worker process test against {name} failed ({status})");
+        }
+    }
     Ok(())
+}
+
+fn cargo(root: &Path) -> Command {
+    let mut command = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
+    command.current_dir(root);
+    command
 }
 
 /// The running container of a compose service, and each network it is

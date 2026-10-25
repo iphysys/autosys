@@ -35,6 +35,16 @@ impl Store {
         self.repository.document(project_id, version).await
     }
 
+    pub(crate) async fn version_record(
+        &self,
+        project_id: &ProjectId,
+        version: &SdrVersion,
+        ctx: &ExecutionContext,
+    ) -> Result<SdrVersionRecord, Error> {
+        ctx.ensure_not_cancelled()?;
+        self.repository.version_record(project_id, version).await
+    }
+
     /// Conflict if another version was appended since the base was read;
     /// LeaseLost if `ctx`'s write authority does not permit the append.
     pub(crate) async fn append(

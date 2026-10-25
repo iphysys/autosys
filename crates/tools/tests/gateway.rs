@@ -161,11 +161,55 @@ async fn a_replayed_step_returns_the_stored_result_without_calling_the_tool() {
         }
         other => panic!("expected a first and a replayed success, got {other:?}"),
     }
+    // The replay writes its tool_call_completed again; the log keeps the
+    // first, so nothing is added.
     assert_eq!(
         h.events().await.len(),
         events_after_first,
-        "a replay appended events"
+        "a replay added an event though the first tool_call_completed was there"
     );
+}
+
+/// A worker that completed the step record but crashed before its
+/// tool_call_completed: the next call replays the record and writes the
+/// event, marked recovered, once.
+#[tokio::test]
+async fn a_replay_writes_a_lost_tool_call_completed_once() {
+    let tool = plate_tool();
+    let h = harness(&[Listed::tool("create_plate")], std::slice::from_ref(&tool));
+    let agent = agent();
+    let request = tool_request("create_plate", "step-1", plate());
+    interrupt(&h, &request).await;
+    let ctx = h.step_ctx("step-1");
+    h.steps
+        .complete(
+            &request.idempotency_key,
+            &testkit::builders::succeeded(plate_result()),
+            ctx.write_authority(),
+        )
+        .await
+        .unwrap();
+
+    for _ in 0..2 {
+        let observed = h.gateway.call(call(&request, &agent), &ctx).await.unwrap();
+        assert!(
+            matches!(observed, ToolObservation::Succeeded { replayed: true, .. }),
+            "{observed:?}"
+        );
+    }
+    assert_eq!(tool.calls(), 0, "the tool was called");
+    let completed: Vec<Option<bool>> = h
+        .events()
+        .await
+        .into_iter()
+        .filter_map(|e| match e.payload {
+            EventPayload::ToolCallCompleted {
+                step_id, recovered, ..
+            } if step_id.as_str() == "step-1" => Some(recovered),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(completed, [Some(true)], "one recovered tool_call_completed");
 }
 
 #[tokio::test]
@@ -475,7 +519,7 @@ async fn an_interrupted_step_of_a_tool_that_is_not_idempotent_is_not_repeated() 
         .await
         .unwrap();
 
-    assert_eq!(error_code(&observed), "conflict");
+    assert_eq!(error_code(&observed), "outcome_unknown");
     assert_eq!(tool.calls(), 0);
     let again = h
         .gateway

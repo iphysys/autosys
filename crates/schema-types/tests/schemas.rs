@@ -75,8 +75,16 @@ const ROOT_TYPES: &[(&str, RoundTrip)] = &[
         round_trip::<schema_types::ToolOverlay>,
     ),
     (
+        "config/worker.schema.json",
+        round_trip::<schema_types::WorkerSettings>,
+    ),
+    (
         "events/event.schema.json",
         round_trip::<schema_types::Event>,
+    ),
+    (
+        "jobs/continuation.schema.json",
+        round_trip::<schema_types::ContinuationRecord>,
     ),
     ("jobs/job.schema.json", round_trip::<schema_types::Job>),
     (

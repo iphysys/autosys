@@ -16,7 +16,7 @@ use contracts::ids::Identifier;
 use infra::persistence::PgJobStore;
 use support::TestDb;
 use testkit::builders::{id, job};
-use testkit::leases::job_insert;
+use testkit::leases::job_submit;
 
 const LEASE: Duration = Duration::from_secs(30);
 
@@ -33,7 +33,7 @@ async fn two_workers_never_claim_the_same_job() {
     let created = Utc::now();
     for n in 0..JOBS {
         let new = job(&format!("job-{n:03}"), &format!("run-{n:03}"), created);
-        seed.insert(&new, Some(&job_insert()))
+        seed.insert(&new, Some(&job_submit()))
             .await
             .expect("insert");
     }
@@ -79,7 +79,7 @@ async fn lease_times_come_from_the_database_clock() {
     db.stop_clock_at(stopped_at).await;
     let store = PgJobStore::new(db.database());
     store
-        .insert(&job("job-1", "run-1", Utc::now()), Some(&job_insert()))
+        .insert(&job("job-1", "run-1", Utc::now()), Some(&job_submit()))
         .await
         .expect("insert");
 
@@ -108,7 +108,7 @@ async fn leases_expire_on_the_real_database_clock() {
     let db = TestDb::create().await;
     let store = PgJobStore::new(db.database());
     store
-        .insert(&job("job-1", "run-1", Utc::now()), Some(&job_insert()))
+        .insert(&job("job-1", "run-1", Utc::now()), Some(&job_submit()))
         .await
         .expect("insert");
 

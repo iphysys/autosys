@@ -8,7 +8,9 @@ use contracts::ids::{Identifier, ToolName};
 use contracts::{
     Error, ErrorCode, ExecutionContext, Tool, ToolDescriptor, ToolOutput, ToolRequest,
 };
-use rmcp::model::{CallToolRequestParams, ContentBlock, ProtocolVersion};
+use rmcp::model::{
+    CallToolRequestParams, ContentBlock, MetaObject, ProtocolVersion, RequestMetaObject,
+};
 use rmcp::service::{RoleClient, RunningService, ServiceError};
 use rmcp::transport::StreamableHttpClientTransport;
 use rmcp::{ClientLifecycleMode, ClientServiceExt};
@@ -21,6 +23,10 @@ use crate::registry::ServerTools;
 /// metadata, no `initialize` handshake. A server that does not support it
 /// fails at connect instead of being silently downgraded.
 pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::V_2026_07_28;
+
+/// The `_meta` key of a tool call that holds its idempotency key: one key
+/// per step, the same on every attempt of that step (ADR-0026, ADR-0031).
+pub const IDEMPOTENCY_KEY_META: &str = "autosys/idempotency_key";
 
 /// Time limits on a server connection.
 #[derive(Clone, Debug, PartialEq)]
@@ -165,8 +171,7 @@ impl Tool for McpTool {
     ) -> Result<ToolOutput, Error> {
         ctx.ensure_not_cancelled()?;
         let tool = request.tool.as_str();
-        let params =
-            CallToolRequestParams::new(tool.to_owned()).with_arguments(request.arguments.clone());
+        let params = call_params(request);
         let what = format!("tool {tool}");
         let result = bounded(ctx, self.call_timeout, &what, async {
             self.client
@@ -191,6 +196,22 @@ impl Tool for McpTool {
                 )
             })
     }
+}
+
+/// The `tools/call` parameters of `request`. The step's idempotency key goes
+/// in `_meta` under [`IDEMPOTENCY_KEY_META`], so a tool with an effect can
+/// store it under the key and return it again on a repeat (ADR-0031). The
+/// client adds its own `_meta` keys beside it.
+fn call_params(request: &ToolRequest) -> CallToolRequestParams {
+    let mut meta = MetaObject::new();
+    meta.insert(
+        IDEMPOTENCY_KEY_META.to_owned(),
+        Value::String(request.idempotency_key.as_str().to_owned()),
+    );
+    let mut params = CallToolRequestParams::new(request.tool.as_str().to_owned())
+        .with_arguments(request.arguments.clone());
+    params.meta = Some(RequestMetaObject::from(meta));
+    params
 }
 
 /// The error a tool reported. Tool servers send `{code, message, retryable}`
@@ -229,7 +250,22 @@ fn service_error(server: &Identifier, op: &str, err: ServiceError) -> Error {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+    use testkit::builders::tool_request;
+
     use super::*;
+
+    #[test]
+    fn a_call_carries_its_idempotency_key_in_meta() {
+        let request = tool_request("measure", "step-2.1", json!({ "part": "plate" }));
+        let sent = serde_json::to_value(call_params(&request)).expect("serializes");
+        assert_eq!(sent["name"], "measure");
+        assert_eq!(sent["arguments"], json!({ "part": "plate" }));
+        assert_eq!(
+            sent["_meta"][IDEMPOTENCY_KEY_META],
+            request.idempotency_key.as_str()
+        );
+    }
 
     #[test]
     fn reported_errors_keep_the_servers_code_and_message() {

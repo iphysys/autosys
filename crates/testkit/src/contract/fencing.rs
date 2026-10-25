@@ -6,16 +6,15 @@ use std::time::Duration;
 
 use chrono::{TimeZone, Utc};
 use contracts::ids::{Identifier, JobId, ProjectId, RunId, SdrVersion};
-use contracts::types::{JobState, StopReason, WakeCondition};
 use contracts::{
-    Claimed, Clock, Error, ErrorCode, EventLog, JobStore, NewEvent, SdrRepository, StaleFence,
-    Staleness, StepStore, UnfencedReason, WakeReason, WriteAuthority,
+    Claimed, Clock, Error, ErrorCode, EventLog, JobStore, JobWrite, NewEvent, SdrRepository,
+    StaleFence, Staleness, StepStore, UnfencedReason, WakeReason, WriteAuthority,
 };
 use serde_json::{Value, json};
 
 use super::{WAIT, fenced, unfenced};
 use crate::builders::{
-    id, job, marker_payload, new_event, new_step, sdr_document, succeeded, version_record,
+    self, id, job, marker_payload, new_event, new_step, sdr_document, succeeded, version_record,
 };
 use crate::clock::ManualClock;
 
@@ -99,7 +98,7 @@ impl Fixture {
             .jobs
             .insert(
                 &job(job_id, "run-1", self.clock.now()),
-                Some(&unfenced(UnfencedReason::JobInsert)),
+                Some(&unfenced(UnfencedReason::JobSubmit)),
             )
             .await
             .unwrap_or_else(|e| panic!("insert {job_id}: {e}"));
@@ -196,7 +195,7 @@ async fn the_current_fence_writes_everything(f: Fixture) {
     let mut progressed = claimed.job.clone();
     progressed.progress.steps_completed = 1;
     f.s.jobs
-        .save(&progressed, &claimed.fence)
+        .save(&JobWrite::keep(&progressed), &claimed.fence)
         .await
         .expect("current: save");
     f.s.events
@@ -260,7 +259,12 @@ async fn a_stale_fence_writes_nothing(f: Fixture) {
             "renew",
             f.s.jobs.renew_lease(&old.fence, LEASE).await.map(|_| ()),
         ),
-        ("save", f.s.jobs.save(&progressed, &old.fence).await),
+        (
+            "save",
+            f.s.jobs
+                .save(&JobWrite::keep(&progressed), &old.fence)
+                .await,
+        ),
         (
             "append",
             f.s.events
@@ -326,7 +330,7 @@ async fn a_stale_fence_writes_nothing(f: Fixture) {
         .await
         .expect("stale: renew with the current fence");
     f.s.jobs
-        .save(&progressed, &new.fence)
+        .save(&JobWrite::keep(&progressed), &new.fence)
         .await
         .expect("stale: save with the current fence");
     f.s.events
@@ -415,11 +419,9 @@ async fn a_fence_ends_when_the_job_leaves_running(f: Fixture) {
     f.insert("job-1").await;
     let suspended = f.claim(1).await;
     let mut waiting = suspended.job.clone();
-    waiting.state = JobState::Suspended;
-    waiting.stop_reason = Some(StopReason::ApprovalRequired);
-    waiting.wake_condition = Some(WakeCondition::ApprovalAnswered(id("appr-1")));
+    waiting.status = builders::suspended("appr-1", 1);
     f.s.jobs
-        .save(&waiting, &suspended.fence)
+        .save(&JobWrite::keep(&waiting), &suspended.fence)
         .await
         .expect("left running: suspend");
     let refused = assert_stale(
@@ -456,10 +458,9 @@ async fn a_fence_ends_when_the_job_leaves_running(f: Fixture) {
         "left running: job-2"
     );
     let mut done = completed.job.clone();
-    done.state = JobState::Completed;
-    done.stop_reason = Some(StopReason::Success);
+    done.status = builders::completed("success", 1);
     f.s.jobs
-        .save(&done, &completed.fence)
+        .save(&JobWrite::keep(&done), &completed.fence)
         .await
         .expect("left running: complete");
     assert_stale(
@@ -470,7 +471,9 @@ async fn a_fence_ends_when_the_job_leaves_running(f: Fixture) {
         "left running: append_version after completing",
     );
     assert_stale(
-        f.s.jobs.save(&done, &completed.fence).await,
+        f.s.jobs
+            .save(&JobWrite::keep(&done), &completed.fence)
+            .await,
         1,
         Some(1),
         "left running: save after completing",
@@ -510,7 +513,8 @@ async fn fence_is_checked_before_sdr_head(f: Fixture) {
     );
 }
 
-/// Every write kind the unfenced reasons are tried against.
+/// Every write kind the unfenced reasons are tried against. The
+/// `job_state_changed` appends are named for the transition they record.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Write {
     Insert,
@@ -522,9 +526,14 @@ enum Write {
     Complete,
     Version0,
     Version1,
+    Submitted,
+    Woken,
+    WokenFromWaiting,
+    Requeued,
+    Finished,
 }
 
-const WRITES: [Write; 9] = [
+const WRITES: [Write; 14] = [
     Write::Insert,
     Write::Wake,
     Write::Cancel,
@@ -534,17 +543,54 @@ const WRITES: [Write; 9] = [
     Write::Complete,
     Write::Version0,
     Write::Version1,
+    Write::Submitted,
+    Write::Woken,
+    Write::WokenFromWaiting,
+    Write::Requeued,
+    Write::Finished,
 ];
 
-/// The allow-list of ADR-0032.
+/// The allow-list of ADR-0032: each reason covers one operation, its job
+/// write and the event that records it.
 fn permits(reason: UnfencedReason, write: Write) -> bool {
     match reason {
-        UnfencedReason::JobInsert => write == Write::Insert,
-        UnfencedReason::JobWake => write == Write::Wake,
+        UnfencedReason::JobSubmit => matches!(write, Write::Insert | Write::Submitted),
+        UnfencedReason::JobWake => {
+            matches!(write, Write::Wake | Write::Woken | Write::WokenFromWaiting)
+        }
         UnfencedReason::ApiCommand => matches!(write, Write::Cancel | Write::Answered),
         UnfencedReason::ProjectCreate => write == Write::Version0,
         _ => false,
     }
+}
+
+impl Write {
+    fn is_append(self) -> bool {
+        matches!(
+            self,
+            Write::Cancel
+                | Write::Answered
+                | Write::Started
+                | Write::Submitted
+                | Write::Woken
+                | Write::WokenFromWaiting
+                | Write::Requeued
+                | Write::Finished
+        )
+    }
+}
+
+/// `job_state_changed` from `from` (absent if `None`) into `to`.
+fn state_changed(from: Option<&str>, to: Value) -> Value {
+    let mut payload = json!({ "type": "job_state_changed", "to": to });
+    if let Some(from) = from {
+        payload["from"] = json!(from);
+    }
+    payload
+}
+
+fn queued_on_checkpoint() -> Value {
+    json!({ "state": "queued", "checkpoint": builders::checkpoint(1) })
 }
 
 impl Fixture {
@@ -612,7 +658,55 @@ impl Fixture {
                     .await
             }
             Write::Version1 => self.append_version("p-base", 1, Some(0), authority).await,
+            Write::Submitted => {
+                self.append_payload(state_changed(None, json!({ "state": "queued" })), authority)
+                    .await
+            }
+            Write::Woken => {
+                self.append_payload(
+                    state_changed(Some("suspended"), queued_on_checkpoint()),
+                    authority,
+                )
+                .await
+            }
+            Write::WokenFromWaiting => {
+                self.append_payload(
+                    state_changed(Some("waiting"), queued_on_checkpoint()),
+                    authority,
+                )
+                .await
+            }
+            Write::Requeued => {
+                self.append_payload(
+                    state_changed(Some("running"), queued_on_checkpoint()),
+                    authority,
+                )
+                .await
+            }
+            Write::Finished => {
+                self.append_payload(
+                    state_changed(
+                        Some("running"),
+                        serde_json::to_value(builders::completed("success", 1))
+                            .expect("a status serializes"),
+                    ),
+                    authority,
+                )
+                .await
+            }
         }
+    }
+
+    async fn append_payload(
+        &self,
+        payload: Value,
+        authority: Option<&WriteAuthority>,
+    ) -> Result<(), Error> {
+        self.s
+            .events
+            .append(event(payload), authority)
+            .await
+            .map(|_| ())
     }
 }
 
@@ -647,7 +741,7 @@ async fn unfenced_reasons_permit_only_their_writes(f: Fixture) {
             let case = format!("matrix: {reason} with {write:?}");
             if permits(reason, write) {
                 result.unwrap_or_else(|e| panic!("{case}: refused: {e}"));
-                if matches!(write, Write::Cancel | Write::Answered) {
+                if write.is_append() {
                     permitted_appends += 1;
                 }
             } else {

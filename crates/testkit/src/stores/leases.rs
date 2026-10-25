@@ -2,13 +2,19 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use chrono::{DateTime, Utc};
-use contracts::types::{Job, JobState};
-use contracts::{Clock, Error, FenceToken, FoundLease, StaleFence, SystemClock, lease_lost};
+use contracts::types::{ContinuationRecord, Job, JobState};
+use contracts::{
+    Clock, Error, FenceToken, FoundLease, StaleFence, SystemClock, job_state, lease_lost,
+};
 
-/// A job as the in-memory job store keeps it, with its lease epoch.
+/// A job as the in-memory job store keeps it, with what the store manages
+/// beside it: its lease epoch, its continuation record and the sequence
+/// number its wake-up scan starts after.
 pub(crate) struct Leased {
     pub(crate) job: Job,
     pub(crate) epoch: u64,
+    pub(crate) continuation: Option<ContinuationRecord>,
+    pub(crate) checked_seq: u64,
 }
 
 pub(crate) type Jobs = BTreeMap<String, Leased>;
@@ -84,7 +90,7 @@ pub(crate) fn check(jobs: &Jobs, fence: &FenceToken, now: DateTime<Utc>) -> Resu
     let found = jobs.get(fence.job_id().as_str());
     let current = found.is_some_and(|leased| {
         leased.epoch == fence.epoch()
-            && leased.job.state == JobState::Running
+            && job_state(&leased.job.status) == JobState::Running
             && leased
                 .job
                 .lease
@@ -99,7 +105,7 @@ pub(crate) fn check(jobs: &Jobs, fence: &FenceToken, now: DateTime<Utc>) -> Resu
         found.map(|leased| FoundLease {
             epoch: leased.epoch,
             holder: leased.job.lease.as_ref().map(|l| l.holder.clone()),
-            running: leased.job.state == JobState::Running,
+            running: job_state(&leased.job.status) == JobState::Running,
         }),
     )))
 }

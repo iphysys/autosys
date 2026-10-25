@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    SELECT document -> 'status' AS \"status!: Json<JobStatus>\"\n                    FROM jobs\n                    WHERE id = $1\n                    FOR UPDATE\n                    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status!: Json<JobStatus>",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "815c8c5aedfee46b2a2ffc982fc0061ee5c3ebb96cde24186557baf5a379144d"
+}

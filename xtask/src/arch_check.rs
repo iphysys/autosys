@@ -72,8 +72,7 @@ const SDR_REPOSITORY_USERS: &[&str] = &["contracts", "testkit", "sdr", "infra", 
 const SDR_REPOSITORY: &str = "SdrRepository";
 
 /// Where write authority may be granted: the scheduler, through bootstrap,
-/// plus the contract itself and test support. `bootstrap` and the scheduler
-/// do not exist yet (PR 12).
+/// plus the contract itself and test support.
 const AUTHORITY_GRANTERS: &[&str] = &[
     "crates/contracts",
     "crates/testkit",
@@ -215,7 +214,8 @@ pub fn dependency_violations(metadata: &Value) -> Result<Vec<String>> {
     Ok(violations)
 }
 
-/// A Rust source file: the crate directory it belongs to, its path, and its text.
+/// A Rust source file: the crate directory it belongs to (`tests/<name>`
+/// for the system tests at the root), its path, and its text.
 pub struct SourceFile {
     pub crate_dir: String,
     pub under_apps: bool,
@@ -223,10 +223,10 @@ pub struct SourceFile {
     pub text: String,
 }
 
-/// Every `.rs` file under `crates/*/` and `apps/*/`.
+/// Every `.rs` file under `crates/*/`, `apps/*/` and `tests/*/`.
 fn source_files(root: &Path) -> Result<Vec<SourceFile>> {
     let mut files = Vec::new();
-    for (top, under_apps) in [("crates", false), ("apps", true)] {
+    for (top, under_apps) in [("crates", false), ("apps", true), ("tests", false)] {
         let dir = root.join(top);
         if !dir.is_dir() {
             continue;
@@ -236,10 +236,11 @@ fn source_files(root: &Path) -> Result<Vec<SourceFile>> {
             if !crate_path.is_dir() {
                 continue;
             }
-            let crate_dir = crate_path
+            let name = crate_path
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
+            let crate_dir = crate_dir_of(top, &name);
             let mut paths = Vec::new();
             collect_rust_files(&crate_path, &mut paths)?;
             for path in paths {
@@ -259,6 +260,16 @@ fn source_files(root: &Path) -> Result<Vec<SourceFile>> {
         }
     }
     Ok(files)
+}
+
+/// The crate directory of a file under `top/name/`. A system test directory
+/// keeps its `tests/` prefix, so it never passes for a crate of that name.
+fn crate_dir_of(top: &str, name: &str) -> String {
+    if top == "tests" {
+        format!("tests/{name}")
+    } else {
+        name.to_owned()
+    }
 }
 
 fn collect_rust_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) -> Result<()> {
@@ -583,15 +594,15 @@ mod tests {
             at("crates/contracts/src/fence.rs", "pub enum UnfencedReason {"),
             at(
                 "crates/testkit/src/leases.rs",
-                "WriteAuthority::Unfenced(UnfencedReason::JobInsert)",
+                "WriteAuthority::Unfenced(UnfencedReason::JobSubmit)",
             ),
             at(
                 "crates/infra/src/persistence/jobs.rs",
-                "UnfencedReason::JobInsert",
+                "UnfencedReason::JobSubmit",
             ),
             at(
                 "crates/infra/tests/claiming.rs",
-                "UnfencedReason::JobInsert",
+                "UnfencedReason::JobSubmit",
             ),
             at("crates/api/src/routes.rs", "UnfencedReason::ApiCommand"),
         ];
@@ -603,6 +614,27 @@ mod tests {
                 .all(|v| !v.starts_with("crates/contracts"))
         );
         assert!(violations.iter().all(|v| !v.starts_with("crates/testkit")));
+    }
+
+    #[test]
+    fn the_system_tests_follow_every_rule() {
+        let in_tests = |path: &str, text: &str| SourceFile {
+            crate_dir: crate_dir_of("tests", "sdr"),
+            under_apps: false,
+            path: path.to_owned(),
+            text: text.to_owned(),
+        };
+        let files = [
+            in_tests(
+                "tests/sdr/main.rs",
+                "fn f(_: &dyn contracts::SdrRepository) {}",
+            ),
+            in_tests("tests/sdr/main.rs", "let a = UnfencedReason::JobWake;"),
+            in_tests("tests/sdr/main.rs", "ctx.authorized_by(authority)"),
+            in_tests("tests/sdr/main.rs", "let ctx = fenced_ctx(&claimed, id);"),
+        ];
+        assert_eq!(sdr_repository_violations(&files).len(), 1);
+        assert_eq!(name_violations(&files, NAME_RULES).len(), 2);
     }
 
     #[test]

@@ -2,6 +2,8 @@
 resolver = "3"
 # Crates are added when their component is first built (blueprint §10.1, §24).
 members = [
+    "apps/worker",
+    "crates/bootstrap",
     "crates/context",
     "crates/contracts",
     "crates/evaluation",
@@ -23,6 +25,7 @@ license = "MIT"
 publish = false
 
 [workspace.dependencies]
+synth-bootstrap = { path = "crates/bootstrap" }
 synth-context = { path = "crates/context" }
 synth-contracts = { path = "crates/contracts" }
 synth-evaluation = { path = "crates/evaluation" }
@@ -79,6 +82,8 @@ tokio = { version = "1.53", default-features = false }
 tokio-util = { version = "0.7", default-features = false }
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 # build.rs uses the library API only; the import_types! macro is not needed.
+# Log output of the binaries: formatted to stderr, filtered by RUST_LOG.
+tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt", "std"] }
 typify = { version = "0.8", default-features = false }
 
 [workspace.lints.rust]

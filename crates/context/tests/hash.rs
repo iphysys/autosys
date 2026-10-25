@@ -110,7 +110,9 @@ async fn events_the_model_does_not_see_do_not_change_the_hash() {
         }))
         .await;
     world
-        .event(json!({ "type": "job_state_changed", "from": "queued", "to": "running" }))
+        .event(
+            json!({ "type": "job_state_changed", "from": "queued", "to": { "state": "running" } }),
+        )
         .await;
     assert_eq!(before, hash_of(&world, &job(), &[]).await);
 
@@ -255,11 +257,12 @@ async fn one_changed_byte_anywhere_changes_the_hash() {
         .await;
     check("the SDR", hash_of(&world, &job(), &open_turn).await);
 
-    // An event.
+    // An event. A step of its own: a second completion of step-1 is not
+    // stored (ADR-0031).
     let world = populated().await;
     world
         .event(json!({
-            "type": "tool_call_completed", "step_id": "step-1", "tool": "measure",
+            "type": "tool_call_completed", "step_id": "step-9", "tool": "measure",
             "outcome": "error", "evidence_ids": [], "duration_ms": 5,
             "error": { "code": "timeout", "message": "No answer!", "retryable": true }
         }))

@@ -39,6 +39,37 @@ impl TestDb {
     /// Creates and migrates a new database. Panics with instructions when
     /// `DATABASE_URL` is unset: these tests never skip silently.
     pub async fn create() -> Self {
+        let db = Self::unmigrated().await;
+        db.database()
+            .migrate()
+            .await
+            .expect("cannot migrate the test database");
+        db
+    }
+
+    /// Creates a database migrated up to `version` only, for a test of the
+    /// migrations after it.
+    pub async fn create_at(version: i64) -> Self {
+        let db = Self::unmigrated().await;
+        db.migrate_to(version)
+            .await
+            .expect("cannot migrate the test database");
+        db
+    }
+
+    /// Applies the migrations up to `version`.
+    pub async fn migrate_to(&self, version: i64) -> Result<(), sqlx::migrate::MigrateError> {
+        infra::persistence::MIGRATOR
+            .run_to(version, &self.pool)
+            .await
+    }
+
+    /// The pool, for statements the stores do not make.
+    pub fn pool(&self) -> &PgPool {
+        &self.pool
+    }
+
+    async fn unmigrated() -> Self {
         let url = std::env::var("DATABASE_URL").expect(
             "DATABASE_URL must point at a Postgres server where tests may create databases \
              (see README, section Database)",
@@ -70,17 +101,12 @@ impl TestDb {
             .connect_with(options.clone())
             .await
             .expect("cannot connect to the test database");
-        let db = Self {
+        Self {
             server,
             options,
             name,
             pool,
-        };
-        db.database()
-            .migrate()
-            .await
-            .expect("cannot migrate the test database");
-        db
+        }
     }
 
     /// Stores built from this share one pool.

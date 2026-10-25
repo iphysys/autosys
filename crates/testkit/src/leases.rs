@@ -45,7 +45,7 @@ impl LeasedJob {
     ) -> Self {
         let created: DateTime<Utc> = clock.now();
         let jobs = Arc::new(InMemoryJobStore::new(clock));
-        jobs.insert_now(&job("job-1", run_id, created), Some(&job_insert()))
+        jobs.insert_now(&job("job-1", run_id, created), Some(&job_submit()))
             .expect("insert the leased job");
         let claimed = jobs
             .claim_now(holder, lease_for)
@@ -73,9 +73,10 @@ impl LeasedJob {
     }
 }
 
-/// A root context fenced by `claimed`.
+/// A root context fenced by `claimed`, for its job.
 pub fn fenced_ctx(claimed: &Claimed, correlation_id: CorrelationId) -> ExecutionContext {
     ExecutionContext::builder(correlation_id)
+        .job(claimed.job.id.clone())
         .authorized_by(WriteAuthority::Fenced(claimed.fence.clone()))
         .build()
 }
@@ -88,12 +89,14 @@ pub fn unfenced_ctx(authority: WriteAuthority, correlation_id: CorrelationId) ->
         .build()
 }
 
-/// Submitting a job: `JobStore::insert`.
-pub fn job_insert() -> WriteAuthority {
-    WriteAuthority::Unfenced(UnfencedReason::JobInsert)
+/// Submitting a top-level job: `JobStore::insert`, and its
+/// `job_state_changed` into queued.
+pub fn job_submit() -> WriteAuthority {
+    WriteAuthority::Unfenced(UnfencedReason::JobSubmit)
 }
 
-/// Waking a waiting or suspended job: `JobStore::wake`.
+/// Waking a waiting or suspended job: `JobStore::wake`, and its
+/// `job_state_changed` back into queued.
 pub fn job_wake() -> WriteAuthority {
     WriteAuthority::Unfenced(UnfencedReason::JobWake)
 }

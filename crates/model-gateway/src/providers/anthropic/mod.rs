@@ -15,8 +15,8 @@ use contracts::types::{
     AnthropicProviderSettings, ModelEffort, ModelProfile, ModelRetryPolicy, TokenUsage,
 };
 use contracts::{
-    ContentBlock, Error, ErrorCode, ExecutionContext, Message, ModelProvider, ModelRequest,
-    ModelResponse, ModelStopReason, Role,
+    ContentBlock, Environment, Error, ErrorCode, ExecutionContext, Message, ModelProvider,
+    ModelRequest, ModelResponse, ModelStopReason, Role,
 };
 use reqwest::Url;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
@@ -45,8 +45,9 @@ impl ProviderFactory for Factory {
         Some("config/model-providers/anthropic.schema.json")
     }
 
-    fn check(&self, profile: &ModelProfile) -> Result<(), Error> {
+    fn check(&self, profile: &ModelProfile, environment: Environment) -> Result<(), Error> {
         let settings: AnthropicProviderSettings = registry::settings(profile)?;
+        http::base_url(settings.base_url.as_str(), "base_url", environment)?;
         // The gateway sets the anthropic-* headers itself.
         no_problems(header_problems(settings.headers.as_ref(), &["anthropic-"]))
     }
@@ -55,6 +56,7 @@ impl ProviderFactory for Factory {
         &self,
         profile: &ModelProfile,
         env: &dyn Env,
+        environment: Environment,
     ) -> Result<Arc<dyn ProviderAdapter>, Error> {
         let settings: AnthropicProviderSettings = registry::settings(profile)?;
         let mut vars = EnvReader::new(env);
@@ -72,6 +74,7 @@ impl ProviderFactory for Factory {
             timeout: Duration::from_secs(profile.request_timeout_seconds.get()),
             retry: profile.retry.clone(),
             ca_bundle,
+            environment,
         })?;
         Ok(Arc::new(provider))
     }
@@ -89,7 +92,7 @@ const MESSAGES_PATH: &str = "v1/messages";
 /// environment.
 #[derive(Clone, Debug)]
 pub struct AnthropicSettings {
-    /// `https`, or `http` on a loopback host for tests.
+    /// `https`, or `http` on a loopback host in the Test environment.
     pub base_url: String,
     pub api_key: Secret,
     /// Sent as `anthropic-workspace-id` when set.
@@ -102,6 +105,7 @@ pub struct AnthropicSettings {
     pub timeout: Duration,
     pub retry: ModelRetryPolicy,
     pub ca_bundle: Option<CaBundle>,
+    pub environment: Environment,
 }
 
 /// The Claude adapter.
@@ -119,7 +123,11 @@ pub struct AnthropicProvider {
 
 impl AnthropicProvider {
     pub fn new(settings: AnthropicSettings) -> Result<Self, Error> {
-        let base = http::base_url(&settings.base_url, "anthropic base_url")?;
+        let base = http::base_url(
+            &settings.base_url,
+            "anthropic base_url",
+            settings.environment,
+        )?;
         let mut headers = HeaderMap::new();
         for (name, value) in &settings.headers {
             insert_header(&mut headers, name, value)?;

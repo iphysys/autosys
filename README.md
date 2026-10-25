@@ -214,6 +214,22 @@ cargo test -p synth-model-gateway --lib -- --ignored --test-threads=1
 cargo test -p synth-runtime --test live -- --ignored
 ```
 
+## Worker
+
+The `worker` binary (`apps/worker`) claims jobs and runs them; a run outlives any one process ([ADR-0031](docs/adr/0031-scheduler-and-recovery-v0.md)). `crates/bootstrap` builds it from `config/`, `prompts/` and the environment, after startup checks that stop it with exit code 2.
+
+```sh
+cargo run -p synth-worker -- --config config --prompts prompts --id worker-1
+```
+
+- **Environment.** `DATABASE_URL` and the model keys `config/models/routing.yaml` names are required. `SYNTH_ENVIRONMENT` is `local`, `test` or `production`; unset means production. `SYNTH_WORKER_ID` names the worker unless `--id` does. `RUST_LOG` filters the log on stderr, `info` by default. No value is ever logged.
+- **Settings.** `config/worker.yaml` holds the lease, heartbeat, poll and retry intervals, the pool, and the tool servers to connect to. Short intervals are allowed only in the test environment.
+- **Jobs.** A job moves through queued, running, suspended (waiting for an approval), and completed, cancelled or failed. Every change is a `job_state_changed` event. A retryable error sends a job back to the queue with a growing delay, up to `max_attempts`.
+- **Crashes.** The run is checkpointed at every phase boundary. After a crash, another worker claims the job once its lease expires and continues from the checkpoint. A tool call or commit never happens twice: a call to a tool that is not idempotent and was interrupted comes back as `outcome_unknown`.
+- **Shutdown.** Ctrl-C, SIGTERM or Ctrl-Break gives the running job back to the queue and exits with 0. A second signal exits at once.
+
+`cargo test -p synth-bootstrap --test system` runs every crash point and the worker scenarios on Postgres, with a scripted model and fake tools; it needs `DATABASE_URL`. `cargo xtask test-tools` also kills a real worker process mid-run against the build123d server.
+
 ## Benchmarks
 
 Benchmark problems live in `evals/benchmarks/<split>/<id>/problem.yaml` and follow `schemas/benchmarks/benchmark-problem.schema.json` ([ADR-0025](docs/adr/0025-benchmark-problem-format.md)). Only `dev` problems are stored in the repository. The team writes them; values come from the specification each file cites in `source`, unchanged.
@@ -267,6 +283,7 @@ A mass or other reference value is an arithmetic expression over parameter IDs. 
 | [0028](docs/adr/0028-pluggable-model-providers.md) | Pluggable model providers | Proposed |
 | [0029](docs/adr/0029-context-assembly-v0.md) | Context assembly v0 | Proposed |
 | [0030](docs/adr/0030-query-loop-v0.md) | Query loop v0 | Proposed |
+| [0031](docs/adr/0031-scheduler-and-recovery-v0.md) | Scheduler and recovery v0 | Proposed |
 | [0032](docs/adr/0032-lease-fencing.md) | Lease fencing | Proposed |
 
 ## License

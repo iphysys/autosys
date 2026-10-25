@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                        SELECT document AS \"document!: Json<Event>\"\n                        FROM events\n                        WHERE run_id = $1 AND dedupe_key = $2\n                        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "document!: Json<Event>",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "document"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "13ce95f74a2754171a3b3e373f919a3caa0503ea1296774fed4511374d4078d9"
+}

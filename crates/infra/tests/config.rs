@@ -6,19 +6,24 @@
 use std::fs;
 use std::path::PathBuf;
 
-use contracts::ErrorCode;
 use contracts::types::{
     AgentSpec, AgentSpecOnRepairExhausted, ApprovalTrigger, AutonomyPolicy, ContextBudgets,
-    ContextPolicy, GatesPolicy, RuntimeSettings, ToolOverlay,
+    ContextPolicy, GatesPolicy, RuntimeSettings, ToolOverlay, WorkerSettings,
 };
+use contracts::{Environment, ErrorCode};
 use infra::config::ConfigLoader;
 
 fn config_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../config")
 }
 
+/// The committed `config/` is production configuration.
 fn loader() -> ConfigLoader {
-    ConfigLoader::new().expect("config schemas compile")
+    loader_for(Environment::Production)
+}
+
+fn loader_for(environment: Environment) -> ConfigLoader {
+    ConfigLoader::new(environment).expect("config schemas compile")
 }
 
 fn rejected<T: infra::config::ConfigFile + std::fmt::Debug>(yaml: &str) -> String {
@@ -134,6 +139,7 @@ tools:
     access: mutating
     external_side_effects: false
     idempotent: true
+    idempotency_test: tests/test_cad.py::test_create_part_twice_with_one_key
     concurrency_safe: true
     timeout_seconds: 60
     requires_approval: false
@@ -213,6 +219,8 @@ fn overlay_schema_paths_must_name_schemas_that_exist() {
     assert!(!problems[0].contains("request_schema"), "{problems:#?}");
 }
 
+/// Not idempotent until the server has a test that repeats a call with one
+/// idempotency key (ADR-0031).
 #[test]
 fn the_build123d_tools_are_read_only_without_side_effects_or_approval() {
     let overlay: ToolOverlay = loader()
@@ -222,7 +230,7 @@ fn the_build123d_tools_are_read_only_without_side_effects_or_approval() {
     assert_eq!(names, ["create_plate", "measure"]);
     for tool in &overlay.tools {
         assert!(!tool.external_side_effects, "{}", tool.name.as_str());
-        assert!(tool.idempotent, "{}", tool.name.as_str());
+        assert!(!tool.idempotent, "{}", tool.name.as_str());
         assert!(!tool.requires_approval, "{}", tool.name.as_str());
         assert!(tool.request_schema.is_some() && tool.result_schema.is_some());
     }
@@ -269,4 +277,118 @@ fn the_main_orchestrator_has_the_approved_tools_and_limits() {
         ],
         [1_000_000, 30, 40, 600, 3]
     );
+}
+
+// ---------------------------------------------------------------- worker ---
+
+/// worker.yaml with the given intervals, and one tool server.
+fn worker_yaml(lease: u64, heartbeat: u64, poll: u64, jitter: u64) -> String {
+    [
+        r#"schema_version: "0.1""#.to_owned(),
+        format!("lease_ms: {lease}"),
+        format!("heartbeat_ms: {heartbeat}"),
+        format!("poll_interval_ms: {poll}"),
+        format!("poll_jitter_ms: {jitter}"),
+        "max_attempts: 3".to_owned(),
+        "retry_backoff_min_ms: 5000".to_owned(),
+        "retry_backoff_max_ms: 60000".to_owned(),
+        "database: { max_connections: 4, acquire_timeout_ms: 1000, operation_timeout_ms: 1000 }"
+            .to_owned(),
+        "tool_servers:".to_owned(),
+        r#"  - { server_id: build123d, url: "http://127.0.0.1:18123/mcp", connect_timeout_ms: 1000, call_timeout_ms: 1000 }"#
+            .to_owned(),
+        String::new(),
+    ]
+    .join("\n")
+}
+
+fn worker_problem(environment: Environment, yaml: &str) -> String {
+    let error = loader_for(environment)
+        .parse::<WorkerSettings>(yaml, "worker.yaml")
+        .expect_err("the worker settings should be rejected");
+    assert_eq!(error.code(), ErrorCode::InvalidInput, "{error}");
+    error.message().to_owned()
+}
+
+#[test]
+fn the_committed_worker_settings_hold_in_every_environment() {
+    for environment in [
+        Environment::Local,
+        Environment::Test,
+        Environment::Production,
+    ] {
+        let settings: WorkerSettings = loader_for(environment)
+            .load(&config_dir().join("worker.yaml"))
+            .unwrap_or_else(|e| panic!("{environment}: {e}"));
+        assert_eq!(settings.lease_ms.get(), 30_000);
+    }
+}
+
+#[test]
+fn short_test_intervals_hold_only_in_the_test_environment() {
+    let fast = worker_yaml(2_000, 500, 100, 10);
+    loader_for(Environment::Test)
+        .parse::<WorkerSettings>(&fast, "worker.yaml")
+        .expect("short intervals are for tests");
+    for environment in [Environment::Local, Environment::Production] {
+        let message = worker_problem(environment, &fast);
+        for field in [
+            "lease_ms (2000)",
+            "heartbeat_ms (500)",
+            "poll_interval_ms (100)",
+        ] {
+            assert!(message.contains(field), "{environment}: {message}");
+        }
+        assert!(
+            message.contains(&format!("the {environment} environment")),
+            "{message}"
+        );
+    }
+}
+
+#[test]
+fn the_worker_intervals_must_fit_each_other() {
+    let test = Environment::Test;
+    let message = worker_problem(test, &worker_yaml(3_000, 1_500, 100, 10));
+    assert!(message.contains("at most a third of lease_ms"), "{message}");
+    let message = worker_problem(test, &worker_yaml(3_000, 1_000, 1_000, 10));
+    assert!(message.contains("shorter than heartbeat_ms"), "{message}");
+    let message = worker_problem(test, &worker_yaml(3_000, 1_000, 100, 100));
+    assert!(
+        message.contains("smaller than poll_interval_ms"),
+        "{message}"
+    );
+    let backoff = worker_yaml(3_000, 1_000, 100, 10)
+        .replace("retry_backoff_max_ms: 60000", "retry_backoff_max_ms: 10");
+    let message = worker_problem(test, &backoff);
+    assert!(
+        message.contains("at least retry_backoff_min_ms"),
+        "{message}"
+    );
+    let twice = worker_yaml(3_000, 1_000, 100, 10).replace(
+        "tool_servers:\n",
+        "tool_servers:\n  - { server_id: build123d, url: \"http://127.0.0.1:1/mcp\", connect_timeout_ms: 1, call_timeout_ms: 1 }\n",
+    );
+    let message = worker_problem(test, &twice);
+    assert!(message.contains("build123d is listed twice"), "{message}");
+}
+
+#[test]
+fn an_idempotent_tool_needs_a_named_repeat_test() {
+    let overlay = |extra: &str| {
+        format!(
+            "schema_version: \"0.1\"\nserver_id: build123d\ndescription: d\ntools:\n  - name: create_plate\n    access: read_only\n    external_side_effects: false\n    idempotent: true\n{extra}    concurrency_safe: true\n    timeout_seconds: 5\n    requires_approval: false\n"
+        )
+    };
+    let message = rejected::<ToolOverlay>(&overlay(""));
+    assert!(
+        message.contains("create_plate: idempotent: true needs an idempotency_test"),
+        "{message}"
+    );
+    loader()
+        .parse::<ToolOverlay>(
+            &overlay("    idempotency_test: tests/test_tools.py::test_repeat_with_one_key\n"),
+            "build123d.yaml",
+        )
+        .expect("a named test satisfies the rule");
 }

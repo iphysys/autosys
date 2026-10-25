@@ -16,8 +16,8 @@ use contracts::types::{
     ModelProfile, ModelRetryPolicy, OpenAiCompatibleProviderSettings, TokenUsage,
 };
 use contracts::{
-    ContentBlock, Error, ErrorCode, ExecutionContext, Message, ModelProvider, ModelRequest,
-    ModelResponse, ModelStopReason, Role,
+    ContentBlock, Environment, Error, ErrorCode, ExecutionContext, Message, ModelProvider,
+    ModelRequest, ModelResponse, ModelStopReason, Role,
 };
 use reqwest::Url;
 use reqwest::header::{AUTHORIZATION, HeaderMap};
@@ -46,15 +46,17 @@ impl ProviderFactory for Factory {
         Some("config/model-providers/openai-compatible.schema.json")
     }
 
-    fn check(&self, profile: &ModelProfile) -> Result<(), Error> {
+    fn check(&self, profile: &ModelProfile, _environment: Environment) -> Result<(), Error> {
         let settings: OpenAiCompatibleProviderSettings = registry::settings(profile)?;
         no_problems(header_problems(settings.headers.as_ref(), &[]))
     }
 
+    /// The base URL comes from a variable, so its scheme is checked here.
     fn build(
         &self,
         profile: &ModelProfile,
         env: &dyn Env,
+        environment: Environment,
     ) -> Result<Arc<dyn ProviderAdapter>, Error> {
         let settings: OpenAiCompatibleProviderSettings = registry::settings(profile)?;
         let mut vars = EnvReader::new(env);
@@ -70,6 +72,7 @@ impl ProviderFactory for Factory {
             timeout: Duration::from_secs(profile.request_timeout_seconds.get()),
             retry: profile.retry.clone(),
             ca_bundle,
+            environment,
         })?;
         Ok(Arc::new(provider))
     }
@@ -86,7 +89,7 @@ const TOOL_ERROR_PREFIX: &str = "Error: ";
 #[derive(Clone, Debug)]
 pub struct OpenAiCompatibleSettings {
     /// Up to and excluding `/chat/completions`. `https`, or `http` on a
-    /// loopback host for tests.
+    /// loopback host in the Test environment.
     pub base_url: String,
     /// The environment variable `base_url` came from, named in errors.
     pub base_url_origin: String,
@@ -96,6 +99,7 @@ pub struct OpenAiCompatibleSettings {
     pub timeout: Duration,
     pub retry: ModelRetryPolicy,
     pub ca_bundle: Option<CaBundle>,
+    pub environment: Environment,
 }
 
 /// The OpenAI-compatible adapter.
@@ -111,7 +115,11 @@ pub struct OpenAiCompatibleProvider {
 
 impl OpenAiCompatibleProvider {
     pub fn new(settings: OpenAiCompatibleSettings) -> Result<Self, Error> {
-        let base = http::base_url(&settings.base_url, &settings.base_url_origin)?;
+        let base = http::base_url(
+            &settings.base_url,
+            &settings.base_url_origin,
+            settings.environment,
+        )?;
         let mut headers = HeaderMap::new();
         for (name, value) in &settings.headers {
             insert_header(&mut headers, name, value)?;

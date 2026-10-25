@@ -1,9 +1,9 @@
 {
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "id": "job-0001",
   "run_id": "run-0001",
   "project_id": "example-project",
-  "state": "running",
+  "status": { "state": "running" },
   "task": {
     "schema_version": "0.1",
     "id": "task-0001",
@@ -32,6 +32,8 @@
   },
   "idempotency_key": "job-0001",
   "attempt": 1,
+  "failed_attempts": 0,
+  "attempt_history": [],
   "created_at": "2026-10-22T09:00:00Z",
   "updated_at": "2026-10-22T09:03:30Z",
   "sdr_base_version": 0,

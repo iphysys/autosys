@@ -19,19 +19,21 @@ synth-model-gateway.workspace = true
 synth-sdr.workspace = true
 synth-tools.workspace = true
 
+# CheckpointSink is held as a trait object (ADR-0015).
+async-trait.workspace = true
 futures-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["macros", "sync", "time"] }
+# The lease token a heartbeat cancels.
+tokio-util.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
 synth-testkit.workspace = true
 
-# The scripted provider adapter of the tests (ADR-0015).
-async-trait.workspace = true
 # Checks that a bundled tool definition compiles on its own.
 jsonschema.workspace = true
 # Reads the committed config/ in tests, as crates/context does.

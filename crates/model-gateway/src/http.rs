@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use contracts::{Error, ErrorCode};
+use contracts::{Environment, Error, ErrorCode};
 use reqwest::Url;
 use rustls::pki_types::CertificateDer;
 use rustls::pki_types::pem::PemObject;
@@ -67,15 +67,22 @@ pub(crate) fn client(
         .map_err(|e| internal("cannot build the HTTP client", e))
 }
 
-/// Parses a provider base URL. It must be `https`, except on a loopback host,
-/// where plain `http` serves local test servers.
-pub(crate) fn base_url(raw: &str, origin: &str) -> Result<Url, Error> {
+/// Parses a provider base URL. It must be `https`, except in the Test
+/// environment, where plain `http` on a loopback host serves local test
+/// servers.
+pub(crate) fn base_url(raw: &str, origin: &str, environment: Environment) -> Result<Url, Error> {
     let url = Url::parse(raw)
         .map_err(|e| Error::new(ErrorCode::InvalidInput, format!("{origin}: not a URL: {e}")))?;
     let loopback = matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
     match url.scheme() {
         "https" => Ok(url),
-        "http" if loopback => Ok(url),
+        "http" if loopback && environment == Environment::Test => Ok(url),
+        "http" if loopback => Err(Error::new(
+            ErrorCode::InvalidInput,
+            format!(
+                "{origin}: plain http on a loopback host is allowed only in the test environment, not in {environment}"
+            ),
+        )),
         _ => Err(Error::new(
             ErrorCode::InvalidInput,
             format!("{origin}: must be an https URL"),
@@ -134,31 +141,53 @@ mod tests {
     use super::*;
 
     #[test]
-    fn base_urls_must_be_https_except_on_loopback() {
-        assert!(base_url("https://api.example.com", "test").is_ok());
-        assert!(base_url("http://127.0.0.1:8080", "test").is_ok());
-        assert!(base_url("http://localhost:8080/v1", "test").is_ok());
-        assert!(base_url("http://[::1]:8080", "test").is_ok());
-        let plain = base_url("http://api.example.com", "PLINY_BASE_URL").expect_err("plain http");
+    fn base_urls_must_be_https_except_on_loopback_in_test() {
+        let test = Environment::Test;
+        assert!(base_url("https://api.example.com", "test", test).is_ok());
+        assert!(base_url("http://127.0.0.1:8080", "test", test).is_ok());
+        assert!(base_url("http://localhost:8080/v1", "test", test).is_ok());
+        assert!(base_url("http://[::1]:8080", "test", test).is_ok());
+        let plain =
+            base_url("http://api.example.com", "PLINY_BASE_URL", test).expect_err("plain http");
         assert!(plain.message().contains("PLINY_BASE_URL"), "{plain}");
-        assert!(base_url("not a url", "test").is_err());
+        assert!(base_url("not a url", "test", test).is_err());
+    }
+
+    #[test]
+    fn loopback_http_is_refused_outside_test() {
+        for environment in [Environment::Local, Environment::Production] {
+            let error = base_url("http://127.0.0.1:8080", "PLINY_BASE_URL", environment)
+                .expect_err("loopback http outside test");
+            assert!(
+                error.message().contains("only in the test environment"),
+                "{error}"
+            );
+            assert!(base_url("https://api.example.com", "t", environment).is_ok());
+        }
     }
 
     #[test]
     fn endpoints_keep_the_base_path() {
-        let base = base_url("https://host.example/api/llm", "t").expect("valid");
+        let base =
+            base_url("https://host.example/api/llm", "t", Environment::Production).expect("valid");
         assert_eq!(
             endpoint(&base, "chat/completions").expect("joins").as_str(),
             "https://host.example/api/llm/chat/completions"
         );
-        let trailing = base_url("https://host.example/api/llm/", "t").expect("valid");
+        let trailing = base_url(
+            "https://host.example/api/llm/",
+            "t",
+            Environment::Production,
+        )
+        .expect("valid");
         assert_eq!(
             endpoint(&trailing, "chat/completions")
                 .expect("joins")
                 .as_str(),
             "https://host.example/api/llm/chat/completions"
         );
-        let root = base_url("https://api.example.com", "t").expect("valid");
+        let root =
+            base_url("https://api.example.com", "t", Environment::Production).expect("valid");
         assert_eq!(
             endpoint(&root, "v1/messages").expect("joins").as_str(),
             "https://api.example.com/v1/messages"

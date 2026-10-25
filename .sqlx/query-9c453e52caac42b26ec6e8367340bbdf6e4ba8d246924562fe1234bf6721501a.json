@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                        SELECT EXISTS (\n                            SELECT 1 FROM jobs\n                            WHERE (state = 'queued'\n                                    AND (not_before IS NULL OR not_before <= autosys_now()))\n                                OR (state = 'running'\n                                    AND (lease_expires_at IS NULL OR lease_expires_at <= autosys_now()))\n                        ) AS \"exists!\"\n                        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exists!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "9c453e52caac42b26ec6e8367340bbdf6e4ba8d246924562fe1234bf6721501a"
+}
