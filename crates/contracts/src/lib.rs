@@ -19,6 +19,7 @@ pub mod ids;
 pub mod job;
 pub mod model;
 pub mod schema;
+pub mod spawn;
 pub mod storage;
 pub mod tool;
 
@@ -44,6 +45,7 @@ pub use model::{
     ToolSpec,
 };
 pub use schema::SchemaSet;
+pub use spawn::{BackgroundTask, Spawner, TaskHandle};
 pub use storage::{
     ArtifactStore, Claimed, EventLog, EvidenceStore, JobStore, JobWrite, NewEvent, NewStep, Parked,
     RecordWrite, SdrRepository, StepStart, StepStore, WakeReason,

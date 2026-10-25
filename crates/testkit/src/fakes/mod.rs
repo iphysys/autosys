@@ -3,6 +3,7 @@
 
 mod check;
 mod gate;
+mod keyed_effect;
 mod model;
 mod recorded;
 mod sdr;
@@ -11,6 +12,7 @@ mod tool;
 
 pub use check::FakeCheck;
 pub use gate::FakeGate;
+pub use keyed_effect::{KeyedEffects, go_on};
 pub use model::{ScriptedModelProvider, text_response, tool_call_response};
 pub use recorded::RecordedModelProvider;
 pub use sdr::{Fault, FaultySdrRepository, faulty_sdr_storage, faulty_sdr_storage_after_head};
