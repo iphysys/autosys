@@ -15,4 +15,4 @@ pub use model::{ScriptedModelProvider, text_response, tool_call_response};
 pub use recorded::RecordedModelProvider;
 pub use sdr::{Fault, FaultySdrRepository, faulty_sdr_storage, faulty_sdr_storage_after_head};
 pub use subscriber::RecordingSubscriber;
-pub use tool::FakeTool;
+pub use tool::{FakeTool, HookFuture, Slot};

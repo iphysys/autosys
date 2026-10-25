@@ -48,7 +48,7 @@ use serde_json::{Value, json};
 use testkit::builders::{id, parse};
 use testkit::clock::ManualClock;
 use testkit::fakes::FakeTool;
-use testkit::leases::LeasedJob;
+use testkit::leases::{HOLDER, LONG_LEASE, LeasedJob};
 use testkit::stores::{
     InMemoryEventLog, InMemoryEvidenceStore, InMemoryStepStore, fenced_sdr_storage,
 };
@@ -536,6 +536,10 @@ pub struct Setup {
     /// A profile and the adapter that answers for it instead of the script,
     /// for the live tests. The profile becomes the default.
     pub provider: Option<(String, Arc<dyn ProviderAdapter>)>,
+    /// The tool overlay, the committed build123d one unless a test changes it.
+    pub overlay: ToolOverlay,
+    /// How long `worker-1`'s claim of the job lasts.
+    pub lease: Duration,
 }
 
 impl Setup {
@@ -548,7 +552,20 @@ impl Setup {
             create_plate: returning("create_plate", plate_result()),
             measure: returning("measure", measure_result()),
             provider: None,
+            overlay: build123d_overlay(),
+            lease: LONG_LEASE,
         }
+    }
+
+    pub fn overlay(mut self, overlay: ToolOverlay) -> Self {
+        self.overlay = overlay;
+        self
+    }
+
+    /// A lease short enough for the test to let it expire.
+    pub fn lease(mut self, lease: Duration) -> Self {
+        self.lease = lease;
+        self
     }
 
     pub fn provider(mut self, profile: &str, provider: Arc<dyn ProviderAdapter>) -> Self {
@@ -588,6 +605,8 @@ pub struct World {
     pub measure: Arc<FakeTool>,
     /// The claimed job of run `run-1`, whose fence every store checks.
     pub leased: LeasedJob,
+    pub tools: Arc<ToolGateway>,
+    pub steps: Arc<InMemoryStepStore>,
 }
 
 pub fn harness() -> HarnessVersions {
@@ -609,7 +628,7 @@ impl World {
     /// committed ones.
     pub async fn with_gates(setup: Setup, commit_gates: Option<Vec<Arc<dyn Gate>>>) -> Self {
         let clock = Arc::new(ManualClock::at_epoch());
-        let leased = LeasedJob::new(clock.clone(), RUN);
+        let leased = LeasedJob::with_lease(clock.clone(), RUN, &id(HOLDER), setup.lease);
         let events = Arc::new(InMemoryEventLog::fenced_by(leased.leases()));
         let evidence = Arc::new(InMemoryEvidenceStore::new());
         let steps = Arc::new(InMemoryStepStore::fenced_by(leased.leases()));
@@ -619,7 +638,7 @@ impl World {
         );
         seed(&sdr, setup.requirements, &run_ctx(&leased)).await;
 
-        let overlay = build123d_overlay();
+        let overlay = setup.overlay;
         let tool_gates = GateRunner::new(
             vec![
                 Arc::new(
@@ -656,7 +675,7 @@ impl World {
         let tools = Arc::new(ToolGateway::new(
             registry,
             tool_gates,
-            steps,
+            steps.clone(),
             evidence.clone(),
             events.clone(),
             clock.clone(),
@@ -728,7 +747,7 @@ impl World {
             sdr: sdr.clone(),
             context,
             context_profiles: context_profiles(),
-            tools,
+            tools: tools.clone(),
             evaluator,
             commit_gates,
             models,
@@ -748,6 +767,8 @@ impl World {
             create_plate,
             measure,
             leased,
+            tools,
+            steps,
         }
     }
 
