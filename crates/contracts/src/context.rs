@@ -5,7 +5,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::error::{Error, ErrorCode};
 use crate::fence::WriteAuthority;
-use crate::ids::{AgentId, CorrelationId, ProjectId, RunId, StepId, TaskId};
+use crate::ids::{AgentId, CorrelationId, JobId, ProjectId, RunId, StepId, TaskId};
 
 /// Correlation ids for tracing, a cancellation token, and the authority for
 /// store writes.
@@ -22,6 +22,7 @@ use crate::ids::{AgentId, CorrelationId, ProjectId, RunId, StepId, TaskId};
 pub struct ExecutionContext {
     correlation_id: CorrelationId,
     project_id: Option<ProjectId>,
+    job_id: Option<JobId>,
     run_id: Option<RunId>,
     task_id: Option<TaskId>,
     step_id: Option<StepId>,
@@ -36,6 +37,7 @@ impl ExecutionContext {
         Self {
             correlation_id,
             project_id: None,
+            job_id: None,
             run_id: None,
             task_id: None,
             step_id: None,
@@ -54,6 +56,11 @@ impl ExecutionContext {
 
     pub fn with_project(mut self, id: ProjectId) -> Self {
         self.project_id = Some(id);
+        self
+    }
+
+    pub fn with_job(mut self, id: JobId) -> Self {
+        self.job_id = Some(id);
         self
     }
 
@@ -87,6 +94,11 @@ impl ExecutionContext {
 
     pub fn project_id(&self) -> Option<&ProjectId> {
         self.project_id.as_ref()
+    }
+
+    /// The job the work runs for. Approval ids derive from it.
+    pub fn job_id(&self) -> Option<&JobId> {
+        self.job_id.as_ref()
     }
 
     pub fn run_id(&self) -> Option<&RunId> {
@@ -145,6 +157,11 @@ pub struct ExecutionContextBuilder {
 impl ExecutionContextBuilder {
     pub fn project(mut self, id: ProjectId) -> Self {
         self.ctx.project_id = Some(id);
+        self
+    }
+
+    pub fn job(mut self, id: JobId) -> Self {
+        self.ctx.job_id = Some(id);
         self
     }
 
@@ -252,12 +269,19 @@ mod tests {
     fn the_builder_sets_ids_and_authority() {
         let built = ExecutionContext::builder(CorrelationId::try_from("corr-1").expect("valid id"))
             .project(ProjectId::try_from("p1").expect("valid id"))
+            .job(JobId::try_from("job-1").expect("valid id"))
             .run(RunId::try_from("run-1").expect("valid id"))
             .task(TaskId::try_from("task-1").expect("valid id"))
             .agent(AgentId::try_from("agent-1").expect("valid id"))
             .authorized_by(fenced())
             .build();
         assert_eq!(built.project_id().map(|p| p.as_str()), Some("p1"));
+        assert_eq!(built.job_id().map(|j| j.as_str()), Some("job-1"));
+        assert_eq!(
+            built.for_step(step("step-1")).job_id(),
+            built.job_id(),
+            "a step keeps its job"
+        );
         assert_eq!(built.run_id().map(|r| r.as_str()), Some("run-1"));
         assert_eq!(built.task_id().map(|t| t.as_str()), Some("task-1"));
         assert_eq!(built.agent_id().map(|a| a.as_str()), Some("agent-1"));

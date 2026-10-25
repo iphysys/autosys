@@ -6,6 +6,7 @@
 //!
 //! Traits held as trait objects use `async-trait` (ADR-0015).
 
+pub mod canonical;
 pub mod check;
 pub mod context;
 pub mod environment;
@@ -25,6 +26,7 @@ pub mod tool;
 /// on `synth-schema-types` directly.
 pub use schema_types as types;
 
+pub use canonical::canonical_sha256;
 pub use check::{Check, CheckDescriptor, CheckFinding, CheckSubject};
 pub use context::{Clock, ExecutionContext, ExecutionContextBuilder, SystemClock};
 pub use environment::Environment;

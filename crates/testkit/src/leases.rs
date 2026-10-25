@@ -73,9 +73,10 @@ impl LeasedJob {
     }
 }
 
-/// A root context fenced by `claimed`.
+/// A root context fenced by `claimed`, for its job.
 pub fn fenced_ctx(claimed: &Claimed, correlation_id: CorrelationId) -> ExecutionContext {
     ExecutionContext::builder(correlation_id)
+        .job(claimed.job.id.clone())
         .authorized_by(WriteAuthority::Fenced(claimed.fence.clone()))
         .build()
 }

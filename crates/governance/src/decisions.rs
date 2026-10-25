@@ -4,11 +4,11 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use contracts::ids::{ApprovalId, EvidenceId, Identifier, RunId};
-use contracts::types::{Actor, ApprovalAnswer, EventPayload, GateDecision, Timestamp};
+use contracts::ids::{ApprovalId, EvidenceId, Identifier, JobId, RunId};
+use contracts::types::{Actor, ApprovalAnswer, EventPayload, GateDecision, Sha256, Timestamp};
 use contracts::{
     Clock, Error, ErrorCode, EventLog, ExecutionContext, Gate, GateOutcome, GateRequest,
-    GateSubject, NewEvent,
+    GateSubject, NewEvent, canonical_sha256,
 };
 use sha2::Digest;
 
@@ -28,8 +28,9 @@ pub struct Decision {
 ///   `reject_transition`, `retry`, `ask`, `allow`. With no gate for the
 ///   subject's kind, it is `deny`.
 /// - On `ask`, an `approval_requested` event is written. The approval id is
-///   derived from the gate and subject, so a resumed run asks for the same
-///   approval.
+///   derived from the job, the step and the subject's content (ADR-0031):
+///   a step run again after a crash, or a resumed run, asks for the same
+///   approval, and a different proposal for a new one.
 pub struct GateRunner {
     gates: Vec<Arc<dyn Gate>>,
     events: Arc<dyn EventLog>,
@@ -113,7 +114,13 @@ impl GateRunner {
                 .find(|(_, o)| o.decision == GateDecision::Ask)
                 .map(|(id, _)| id.clone())
                 .ok_or_else(|| Error::new(ErrorCode::Internal, "ask without an asking gate"))?;
-            let approval_id = approval_id(&asking, &subject_id)?;
+            let job_id = ctx.job_id().ok_or_else(|| {
+                Error::new(
+                    ErrorCode::Internal,
+                    "an approval needs a job in the context",
+                )
+            })?;
+            let approval_id = approval_id(job_id, &subject_id, &subject_sha256(&subject)?)?;
             let summary = combined.reasons.join("; ");
             self.record(
                 &run_id,
@@ -222,9 +229,30 @@ fn subject_id(subject: &GateSubject<'_>) -> Result<Identifier, Error> {
         .map_err(|_| Error::new(ErrorCode::Internal, format!("invalid subject id {id}")))
 }
 
-/// `appr-` and 32 hex digits of a hash of the gate and subject.
-fn approval_id(gate: &Identifier, subject: &Identifier) -> Result<ApprovalId, Error> {
-    let digest = sha2::Sha256::digest(format!("{}\u{1f}{}", gate.as_str(), subject.as_str()));
+/// The canonical sha256 of what is decided on: the tool's name and
+/// arguments, or the whole transition.
+fn subject_sha256(subject: &GateSubject<'_>) -> Result<Sha256, Error> {
+    let value = match subject {
+        GateSubject::ToolCall { request, .. } => serde_json::json!({
+            "tool": request.tool.as_str(),
+            "arguments": request.arguments,
+        }),
+        GateSubject::SdrCommit { transition, .. } => serde_json::to_value(transition)
+            .map_err(|e| Error::new(ErrorCode::Internal, format!("a transition: {e}")))?,
+    };
+    canonical_sha256(&value)
+}
+
+/// `appr-` and 32 hex digits of a hash of the job, the subject (a tool call's
+/// step id, or a transition id, which derives from the step that proposed
+/// it) and the subject's content.
+fn approval_id(job: &JobId, subject: &Identifier, content: &Sha256) -> Result<ApprovalId, Error> {
+    let digest = sha2::Sha256::digest(format!(
+        "{}\u{1f}{}\u{1f}{}",
+        job.as_str(),
+        subject.as_str(),
+        content.as_str()
+    ));
     let hex: String = digest.iter().take(16).map(|b| format!("{b:02x}")).collect();
     format!("appr-{hex}")
         .parse()
@@ -279,17 +307,33 @@ mod tests {
     }
 
     #[test]
-    fn approval_ids_are_stable_per_gate_and_subject() {
-        let gate: Identifier = "approval.sdr_commit".parse().unwrap();
-        let a: Identifier = "tr-1".parse().unwrap();
-        let b: Identifier = "tr-2".parse().unwrap();
+    fn approval_ids_follow_the_job_the_subject_and_its_content() {
+        let job: JobId = "job-1".parse().unwrap();
+        let other_job: JobId = "job-2".parse().unwrap();
+        let tr1: Identifier = "tr-1".parse().unwrap();
+        let tr2: Identifier = "tr-2".parse().unwrap();
+        let content: Sha256 = format!("sha256:{}", "a".repeat(64)).parse().unwrap();
+        let changed: Sha256 = format!("sha256:{}", "b".repeat(64)).parse().unwrap();
+        let id = |job, subject, content| approval_id(job, subject, content).unwrap();
         assert_eq!(
-            approval_id(&gate, &a).unwrap(),
-            approval_id(&gate, &a).unwrap()
+            id(&job, &tr1, &content),
+            id(&job, &tr1, &content),
+            "a re-run asks again"
         );
         assert_ne!(
-            approval_id(&gate, &a).unwrap(),
-            approval_id(&gate, &b).unwrap()
+            id(&job, &tr1, &content),
+            id(&job, &tr2, &content),
+            "another step"
+        );
+        assert_ne!(
+            id(&job, &tr1, &content),
+            id(&job, &tr1, &changed),
+            "another proposal"
+        );
+        assert_ne!(
+            id(&job, &tr1, &content),
+            id(&other_job, &tr1, &content),
+            "another job"
         );
     }
 }

@@ -14,6 +14,8 @@ name = "governance"
 synth-contracts.workspace = true
 
 async-trait.workspace = true
+# The canonical form of an approval's subject.
+serde_json.workspace = true
 sha2.workspace = true
 tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
@@ -21,7 +23,6 @@ tracing.workspace = true
 [dev-dependencies]
 synth-testkit.workspace = true
 
-serde_json.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
 
 [lints]
