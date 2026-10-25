@@ -16,6 +16,7 @@ use schema_types::{
 
 use crate::context::ExecutionContext;
 use crate::error::Error;
+use crate::fence::FenceToken;
 use crate::ids::{
     ApprovalId, ArtifactId, CorrelationId, EvidenceId, Identifier, JobId, ProjectId, RunId,
     SdrVersion, StepId, ToolName,
@@ -27,6 +28,21 @@ pub enum WakeReason {
     ApprovalAnswered(ApprovalId),
     /// Wakes any waiting or suspended job, whatever its wake condition.
     CancelRequested,
+}
+
+/// A job a claim leased, and the fence every write under that lease carries
+/// (ADR-0032).
+#[non_exhaustive]
+#[derive(Clone, Debug, PartialEq)]
+pub struct Claimed {
+    pub job: Job,
+    pub fence: FenceToken,
+}
+
+impl Claimed {
+    pub fn new(job: Job, fence: FenceToken) -> Self {
+        Self { job, fence }
+    }
 }
 
 #[async_trait]
