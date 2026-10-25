@@ -2289,6 +2289,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "synth-artifacts"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde_json",
+ "sha2 0.11.0",
+ "synth-contracts",
+ "synth-sdr",
+ "synth-testkit",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "synth-bootstrap"
 version = "0.1.0"
 dependencies = [
