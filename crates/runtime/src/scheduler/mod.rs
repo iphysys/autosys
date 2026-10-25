@@ -617,6 +617,9 @@ impl Scheduler {
                 tokio::time::sleep(self.settings.poll).await;
                 continue;
             }
+            // Read the last seq before the cancels, so a cancel appended
+            // between the two reads is above `upto` and read next time.
+            let upto = self.events.last_seq(run).await.unwrap_or(after);
             match self
                 .events
                 .read_kinds(run, after, &[EventKind::CANCEL_REQUESTED], PAGE)
@@ -626,10 +629,12 @@ impl Scheduler {
                     ctx.cancel();
                     std::future::pending::<()>().await;
                 }
-                Ok(_) => {}
-                Err(error) => tracing::warn!(%error, "reading for a cancel failed"),
+                Ok(_) => after = upto,
+                Err(error) => {
+                    tracing::warn!(%error, "reading for a cancel failed; trying again");
+                    tokio::time::sleep(self.settings.poll).await;
+                }
             }
-            after = self.events.last_seq(run).await.unwrap_or(after);
         }
     }
 

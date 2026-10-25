@@ -243,8 +243,9 @@ async fn a_cancel_while_running_stops_the_run() {
     let running = Background::start(Arc::clone(&worker));
     hold.reached(WAIT).await;
     cancel(&worker, "run-1").await;
-    hold.release();
+    // The call stays held, so only the cancel can end the run.
     let stored = wait_for(&worker, "job-1", Cancelled).await;
+    hold.release();
     running.stop().await;
     assert_eq!(head(&worker).await, 1, "a cancelled run committed");
     invariants::hold(&worker, &stored, Some(&effects)).await;
