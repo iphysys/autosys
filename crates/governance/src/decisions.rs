@@ -146,17 +146,20 @@ impl GateRunner {
         payload: EventPayload,
     ) -> Result<(), Error> {
         self.events
-            .append(NewEvent {
-                run_id: run_id.clone(),
-                occurred_at: Timestamp(self.clock.now()),
-                correlation_id: ctx.correlation_id().clone(),
-                actor: Actor::System {
-                    component: "governance"
-                        .parse()
-                        .map_err(|_| Error::new(ErrorCode::Internal, "invalid component id"))?,
+            .append(
+                NewEvent {
+                    run_id: run_id.clone(),
+                    occurred_at: Timestamp(self.clock.now()),
+                    correlation_id: ctx.correlation_id().clone(),
+                    actor: Actor::System {
+                        component: "governance"
+                            .parse()
+                            .map_err(|_| Error::new(ErrorCode::Internal, "invalid component id"))?,
+                    },
+                    payload,
                 },
-                payload,
-            })
+                ctx.write_authority(),
+            )
             .await
             .map(|_| ())
     }

@@ -169,6 +169,9 @@ async fn faulty_sdr_storage_fails_every_call_with_its_code() {
             .append_version(
                 &sdr_document("p1", 0, None),
                 &testkit::builders::version_record("p1", 0, None, chrono::Utc::now()),
+                Some(&contracts::WriteAuthority::Unfenced(
+                    contracts::UnfencedReason::ProjectCreate,
+                )),
             )
             .await
             .map_err(|e| e.code()),

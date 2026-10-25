@@ -127,17 +127,20 @@ impl Evaluator {
             return Ok(());
         };
         self.events
-            .append(NewEvent {
-                run_id: run_id.clone(),
-                occurred_at: record.created_at.clone(),
-                correlation_id: ctx.correlation_id().clone(),
-                actor: system_actor()?,
-                payload: EventPayload::CheckCompleted {
-                    check_id: check_id.clone(),
-                    evidence_id: record.id.clone(),
-                    verdict: *verdict,
+            .append(
+                NewEvent {
+                    run_id: run_id.clone(),
+                    occurred_at: record.created_at.clone(),
+                    correlation_id: ctx.correlation_id().clone(),
+                    actor: system_actor()?,
+                    payload: EventPayload::CheckCompleted {
+                        check_id: check_id.clone(),
+                        evidence_id: record.id.clone(),
+                        verdict: *verdict,
+                    },
                 },
-            })
+                ctx.write_authority(),
+            )
             .await
             .map(|_| ())
     }

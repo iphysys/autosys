@@ -13,7 +13,6 @@ use contracts::{ErrorCode, EvidenceStore, StepStore, Tool, ToolOutput};
 use serde_json::{Value, json};
 use support::{
     Harness, Listed, agent, autonomy, call, measure, measure_result, overlay, plate, plate_result,
-    step_ctx,
 };
 use testkit::builders::{id, tool_request};
 use testkit::fakes::FakeTool;
@@ -59,7 +58,7 @@ async fn a_valid_call_returns_the_result_with_evidence_and_events() {
 
     let observed = h
         .gateway
-        .call(call(&request, &agent), &step_ctx("step-1"))
+        .call(call(&request, &agent), &h.step_ctx("step-1"))
         .await
         .unwrap();
 
@@ -129,14 +128,14 @@ async fn a_replayed_step_returns_the_stored_result_without_calling_the_tool() {
     let agent = agent();
     let first = h
         .gateway
-        .call(call(&request, &agent), &step_ctx("step-1"))
+        .call(call(&request, &agent), &h.step_ctx("step-1"))
         .await
         .unwrap();
     let events_after_first = h.events().await.len();
 
     let again = h
         .gateway
-        .call(call(&request, &agent), &step_ctx("step-1"))
+        .call(call(&request, &agent), &h.step_ctx("step-1"))
         .await
         .unwrap();
 
@@ -175,7 +174,7 @@ async fn a_key_reused_for_other_arguments_is_a_conflict() {
     let agent = agent();
     let request = tool_request("create_plate", "step-1", plate());
     h.gateway
-        .call(call(&request, &agent), &step_ctx("step-1"))
+        .call(call(&request, &agent), &h.step_ctx("step-1"))
         .await
         .unwrap();
     let mut other = plate();
@@ -184,7 +183,7 @@ async fn a_key_reused_for_other_arguments_is_a_conflict() {
 
     let err = h
         .gateway
-        .call(call(&reused, &agent), &step_ctx("step-1"))
+        .call(call(&reused, &agent), &h.step_ctx("step-1"))
         .await
         .unwrap_err();
 
@@ -204,7 +203,7 @@ async fn invalid_arguments_never_reach_the_tool() {
 
     let observed = h
         .gateway
-        .call(call(&request, &agent), &step_ctx("step-1"))
+        .call(call(&request, &agent), &h.step_ctx("step-1"))
         .await
         .unwrap();
 
@@ -224,7 +223,7 @@ async fn a_result_that_breaks_its_schema_is_a_failure_not_a_success() {
 
     let observed = h
         .gateway
-        .call(call(&request, &agent), &step_ctx("step-1"))
+        .call(call(&request, &agent), &h.step_ctx("step-1"))
         .await
         .unwrap();
 
@@ -238,7 +237,7 @@ async fn a_result_that_breaks_its_schema_is_a_failure_not_a_success() {
     );
     let replayed = h
         .gateway
-        .call(call(&request, &agent), &step_ctx("step-1"))
+        .call(call(&request, &agent), &h.step_ctx("step-1"))
         .await
         .unwrap();
     assert!(matches!(
@@ -260,7 +259,7 @@ async fn a_tool_error_is_returned_as_a_failure() {
 
     let observed = h
         .gateway
-        .call(call(&request, &agent), &step_ctx("step-1"))
+        .call(call(&request, &agent), &h.step_ctx("step-1"))
         .await
         .unwrap();
 
@@ -293,7 +292,7 @@ async fn a_slow_tool_times_out_as_a_failure() {
     let started = std::time::Instant::now();
     let observed = h
         .gateway
-        .call(call(&request, &agent), &step_ctx("step-1"))
+        .call(call(&request, &agent), &h.step_ctx("step-1"))
         .await
         .unwrap();
 
@@ -322,7 +321,7 @@ async fn cancelling_the_step_stops_the_call() {
     );
     let agent = agent();
     let request = tool_request("create_plate", "step-1", plate());
-    let ctx = step_ctx("step-1");
+    let ctx = h.step_ctx("step-1");
     let canceller = ctx.clone();
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -363,7 +362,7 @@ async fn a_tool_without_an_overlay_entry_is_denied_and_the_denial_recorded() {
 
     let observed = h
         .gateway
-        .call(call(&request, &agent), &step_ctx("step-1"))
+        .call(call(&request, &agent), &h.step_ctx("step-1"))
         .await
         .unwrap();
 
@@ -402,7 +401,7 @@ async fn an_asked_call_waits_for_approval_and_then_runs() {
 
     let asked = h
         .gateway
-        .call(call(&request, &agent), &step_ctx("step-1"))
+        .call(call(&request, &agent), &h.step_ctx("step-1"))
         .await
         .unwrap();
     assert!(
@@ -413,7 +412,11 @@ async fn an_asked_call_waits_for_approval_and_then_runs() {
 
     let mut approved = call(&request, &agent);
     approved.approval = Some(ApprovalAnswer::Approve);
-    let ran = h.gateway.call(approved, &step_ctx("step-1")).await.unwrap();
+    let ran = h
+        .gateway
+        .call(approved, &h.step_ctx("step-1"))
+        .await
+        .unwrap();
     assert!(
         matches!(
             ran,
@@ -437,7 +440,7 @@ async fn an_interrupted_idempotent_step_runs_again() {
 
     let observed = h
         .gateway
-        .call(call(&request, &agent), &step_ctx("step-1"))
+        .call(call(&request, &agent), &h.step_ctx("step-1"))
         .await
         .unwrap();
 
@@ -467,7 +470,7 @@ async fn an_interrupted_step_of_a_tool_that_is_not_idempotent_is_not_repeated() 
 
     let observed = h
         .gateway
-        .call(call(&request, &agent), &step_ctx("step-1"))
+        .call(call(&request, &agent), &h.step_ctx("step-1"))
         .await
         .unwrap();
 
@@ -475,7 +478,7 @@ async fn an_interrupted_step_of_a_tool_that_is_not_idempotent_is_not_repeated() 
     assert_eq!(tool.calls(), 0);
     let again = h
         .gateway
-        .call(call(&request, &agent), &step_ctx("step-1"))
+        .call(call(&request, &agent), &h.step_ctx("step-1"))
         .await
         .unwrap();
     assert!(
@@ -508,7 +511,7 @@ async fn calls_to_a_tool_that_is_not_concurrency_safe_run_one_at_a_time() {
             let request = tool_request("create_plate", &step, plate());
             let agent = agent();
             h.gateway
-                .call(call(&request, &agent), &step_ctx(&step))
+                .call(call(&request, &agent), &h.step_ctx(&step))
                 .await
                 .unwrap()
         }));
@@ -582,17 +585,21 @@ async fn the_registry_fails_fast_on_inconsistent_overlays() {
 }
 
 /// Leaves `request`'s step started without an outcome, as a worker killed
-/// mid-call would.
+/// mid-call would. Begun under the harness's fence, as the worker had it.
 async fn interrupt(h: &Harness, request: &contracts::ToolRequest) {
+    let ctx = h.step_ctx(request.step_id.as_str());
     let started = h
         .steps
-        .begin(&contracts::NewStep {
-            idempotency_key: request.idempotency_key.clone(),
-            run_id: support::run_id(),
-            step_id: request.step_id.clone(),
-            tool: request.tool.clone(),
-            request_sha256: request_hash(request),
-        })
+        .begin(
+            &contracts::NewStep {
+                idempotency_key: request.idempotency_key.clone(),
+                run_id: support::run_id(),
+                step_id: request.step_id.clone(),
+                tool: request.tool.clone(),
+                request_sha256: request_hash(request),
+            },
+            ctx.write_authority(),
+        )
         .await
         .unwrap();
     assert!(matches!(started, contracts::StepStart::Started(_)));

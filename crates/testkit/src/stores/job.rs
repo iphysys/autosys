@@ -1,92 +1,85 @@
-use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use chrono::{DateTime, TimeDelta, Utc};
+use chrono::TimeDelta;
 use contracts::ids::{Identifier, JobId, RunId};
 use contracts::types::{Job, JobState, Lease, Timestamp, WakeCondition};
-use contracts::{Clock, Error, JobStore, WakeReason};
+use contracts::{
+    Claimed, Clock, Error, FenceToken, JobStore, StoreWrite, WakeReason, WriteAuthority, authorize,
+};
 
+use super::leases::{Leased, Leases, check};
 use super::{conflict, invalid, not_found};
 
+/// [`JobStore`] in memory. Its jobs live in its [`Leases`], which the other
+/// in-memory stores share to check fences.
 pub struct InMemoryJobStore {
-    clock: Arc<dyn Clock>,
-    jobs: Mutex<BTreeMap<String, Job>>,
+    leases: Leases,
 }
 
 impl InMemoryJobStore {
     pub fn new(clock: Arc<dyn Clock>) -> Self {
         Self {
-            clock,
-            jobs: Mutex::new(BTreeMap::new()),
+            leases: Leases::new(clock),
         }
     }
-}
 
-fn lease_delta(lease_for: Duration) -> Result<TimeDelta, Error> {
-    TimeDelta::from_std(lease_for).map_err(|_| invalid("lease duration is too long"))
-}
+    /// The fence state, for the stores this one fences
+    /// (`InMemoryEventLog::fenced_by` and the others).
+    pub fn leases(&self) -> Leases {
+        self.leases.clone()
+    }
 
-fn lease_is_live(lease: &Lease, now: DateTime<Utc>) -> bool {
-    lease.expires_at.0 > now
-}
-
-/// The job's lease if `holder` holds it and it has not expired.
-fn held_by<'a>(job: &'a Job, holder: &Identifier, now: DateTime<Utc>) -> Option<&'a Lease> {
-    job.lease
-        .as_ref()
-        .filter(|l| job.state == JobState::Running && &l.holder == holder && lease_is_live(l, now))
-}
-
-#[async_trait]
-impl JobStore for InMemoryJobStore {
-    async fn insert(&self, job: &Job) -> Result<(), Error> {
+    /// [`JobStore::insert`], without awaiting.
+    pub(crate) fn insert_now(
+        &self,
+        job: &Job,
+        authority: Option<&WriteAuthority>,
+    ) -> Result<(), Error> {
+        let fence = authorize(authority, StoreWrite::JobInsert)?;
         if job.state != JobState::Queued || job.lease.is_some() {
             return Err(invalid("a new job must be queued and have no lease"));
         }
-        let mut jobs = self.jobs.lock().unwrap();
-        if jobs.contains_key(job.id.as_str()) {
-            return Err(conflict(format!("job {} already exists", job.id.as_str())));
-        }
-        jobs.insert(job.id.as_str().to_owned(), job.clone());
-        Ok(())
+        self.leases.guard(fence, |jobs| {
+            if jobs.contains_key(job.id.as_str()) {
+                return Err(conflict(format!("job {} already exists", job.id.as_str())));
+            }
+            jobs.insert(
+                job.id.as_str().to_owned(),
+                Leased {
+                    job: job.clone(),
+                    epoch: 0,
+                },
+            );
+            Ok(())
+        })
     }
 
-    async fn get(&self, id: &JobId) -> Result<Job, Error> {
-        self.jobs
-            .lock()
-            .unwrap()
-            .get(id.as_str())
-            .cloned()
-            .ok_or_else(|| not_found("job", id.as_str()))
-    }
-
-    async fn find_by_run(&self, run_id: &RunId) -> Result<Option<Job>, Error> {
-        Ok(self
-            .jobs
-            .lock()
-            .unwrap()
-            .values()
-            .find(|j| &j.run_id == run_id)
-            .cloned())
-    }
-
-    async fn claim(&self, holder: &Identifier, lease_for: Duration) -> Result<Option<Job>, Error> {
+    /// [`JobStore::claim`], without awaiting.
+    pub(crate) fn claim_now(
+        &self,
+        holder: &Identifier,
+        lease_for: Duration,
+    ) -> Result<Option<Claimed>, Error> {
         let delta = lease_delta(lease_for)?;
-        let now = self.clock.now();
-        let mut jobs = self.jobs.lock().unwrap();
+        let now = self.leases.clock().now();
+        let mut jobs = self.leases.jobs();
         let claimable = jobs
             .values_mut()
-            .filter(|j| match j.state {
+            .filter(|l| match l.job.state {
                 JobState::Queued => true,
-                JobState::Running => j.lease.as_ref().is_none_or(|l| !lease_is_live(l, now)),
+                JobState::Running => l.job.lease.as_ref().is_none_or(|l| l.expires_at.0 <= now),
                 _ => false,
             })
-            .min_by(|a, b| (a.created_at.0, a.id.as_str()).cmp(&(b.created_at.0, b.id.as_str())));
-        let Some(job) = claimable else {
+            .min_by(|a, b| {
+                (a.job.created_at.0, a.job.id.as_str())
+                    .cmp(&(b.job.created_at.0, b.job.id.as_str()))
+            });
+        let Some(leased) = claimable else {
             return Ok(None);
         };
+        let job = &mut leased.job;
         job.state = JobState::Running;
         job.attempt += 1;
         job.updated_at = Timestamp(now);
@@ -96,79 +89,121 @@ impl JobStore for InMemoryJobStore {
             expires_at: Timestamp(now + delta),
             heartbeat_at: Timestamp(now),
         });
-        Ok(Some(job.clone()))
+        leased.epoch += 1;
+        let fence = FenceToken::issue_for_claim(job.id.clone(), holder.clone(), leased.epoch);
+        Ok(Some(Claimed::new(job.clone(), fence)))
+    }
+}
+
+fn lease_delta(lease_for: Duration) -> Result<TimeDelta, Error> {
+    TimeDelta::from_std(lease_for).map_err(|_| invalid("lease duration is too long"))
+}
+
+#[async_trait]
+impl JobStore for InMemoryJobStore {
+    async fn insert(&self, job: &Job, authority: Option<&WriteAuthority>) -> Result<(), Error> {
+        self.insert_now(job, authority)
     }
 
-    async fn renew_lease(
+    async fn get(&self, id: &JobId) -> Result<Job, Error> {
+        self.leases
+            .jobs()
+            .get(id.as_str())
+            .map(|l| l.job.clone())
+            .ok_or_else(|| not_found("job", id.as_str()))
+    }
+
+    async fn find_by_run(&self, run_id: &RunId) -> Result<Option<Job>, Error> {
+        Ok(self
+            .leases
+            .jobs()
+            .values()
+            .find(|l| &l.job.run_id == run_id)
+            .map(|l| l.job.clone()))
+    }
+
+    async fn claim(
         &self,
-        id: &JobId,
         holder: &Identifier,
         lease_for: Duration,
-    ) -> Result<Job, Error> {
+    ) -> Result<Option<Claimed>, Error> {
+        self.claim_now(holder, lease_for)
+    }
+
+    async fn renew_lease(&self, fence: &FenceToken, lease_for: Duration) -> Result<Job, Error> {
         let delta = lease_delta(lease_for)?;
-        let now = self.clock.now();
-        let mut jobs = self.jobs.lock().unwrap();
-        let job = jobs
-            .get_mut(id.as_str())
-            .ok_or_else(|| not_found("job", id.as_str()))?;
-        if held_by(job, holder, now).is_none() {
-            return Err(conflict(format!(
-                "{} does not hold the lease on {}",
-                holder.as_str(),
-                id.as_str()
-            )));
-        }
-        if let Some(lease) = job.lease.as_mut() {
+        let now = self.leases.clock().now();
+        let mut jobs = self.leases.jobs();
+        check(&jobs, fence, now)?;
+        let leased = jobs
+            .get_mut(fence.job_id().as_str())
+            .ok_or_else(|| not_found("job", fence.job_id().as_str()))?;
+        if let Some(lease) = leased.job.lease.as_mut() {
             lease.expires_at = Timestamp(now + delta);
             lease.heartbeat_at = Timestamp(now);
         }
-        job.updated_at = Timestamp(now);
-        Ok(job.clone())
+        leased.job.updated_at = Timestamp(now);
+        Ok(leased.job.clone())
     }
 
-    async fn save(&self, job: &Job, holder: &Identifier) -> Result<(), Error> {
-        let now = self.clock.now();
-        let mut jobs = self.jobs.lock().unwrap();
-        let stored = jobs
-            .get_mut(job.id.as_str())
-            .ok_or_else(|| not_found("job", job.id.as_str()))?;
-        let Some(lease) = held_by(stored, holder, now).cloned() else {
-            return Err(conflict(format!(
-                "{} does not hold the lease on {}",
-                holder.as_str(),
+    async fn save(&self, job: &Job, fence: &FenceToken) -> Result<(), Error> {
+        if fence.job_id() != &job.id {
+            return Err(invalid(format!(
+                "the fence is for {}, not {}",
+                fence.job_id().as_str(),
                 job.id.as_str()
             )));
-        };
+        }
+        let now = self.leases.clock().now();
+        let mut jobs = self.leases.jobs();
+        check(&jobs, fence, now)?;
+        let stored = &mut jobs
+            .get_mut(job.id.as_str())
+            .ok_or_else(|| not_found("job", job.id.as_str()))?
+            .job;
+        let lease = stored.lease.clone();
         let attempt = stored.attempt;
         *stored = job.clone();
         stored.attempt = attempt;
         stored.updated_at = Timestamp(now);
-        stored.lease = (job.state == JobState::Running).then_some(lease);
+        stored.lease = if job.state == JobState::Running {
+            lease
+        } else {
+            None
+        };
         Ok(())
     }
 
-    async fn wake(&self, id: &JobId, reason: &WakeReason) -> Result<bool, Error> {
-        let now = self.clock.now();
-        let mut jobs = self.jobs.lock().unwrap();
-        let job = jobs
-            .get_mut(id.as_str())
-            .ok_or_else(|| not_found("job", id.as_str()))?;
-        if !matches!(job.state, JobState::Waiting | JobState::Suspended) {
-            return Ok(false);
-        }
-        let matches = match (reason, &job.wake_condition) {
-            (WakeReason::CancelRequested, _) => true,
-            (
-                WakeReason::ApprovalAnswered(answered),
-                Some(WakeCondition::ApprovalAnswered(waiting_for)),
-            ) => answered == waiting_for,
-            (WakeReason::ApprovalAnswered(_), None) => false,
-        };
-        if matches {
-            job.state = JobState::Queued;
-            job.wake_condition = None;
-            job.updated_at = Timestamp(now);
-        }
-        Ok(matches)
+    async fn wake(
+        &self,
+        id: &JobId,
+        reason: &WakeReason,
+        authority: Option<&WriteAuthority>,
+    ) -> Result<bool, Error> {
+        let fence = authorize(authority, StoreWrite::JobWake)?;
+        let now = self.leases.clock().now();
+        self.leases.guard(fence, |jobs| {
+            let job = &mut jobs
+                .get_mut(id.as_str())
+                .ok_or_else(|| not_found("job", id.as_str()))?
+                .job;
+            if !matches!(job.state, JobState::Waiting | JobState::Suspended) {
+                return Ok(false);
+            }
+            let matches = match (reason, &job.wake_condition) {
+                (WakeReason::CancelRequested, _) => true,
+                (
+                    WakeReason::ApprovalAnswered(answered),
+                    Some(WakeCondition::ApprovalAnswered(waiting_for)),
+                ) => answered == waiting_for,
+                (WakeReason::ApprovalAnswered(_), None) => false,
+            };
+            if matches {
+                job.state = JobState::Queued;
+                job.wake_condition = None;
+                job.updated_at = Timestamp(now);
+            }
+            Ok(matches)
+        })
     }
 }

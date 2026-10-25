@@ -5,18 +5,35 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use contracts::ids::RunId;
 use contracts::types::{Event, EventSchemaVersion};
-use contracts::{Error, ErrorCode, EventLog, ExecutionContext, NewEvent};
+use contracts::{
+    Error, ErrorCode, EventLog, ExecutionContext, NewEvent, StoreWrite, WriteAuthority, authorize,
+};
 use tokio::sync::Notify;
 
+use super::leases::Leases;
+
+/// [`EventLog`] in memory. Appends are fenced by the [`Leases`] it was built
+/// with.
 #[derive(Default)]
 pub struct InMemoryEventLog {
+    leases: Leases,
     runs: Mutex<HashMap<String, Vec<Event>>>,
     appended: Notify,
 }
 
 impl InMemoryEventLog {
+    /// A log with detached leases: unfenced reasons work, every fence is
+    /// refused.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// A log whose appends are fenced by a job store's `leases`.
+    pub fn fenced_by(leases: Leases) -> Self {
+        Self {
+            leases,
+            ..Self::default()
+        }
     }
 
     fn last_seq_now(&self, run_id: &RunId) -> u64 {
@@ -30,8 +47,13 @@ impl InMemoryEventLog {
 
 #[async_trait]
 impl EventLog for InMemoryEventLog {
-    async fn append(&self, event: NewEvent) -> Result<Event, Error> {
-        let stored = {
+    async fn append(
+        &self,
+        event: NewEvent,
+        authority: Option<&WriteAuthority>,
+    ) -> Result<Event, Error> {
+        let fence = authorize(authority, StoreWrite::Event(&event.payload))?;
+        let stored = self.leases.guard(fence, |_| {
             let mut runs = self.runs.lock().unwrap();
             let events = runs.entry(event.run_id.as_str().to_owned()).or_default();
             let seq = NonZeroU64::new(events.len() as u64 + 1)
@@ -46,8 +68,8 @@ impl EventLog for InMemoryEventLog {
                 payload: event.payload,
             };
             events.push(stored.clone());
-            stored
-        };
+            Ok(stored)
+        })?;
         self.appended.notify_waiters();
         Ok(stored)
     }

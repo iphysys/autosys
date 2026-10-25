@@ -4,12 +4,15 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use contracts::ids::{Identifier, JobId, RunId};
 use contracts::types::{Job, JobState, Lease, Timestamp, WakeCondition};
-use contracts::{Error, JobStore, WakeReason};
+use contracts::{
+    Claimed, Error, FenceToken, JobStore, StoreWrite, WakeReason, WriteAuthority, authorize,
+};
 use sqlx::postgres::types::PgInterval;
 use sqlx::types::Json;
 
 use super::Database;
 use super::error::{conflict, corrupt, db_error, from_bigint, invalid, not_found, to_bigint};
+use super::fence::{refused, verify_fence};
 
 /// How many times `claim` retries when it found nothing but claimable jobs
 /// remain. See [`PgJobStore::claim`].
@@ -17,7 +20,9 @@ const CLAIM_ATTEMPTS: usize = 5;
 
 /// [`JobStore`] on Postgres. Claims use `FOR UPDATE SKIP LOCKED`, so
 /// concurrent claimers, in any number of processes, never receive the same
-/// job. Lease times come from the database clock.
+/// job. Lease times come from the database clock. Each claim raises
+/// `lease_epoch`, and renewals and saves match it in their `WHERE` clause
+/// (ADR-0032).
 pub struct PgJobStore {
     db: Database,
 }
@@ -25,29 +30,6 @@ pub struct PgJobStore {
 impl PgJobStore {
     pub fn new(db: Database) -> Self {
         Self { db }
-    }
-
-    async fn exists(&self, id: &str) -> Result<bool, Error> {
-        sqlx::query_scalar!(
-            r#"SELECT EXISTS (SELECT 1 FROM jobs WHERE id = $1) AS "exists!""#,
-            id
-        )
-        .fetch_one(&self.db.pool)
-        .await
-        .map_err(|e| db_error("look up job", e))
-    }
-
-    /// The error for a lease check that failed: NotFound if the job does not
-    /// exist, Conflict otherwise.
-    async fn lease_refused(&self, id: &str, holder: &Identifier) -> Error {
-        match self.exists(id).await {
-            Ok(true) => conflict(format!(
-                "{} does not hold the lease on {id}",
-                holder.as_str()
-            )),
-            Ok(false) => not_found("job", id),
-            Err(e) => e,
-        }
     }
 }
 
@@ -62,6 +44,7 @@ struct JobRow {
     lease_acquired_at: Option<DateTime<Utc>>,
     lease_expires_at: Option<DateTime<Utc>>,
     lease_heartbeat_at: Option<DateTime<Utc>>,
+    lease_epoch: i64,
 }
 
 impl JobRow {
@@ -117,13 +100,23 @@ fn wakes(reason: &WakeReason, condition: Option<&WakeCondition>) -> bool {
 
 #[async_trait]
 impl JobStore for PgJobStore {
-    async fn insert(&self, job: &Job) -> Result<(), Error> {
+    async fn insert(&self, job: &Job, authority: Option<&WriteAuthority>) -> Result<(), Error> {
+        let fence = authorize(authority, StoreWrite::JobInsert)?;
         if job.state != JobState::Queued || job.lease.is_some() {
             return Err(invalid("a new job must be queued and have no lease"));
         }
         let attempt = to_bigint(job.attempt, "attempt")?;
         self.db
             .bounded("insert job", async {
+                let mut tx = self
+                    .db
+                    .pool
+                    .begin()
+                    .await
+                    .map_err(|e| db_error("insert job", e))?;
+                if let Some(fence) = fence {
+                    verify_fence(&mut tx, fence, "insert job").await?;
+                }
                 let inserted = sqlx::query!(
                     r#"
                     INSERT INTO jobs
@@ -140,12 +133,13 @@ impl JobStore for PgJobStore {
                     job.updated_at.0,
                     job.wake_condition.as_ref().map(Json) as _,
                 )
-                .execute(&self.db.pool)
+                .execute(&mut *tx)
                 .await
                 .map_err(|e| db_error("insert job", e))?;
                 if inserted.rows_affected() == 0 {
                     return Err(conflict(format!("job {} already exists", job.id.as_str())));
                 }
+                tx.commit().await.map_err(|e| db_error("insert job", e))?;
                 Ok(())
             })
             .await
@@ -159,7 +153,8 @@ impl JobStore for PgJobStore {
                     r#"
                     SELECT document AS "document!: Json<Job>", state, attempt, updated_at,
                         wake_condition AS "wake_condition: Json<WakeCondition>",
-                        lease_holder, lease_acquired_at, lease_expires_at, lease_heartbeat_at
+                        lease_holder, lease_acquired_at, lease_expires_at, lease_heartbeat_at,
+                        lease_epoch
                     FROM jobs
                     WHERE id = $1
                     "#,
@@ -181,7 +176,8 @@ impl JobStore for PgJobStore {
                     r#"
                     SELECT document AS "document!: Json<Job>", state, attempt, updated_at,
                         wake_condition AS "wake_condition: Json<WakeCondition>",
-                        lease_holder, lease_acquired_at, lease_expires_at, lease_heartbeat_at
+                        lease_holder, lease_acquired_at, lease_expires_at, lease_heartbeat_at,
+                        lease_epoch
                     FROM jobs
                     WHERE run_id = $1
                     ORDER BY created_at, id
@@ -201,8 +197,13 @@ impl JobStore for PgJobStore {
     /// claimer took after this statement's snapshot fails the recheck when
     /// locked, and `LIMIT 1` then yields nothing even if other jobs are
     /// claimable. So an empty claim is retried, with a fresh snapshot, while
-    /// claimable jobs remain.
-    async fn claim(&self, holder: &Identifier, lease_for: Duration) -> Result<Option<Job>, Error> {
+    /// claimable jobs remain. A job whose row a fenced write holds in share
+    /// mode is skipped too, until that write commits.
+    async fn claim(
+        &self,
+        holder: &Identifier,
+        lease_for: Duration,
+    ) -> Result<Option<Claimed>, Error> {
         let lease = lease_interval(lease_for)?;
         self.db
             .bounded("claim job", async {
@@ -226,14 +227,15 @@ impl JobStore for PgJobStore {
                             lease_holder = $1,
                             lease_acquired_at = autosys_now(),
                             lease_expires_at = autosys_now() + $2::interval,
-                            lease_heartbeat_at = autosys_now()
+                            lease_heartbeat_at = autosys_now(),
+                            lease_epoch = jobs.lease_epoch + 1
                         FROM next
                         WHERE jobs.id = next.id
                         RETURNING jobs.document AS "document!: Json<Job>", jobs.state AS "state!",
                             jobs.attempt AS "attempt!", jobs.updated_at AS "updated_at!",
                             jobs.wake_condition AS "wake_condition: Json<WakeCondition>",
                             jobs.lease_holder, jobs.lease_acquired_at, jobs.lease_expires_at,
-                            jobs.lease_heartbeat_at
+                            jobs.lease_heartbeat_at, jobs.lease_epoch AS "lease_epoch!"
                         "#,
                         holder.as_str(),
                         lease,
@@ -242,7 +244,10 @@ impl JobStore for PgJobStore {
                     .await
                     .map_err(|e| db_error("claim job", e))?;
                     if let Some(row) = row {
-                        return row.into_job().map(Some);
+                        let epoch = from_bigint(row.lease_epoch, "lease epoch")?;
+                        let job = row.into_job()?;
+                        let fence = FenceToken::issue_for_claim(job.id.clone(), holder.clone(), epoch);
+                        return Ok(Some(Claimed::new(job, fence)));
                     }
                     let claimable = sqlx::query_scalar!(
                         r#"
@@ -266,13 +271,9 @@ impl JobStore for PgJobStore {
             .await
     }
 
-    async fn renew_lease(
-        &self,
-        id: &JobId,
-        holder: &Identifier,
-        lease_for: Duration,
-    ) -> Result<Job, Error> {
+    async fn renew_lease(&self, fence: &FenceToken, lease_for: Duration) -> Result<Job, Error> {
         let lease = lease_interval(lease_for)?;
+        let epoch = to_bigint(fence.epoch(), "lease epoch")?;
         self.db
             .bounded("renew lease", async {
                 let row = sqlx::query_as!(
@@ -285,28 +286,39 @@ impl JobStore for PgJobStore {
                     WHERE id = $1
                         AND state = 'running'
                         AND lease_holder = $2
+                        AND lease_epoch = $4
                         AND lease_expires_at > autosys_now()
                     RETURNING document AS "document!: Json<Job>", state AS "state!",
                         attempt AS "attempt!", updated_at AS "updated_at!",
                         wake_condition AS "wake_condition: Json<WakeCondition>",
-                        lease_holder, lease_acquired_at, lease_expires_at, lease_heartbeat_at
+                        lease_holder, lease_acquired_at, lease_expires_at, lease_heartbeat_at,
+                        lease_epoch AS "lease_epoch!"
                     "#,
-                    id.as_str(),
-                    holder.as_str(),
+                    fence.job_id().as_str(),
+                    fence.holder().as_str(),
                     lease,
+                    epoch,
                 )
                 .fetch_optional(&self.db.pool)
                 .await
                 .map_err(|e| db_error("renew lease", e))?;
                 match row {
                     Some(row) => row.into_job(),
-                    None => Err(self.lease_refused(id.as_str(), holder).await),
+                    None => Err(refused(&self.db.pool, fence, "renew lease").await),
                 }
             })
             .await
     }
 
-    async fn save(&self, job: &Job, holder: &Identifier) -> Result<(), Error> {
+    async fn save(&self, job: &Job, fence: &FenceToken) -> Result<(), Error> {
+        if fence.job_id() != &job.id {
+            return Err(invalid(format!(
+                "the fence is for {}, not {}",
+                fence.job_id().as_str(),
+                job.id.as_str()
+            )));
+        }
+        let epoch = to_bigint(fence.epoch(), "lease epoch")?;
         self.db
             .bounded("save job", async {
                 // The lease stays only while the job keeps running; attempt
@@ -327,28 +339,36 @@ impl JobStore for PgJobStore {
                     WHERE id = $1
                         AND state = 'running'
                         AND lease_holder = $2
+                        AND lease_epoch = $8
                         AND lease_expires_at > autosys_now()
                     "#,
                     job.id.as_str(),
-                    holder.as_str(),
+                    fence.holder().as_str(),
                     job.run_id.as_str(),
                     job.created_at.0,
                     Json(job) as _,
                     job.state.to_string(),
                     job.wake_condition.as_ref().map(Json) as _,
+                    epoch,
                 )
                 .execute(&self.db.pool)
                 .await
                 .map_err(|e| db_error("save job", e))?;
                 if saved.rows_affected() == 0 {
-                    return Err(self.lease_refused(job.id.as_str(), holder).await);
+                    return Err(refused(&self.db.pool, fence, "save job").await);
                 }
                 Ok(())
             })
             .await
     }
 
-    async fn wake(&self, id: &JobId, reason: &WakeReason) -> Result<bool, Error> {
+    async fn wake(
+        &self,
+        id: &JobId,
+        reason: &WakeReason,
+        authority: Option<&WriteAuthority>,
+    ) -> Result<bool, Error> {
+        let fence = authorize(authority, StoreWrite::JobWake)?;
         self.db
             .bounded("wake job", async {
                 let mut tx = self
@@ -357,6 +377,9 @@ impl JobStore for PgJobStore {
                     .begin()
                     .await
                     .map_err(|e| db_error("wake job", e))?;
+                if let Some(fence) = fence {
+                    verify_fence(&mut tx, fence, "wake job").await?;
+                }
                 let row = sqlx::query!(
                     r#"
                     SELECT state, wake_condition AS "wake_condition: Json<WakeCondition>"

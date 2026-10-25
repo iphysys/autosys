@@ -43,9 +43,13 @@ pub use tool::tool;
 use std::fmt::Debug;
 use std::time::Duration;
 
-use contracts::{Error, ErrorCode, ExecutionContext};
+use contracts::{
+    Claimed, Error, ErrorCode, ExecutionContext, JobStore, UnfencedReason, WriteAuthority,
+};
 
-use crate::builders::id;
+use crate::builders::{id, job};
+use crate::clock::ManualClock;
+use crate::leases::{HOLDER, LONG_LEASE};
 
 /// Upper bound for anything a suite waits on, so a broken implementation
 /// fails instead of hanging.
@@ -53,6 +57,30 @@ const WAIT: Duration = Duration::from_secs(5);
 
 fn ctx() -> ExecutionContext {
     ExecutionContext::new(id("corr-contract"))
+}
+
+fn unfenced(reason: UnfencedReason) -> WriteAuthority {
+    WriteAuthority::Unfenced(reason)
+}
+
+fn fenced(claimed: &Claimed) -> WriteAuthority {
+    WriteAuthority::Fenced(claimed.fence.clone())
+}
+
+/// Inserts job `job-1` of `run-1` into `jobs` and claims it for a year, so
+/// the suite's writes have a current fence while it advances `clock`.
+async fn lease_one<J: JobStore>(jobs: &J, clock: &ManualClock) -> Claimed {
+    use contracts::Clock;
+    jobs.insert(
+        &job("job-1", "run-1", clock.now()),
+        Some(&unfenced(UnfencedReason::JobInsert)),
+    )
+    .await
+    .expect("insert the job that fences the suite");
+    jobs.claim(&id(HOLDER), LONG_LEASE)
+        .await
+        .expect("claim the job that fences the suite")
+        .expect("the suite's job is claimable")
 }
 
 fn cancelled_ctx() -> ExecutionContext {

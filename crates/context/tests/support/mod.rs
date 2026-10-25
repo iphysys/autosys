@@ -29,12 +29,14 @@ use contracts::types::{
 };
 use contracts::{
     Clock, ContentBlock, Error, ErrorCode, EventLog, ExecutionContext, Message, NewEvent, Role,
+    WriteAuthority,
 };
 use sdr::{CommitInfo, InitialVersion, SdrManager, Validation};
 use serde_json::{Value, json};
 use testkit::builders::{id, new_event, parse};
 use testkit::clock::ManualClock;
-use testkit::stores::{InMemoryEventLog, sdr_storage};
+use testkit::leases::LeasedJob;
+use testkit::stores::{InMemoryEventLog, fenced_sdr_storage};
 
 pub const PROJECT: &str = "p1";
 pub const RUN: &str = "run-1";
@@ -291,6 +293,8 @@ pub struct World {
     pub builder: ContextBuilder,
 }
 
+/// A context with no write authority, for builders over parts the test
+/// controls: their stores refuse every write.
 pub fn execution_context() -> ExecutionContext {
     ExecutionContext::new(id("corr-context"))
         .with_project(id(PROJECT))
@@ -304,10 +308,15 @@ impl World {
 
     pub async fn with(profiles: ContextProfiles, prompts: Arc<PromptLibrary>) -> Self {
         let clock = Arc::new(ManualClock::at_epoch());
+        let leased = LeasedJob::new(clock.clone(), RUN);
         let sdr = Arc::new(
-            SdrManager::new(sdr_storage(), clock.clone()).expect("the SDR schemas compile"),
+            SdrManager::new(fenced_sdr_storage(leased.leases()), clock.clone())
+                .expect("the SDR schemas compile"),
         );
-        let ctx = execution_context();
+        let ctx = leased
+            .ctx("corr-context")
+            .with_project(id(PROJECT))
+            .with_run(id(RUN));
         let project: ProjectId = id(PROJECT);
         sdr.create_project(
             &project,
@@ -321,7 +330,7 @@ impl World {
         )
         .await
         .expect("create the project");
-        let events = Arc::new(InMemoryEventLog::new());
+        let events = Arc::new(InMemoryEventLog::fenced_by(leased.leases()));
         let builder = ContextBuilder::new(
             sdr.clone(),
             events.clone(),
@@ -407,7 +416,10 @@ impl World {
     /// Appends an event to the run and returns its sequence number.
     pub async fn event(&self, payload: Value) -> u64 {
         self.events
-            .append(new_event(RUN, self.clock.now(), payload))
+            .append(
+                new_event(RUN, self.clock.now(), payload),
+                self.ctx.write_authority(),
+            )
             .await
             .expect("append")
             .seq
@@ -570,9 +582,13 @@ async fn behave(behaviour: Behaviour) -> Result<(), Error> {
 
 #[async_trait]
 impl EventLog for FlakyEvents {
-    async fn append(&self, event: NewEvent) -> Result<Event, Error> {
+    async fn append(
+        &self,
+        event: NewEvent,
+        authority: Option<&WriteAuthority>,
+    ) -> Result<Event, Error> {
         behave(self.append).await?;
-        self.inner.append(event).await
+        self.inner.append(event, authority).await
     }
 
     async fn read(&self, run_id: &RunId, after: u64, limit: usize) -> Result<Vec<Event>, Error> {

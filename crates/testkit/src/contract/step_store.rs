@@ -4,35 +4,51 @@ use std::time::Duration;
 
 use contracts::ids::Identifier;
 use contracts::types::Timestamp;
-use contracts::{Clock, ErrorCode, StepStart, StepStore};
+use contracts::{Clock, ErrorCode, JobStore, StepStart, StepStore, WriteAuthority};
 use serde_json::json;
 
-use super::assert_code;
+use super::{assert_code, fenced, lease_one};
 use crate::builders::{failed, id, new_step, succeeded};
 use crate::clock::ManualClock;
 
 struct Fixture<S> {
     clock: Arc<ManualClock>,
     store: Arc<S>,
+    /// The fence of a job claimed for the whole case.
+    authority: WriteAuthority,
 }
 
-async fn fresh<S, F, Fut>(make: &F) -> Fixture<S>
+impl<S> Fixture<S> {
+    fn auth(&self) -> Option<&WriteAuthority> {
+        Some(&self.authority)
+    }
+}
+
+async fn fresh<S, J, F, Fut>(make: &F) -> Fixture<S>
 where
+    J: JobStore,
     F: Fn(Arc<dyn Clock>) -> Fut,
-    Fut: Future<Output = S>,
+    Fut: Future<Output = (S, J)>,
 {
     let clock = Arc::new(ManualClock::at_epoch());
-    let store = Arc::new(make(clock.clone()).await);
-    Fixture { clock, store }
+    let (store, jobs) = make(clock.clone()).await;
+    let claimed = lease_one(&jobs, &clock).await;
+    Fixture {
+        clock,
+        store: Arc::new(store),
+        authority: fenced(&claimed),
+    }
 }
 
 /// The `StepStore` contract. `make` builds an empty store that reads time
-/// from the given clock.
-pub async fn step_store<S, F, Fut>(make: F)
+/// from the given clock, and a job store whose fences it checks. Every write
+/// carries a current fence; the fencing suite covers stale ones.
+pub async fn step_store<S, J, F, Fut>(make: F)
 where
     S: StepStore + 'static,
+    J: JobStore,
     F: Fn(Arc<dyn Clock>) -> Fut,
-    Fut: Future<Output = S>,
+    Fut: Future<Output = (S, J)>,
 {
     begin_then_get(fresh(&make).await).await;
     begin_again_returns_the_existing_record(fresh(&make).await).await;
@@ -59,7 +75,10 @@ fn existing(start: StepStart, case: &str) -> contracts::types::StepRecord {
 
 async fn begin_then_get<S: StepStore>(f: Fixture<S>) {
     let step = new_step("step-1", "create_plate", "request-a");
-    let record = started(f.store.begin(&step).await.expect("begin"), "begin_then_get");
+    let record = started(
+        f.store.begin(&step, f.auth()).await.expect("begin"),
+        "begin_then_get",
+    );
     assert_eq!(
         record.idempotency_key, step.idempotency_key,
         "begin_then_get: key"
@@ -86,10 +105,13 @@ async fn begin_then_get<S: StepStore>(f: Fixture<S>) {
 
 async fn begin_again_returns_the_existing_record<S: StepStore>(f: Fixture<S>) {
     let step = new_step("step-1", "create_plate", "request-a");
-    let first = started(f.store.begin(&step).await.expect("begin"), "begin again");
+    let first = started(
+        f.store.begin(&step, f.auth()).await.expect("begin"),
+        "begin again",
+    );
     f.clock.advance(Duration::from_secs(5));
     let again = existing(
-        f.store.begin(&step).await.expect("begin again"),
+        f.store.begin(&step, f.auth()).await.expect("begin again"),
         "begin again",
     );
     assert_eq!(again, first, "begin again: the record changed");
@@ -97,23 +119,26 @@ async fn begin_again_returns_the_existing_record<S: StepStore>(f: Fixture<S>) {
 
 async fn a_reused_key_for_another_request_conflicts<S: StepStore>(f: Fixture<S>) {
     let step = new_step("step-1", "create_plate", "request-a");
-    let first = started(f.store.begin(&step).await.expect("begin"), "reused key");
+    let first = started(
+        f.store.begin(&step, f.auth()).await.expect("begin"),
+        "reused key",
+    );
     let other_request = new_step("step-1", "create_plate", "request-b");
     assert_code(
-        f.store.begin(&other_request).await,
+        f.store.begin(&other_request, f.auth()).await,
         ErrorCode::Conflict,
         "reused key: different arguments",
     );
     let other_tool = new_step("step-1", "measure", "request-a");
     assert_code(
-        f.store.begin(&other_tool).await,
+        f.store.begin(&other_tool, f.auth()).await,
         ErrorCode::Conflict,
         "reused key: different tool",
     );
     let mut other_step = step.clone();
     other_step.step_id = id("step-2");
     assert_code(
-        f.store.begin(&other_step).await,
+        f.store.begin(&other_step, f.auth()).await,
         ErrorCode::Conflict,
         "reused key: different step",
     );
@@ -123,12 +148,15 @@ async fn a_reused_key_for_another_request_conflicts<S: StepStore>(f: Fixture<S>)
 
 async fn complete_then_replay<S: StepStore>(f: Fixture<S>) {
     let step = new_step("step-1", "measure", "request-a");
-    let begun = started(f.store.begin(&step).await.expect("begin"), "complete");
+    let begun = started(
+        f.store.begin(&step, f.auth()).await.expect("begin"),
+        "complete",
+    );
     f.clock.advance(Duration::from_secs(2));
     let outcome = succeeded(json!({ "mass": { "value": 122.5, "unit": "g" } }));
     let completed = f
         .store
-        .complete(&step.idempotency_key, &outcome)
+        .complete(&step.idempotency_key, &outcome, f.auth())
         .await
         .expect("complete");
     assert_eq!(
@@ -145,7 +173,10 @@ async fn complete_then_replay<S: StepStore>(f: Fixture<S>) {
         completed.started_at, begun.started_at,
         "complete: started_at changed"
     );
-    let replayed = existing(f.store.begin(&step).await.expect("replay"), "replay");
+    let replayed = existing(
+        f.store.begin(&step, f.auth()).await.expect("replay"),
+        "replay",
+    );
     assert_eq!(
         replayed, completed,
         "replay: begin did not return the completed record"
@@ -156,23 +187,23 @@ async fn complete_then_replay<S: StepStore>(f: Fixture<S>) {
 
 async fn complete_is_idempotent_and_final<S: StepStore>(f: Fixture<S>) {
     let step = new_step("step-1", "create_plate", "request-a");
-    f.store.begin(&step).await.expect("begin");
+    f.store.begin(&step, f.auth()).await.expect("begin");
     let outcome = failed("timeout");
     let first = f
         .store
-        .complete(&step.idempotency_key, &outcome)
+        .complete(&step.idempotency_key, &outcome, f.auth())
         .await
         .expect("complete");
     f.clock.advance(Duration::from_secs(5));
     let again = f
         .store
-        .complete(&step.idempotency_key, &outcome)
+        .complete(&step.idempotency_key, &outcome, f.auth())
         .await
         .expect("complete again with the same outcome");
     assert_eq!(again, first, "complete again: the record changed");
     assert_code(
         f.store
-            .complete(&step.idempotency_key, &succeeded(json!({})))
+            .complete(&step.idempotency_key, &succeeded(json!({})), f.auth())
             .await,
         ErrorCode::Conflict,
         "complete: a different outcome",
@@ -189,7 +220,9 @@ async fn unknown_keys_are_not_found<S: StepStore>(f: Fixture<S>) {
         "get unknown",
     );
     assert_code(
-        f.store.complete(&missing, &failed("timeout")).await,
+        f.store
+            .complete(&missing, &failed("timeout"), f.auth())
+            .await,
         ErrorCode::NotFound,
         "complete unknown",
     );
@@ -201,7 +234,10 @@ async fn concurrent_begins_start_once<S: StepStore + 'static>(f: Fixture<S>) {
     for _ in 0..8 {
         let store = f.store.clone();
         let step = step.clone();
-        handles.push(tokio::spawn(async move { store.begin(&step).await }));
+        let authority = f.authority.clone();
+        handles.push(tokio::spawn(async move {
+            store.begin(&step, Some(&authority)).await
+        }));
     }
     let mut started_count = 0;
     for handle in handles {

@@ -6,12 +6,14 @@ use std::time::Duration;
 use chrono::{TimeZone, Utc};
 use contracts::ids::RunId;
 use contracts::types::{Event, EventPayload};
-use contracts::{ErrorCode, EventLog};
+use contracts::{ErrorCode, EventLog, UnfencedReason};
 
-use super::{WAIT, assert_code, cancelled_ctx, ctx};
+use super::{WAIT, assert_code, cancelled_ctx, ctx, unfenced};
 use crate::builders::{id, marker_payload, new_event};
 
-/// The `EventLog` contract. `make` builds an empty log.
+/// The `EventLog` contract. `make` builds an empty log. Its markers are
+/// `cancel_requested` events, appended unfenced as client commands; the
+/// fencing suite covers fenced appends.
 pub async fn event_log<S, F, Fut>(make: F)
 where
     S: EventLog + 'static,
@@ -32,9 +34,12 @@ fn run(name: &str) -> RunId {
 
 async fn append_marker<S: EventLog + ?Sized>(log: &S, run_id: &str, marker: usize) -> Event {
     let at = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
-    log.append(new_event(run_id, at, marker_payload(marker)))
-        .await
-        .expect("append")
+    log.append(
+        new_event(run_id, at, marker_payload(marker)),
+        Some(&unfenced(UnfencedReason::ApiCommand)),
+    )
+    .await
+    .expect("append")
 }
 
 fn marker_of(event: &Event) -> String {
@@ -60,7 +65,10 @@ async fn sequence_starts_at_one<S: EventLog>(log: S) {
     );
     let at = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
     let new = new_event("run-1", at, marker_payload(0));
-    let stored = log.append(new.clone()).await.expect("append");
+    let stored = log
+        .append(new.clone(), Some(&unfenced(UnfencedReason::ApiCommand)))
+        .await
+        .expect("append");
     assert_eq!(stored.seq.get(), 1, "sequence_starts_at_one: first seq");
     assert_eq!(stored.run_id, new.run_id, "sequence_starts_at_one: run id");
     assert_eq!(

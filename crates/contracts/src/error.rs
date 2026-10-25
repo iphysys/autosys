@@ -14,7 +14,9 @@ pub enum ErrorCode {
     /// The request failed validation.
     InvalidInput,
     NotFound,
-    /// The request conflicts with current state, for example a stale version or a lost lease.
+    /// The request conflicts with current state, for example a stale SDR
+    /// version, a reused key or a duplicate insert. A lost lease is
+    /// [`ErrorCode::LeaseLost`].
     Conflict,
     PermissionDenied,
     Timeout,

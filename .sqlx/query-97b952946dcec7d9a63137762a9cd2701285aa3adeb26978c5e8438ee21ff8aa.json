@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                        WITH next AS (\n                            SELECT id FROM jobs\n                            WHERE state = 'queued'\n                                OR (state = 'running'\n                                    AND (lease_expires_at IS NULL OR lease_expires_at <= autosys_now()))\n                            ORDER BY created_at, id\n                            LIMIT 1\n                            FOR UPDATE SKIP LOCKED\n                        )\n                        UPDATE jobs SET\n                            state = 'running',\n                            attempt = jobs.attempt + 1,\n                            updated_at = autosys_now(),\n                            lease_holder = $1,\n                            lease_acquired_at = autosys_now(),\n                            lease_expires_at = autosys_now() + $2::interval,\n                            lease_heartbeat_at = autosys_now()\n                        FROM next\n                        WHERE jobs.id = next.id\n                        RETURNING jobs.document AS \"document!: Json<Job>\", jobs.state AS \"state!\",\n                            jobs.attempt AS \"attempt!\", jobs.updated_at AS \"updated_at!\",\n                            jobs.wake_condition AS \"wake_condition: Json<WakeCondition>\",\n                            jobs.lease_holder, jobs.lease_acquired_at, jobs.lease_expires_at,\n                            jobs.lease_heartbeat_at\n                        ",
+  "query": "\n                    SELECT document AS \"document!: Json<Job>\", state, attempt, updated_at,\n                        wake_condition AS \"wake_condition: Json<WakeCondition>\",\n                        lease_holder, lease_acquired_at, lease_expires_at, lease_heartbeat_at,\n                        lease_epoch\n                    FROM jobs\n                    WHERE id = $1\n                    ",
   "describe": {
     "columns": [
       {
@@ -16,7 +16,7 @@
       },
       {
         "ordinal": 1,
-        "name": "state!",
+        "name": "state",
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -27,7 +27,7 @@
       },
       {
         "ordinal": 2,
-        "name": "attempt!",
+        "name": "attempt",
         "type_info": "Int8",
         "origin": {
           "Table": {
@@ -38,7 +38,7 @@
       },
       {
         "ordinal": 3,
-        "name": "updated_at!",
+        "name": "updated_at",
         "type_info": "Timestamptz",
         "origin": {
           "Table": {
@@ -101,12 +101,22 @@
             "name": "lease_heartbeat_at"
           }
         }
+      },
+      {
+        "ordinal": 9,
+        "name": "lease_epoch",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "jobs",
+            "name": "lease_epoch"
+          }
+        }
       }
     ],
     "parameters": {
       "Left": [
-        "Text",
-        "Interval"
+        "Text"
       ]
     },
     "nullable": [
@@ -118,8 +128,9 @@
       true,
       true,
       true,
-      true
+      true,
+      false
     ]
   },
-  "hash": "6c25e4b6a387d2bc05380eb38272db7a83a2d109e2b597b97e9fef2dec4a3d17"
+  "hash": "97b952946dcec7d9a63137762a9cd2701285aa3adeb26978c5e8438ee21ff8aa"
 }

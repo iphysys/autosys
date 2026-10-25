@@ -12,7 +12,7 @@ use std::time::Duration;
 use chrono::Utc;
 use contracts::ids::RunId;
 use contracts::types::{Event, EventPayload};
-use contracts::{EventLog, ExecutionContext};
+use contracts::{EventLog, ExecutionContext, UnfencedReason, WriteAuthority};
 use infra::persistence::PgEventLog;
 use support::TestDb;
 use testkit::builders::{id, marker_payload, new_event};
@@ -44,9 +44,13 @@ async fn a_resumed_reader_sees_every_later_event_exactly_once() {
         writers.push(tokio::spawn(async move {
             for n in 0..PER_WRITER {
                 let marker = w * PER_WRITER + n;
-                log.append(new_event("run-1", Utc::now(), marker_payload(marker)))
-                    .await
-                    .expect("append");
+                // The markers are cancel_requested events, a client command.
+                log.append(
+                    new_event("run-1", Utc::now(), marker_payload(marker)),
+                    Some(&WriteAuthority::Unfenced(UnfencedReason::ApiCommand)),
+                )
+                .await
+                .expect("append");
                 tokio::time::sleep(Duration::from_millis(2)).await;
             }
         }));

@@ -447,7 +447,7 @@ async fn cancelling_during_a_slow_tool_stops_with_cancelled() {
         .measure(returning("measure", measure_result()).with_delay(SLOW)),
     )
     .await;
-    let run_ctx = ctx();
+    let run_ctx = world.ctx();
     let canceller = run_ctx.clone();
     let cancel = tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;

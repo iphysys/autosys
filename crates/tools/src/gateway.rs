@@ -234,7 +234,7 @@ impl ToolGateway {
         };
 
         if !interrupted {
-            match self.steps.begin(&step).await? {
+            match self.steps.begin(&step, ctx.write_authority()).await? {
                 StepStart::Started(_) => {}
                 StepStart::Existing(record) => {
                     if let Some(outcome) = &record.outcome {
@@ -315,7 +315,10 @@ impl ToolGateway {
                 error: with_correlation(error, ctx).to_info(),
             },
         };
-        let record = self.steps.complete(&step.idempotency_key, &outcome).await?;
+        let record = self
+            .steps
+            .complete(&step.idempotency_key, &outcome, ctx.write_authority())
+            .await?;
         let stored = record.outcome.as_ref().unwrap_or(&outcome);
         let (result_kind, error, evidence_ids) = match stored {
             StepOutcome::Succeeded { evidence_ids, .. } => {
@@ -425,13 +428,16 @@ impl ToolGateway {
             .parse()
             .map_err(|_| Error::new(ErrorCode::Internal, "invalid component id"))?;
         self.events
-            .append(NewEvent {
-                run_id: run_id.clone(),
-                occurred_at: Timestamp(self.clock.now()),
-                correlation_id: ctx.correlation_id().clone(),
-                actor: Actor::System { component },
-                payload,
-            })
+            .append(
+                NewEvent {
+                    run_id: run_id.clone(),
+                    occurred_at: Timestamp(self.clock.now()),
+                    correlation_id: ctx.correlation_id().clone(),
+                    actor: Actor::System { component },
+                    payload,
+                },
+                ctx.write_authority(),
+            )
             .await
             .map(|_| ())
     }

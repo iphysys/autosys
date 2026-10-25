@@ -28,12 +28,20 @@ async fn in_memory_event_log() {
 
 #[tokio::test]
 async fn in_memory_sdr_repository() {
-    contract::sdr_repository(|| async { InMemorySdrRepository::new() }).await;
+    contract::sdr_repository(|clock| async move {
+        let jobs = InMemoryJobStore::new(clock);
+        (InMemorySdrRepository::fenced_by(jobs.leases()), jobs)
+    })
+    .await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn in_memory_step_store() {
-    contract::step_store(|clock| async move { InMemoryStepStore::new(clock) }).await;
+    contract::step_store(|clock| async move {
+        let jobs = InMemoryJobStore::new(clock);
+        (InMemoryStepStore::fenced_by(jobs.leases()), jobs)
+    })
+    .await;
 }
 
 #[tokio::test]

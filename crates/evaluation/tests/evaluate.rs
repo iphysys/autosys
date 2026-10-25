@@ -20,7 +20,8 @@ use sdr::{InitialVersion, SdrManager, ValidatedTransition, Validation};
 use serde_json::{Value, json};
 use testkit::builders::{id, parse};
 use testkit::clock::ManualClock;
-use testkit::stores::{InMemoryEventLog, InMemoryEvidenceStore, sdr_storage};
+use testkit::leases::LeasedJob;
+use testkit::stores::{InMemoryEventLog, InMemoryEvidenceStore, fenced_sdr_storage};
 
 struct Fixture {
     manager: SdrManager,
@@ -41,13 +42,15 @@ fn standard_checks() -> Vec<Arc<dyn Check>> {
 
 async fn fixture_with(checks: Vec<Arc<dyn Check>>) -> Fixture {
     let clock = Arc::new(ManualClock::at_epoch());
-    let manager = SdrManager::new(sdr_storage(), clock.clone()).expect("manager");
+    let leased = LeasedJob::new(clock.clone(), "run-1");
+    let manager =
+        SdrManager::new(fenced_sdr_storage(leased.leases()), clock.clone()).expect("manager");
     let evidence = Arc::new(InMemoryEvidenceStore::new());
-    let events = Arc::new(InMemoryEventLog::new());
+    let events = Arc::new(InMemoryEventLog::fenced_by(leased.leases()));
     let evaluator =
         Evaluator::new(checks, evidence.clone(), events.clone(), clock).expect("evaluator");
     let project: ProjectId = id("p1");
-    let ctx = ExecutionContext::new(id("corr-eval")).with_run(id("run-1"));
+    let ctx = leased.ctx("corr-eval").with_run(id("run-1"));
     manager
         .create_project(
             &project,
