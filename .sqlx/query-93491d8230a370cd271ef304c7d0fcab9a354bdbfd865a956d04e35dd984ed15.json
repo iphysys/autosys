@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                    SELECT document AS \"document!: Json<Job>\", attempt, updated_at,\n                        lease_holder, lease_acquired_at, lease_expires_at, lease_heartbeat_at,\n                        lease_epoch\n                    FROM jobs\n                    WHERE run_id = $1\n                    ORDER BY created_at, id\n                    LIMIT 1\n                    ",
+  "query": "\n                    SELECT document AS \"document!: Json<Job>\", attempt, updated_at, not_before,\n                        lease_holder, lease_acquired_at, lease_expires_at, lease_heartbeat_at\n                    FROM jobs\n                    WHERE id = $1\n                    ",
   "describe": {
     "columns": [
       {
@@ -38,6 +38,17 @@
       },
       {
         "ordinal": 3,
+        "name": "not_before",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "jobs",
+            "name": "not_before"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
         "name": "lease_holder",
         "type_info": "Text",
         "origin": {
@@ -48,7 +59,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "lease_acquired_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -59,7 +70,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "lease_expires_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -70,24 +81,13 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "lease_heartbeat_at",
         "type_info": "Timestamptz",
         "origin": {
           "Table": {
             "table": "jobs",
             "name": "lease_heartbeat_at"
-          }
-        }
-      },
-      {
-        "ordinal": 7,
-        "name": "lease_epoch",
-        "type_info": "Int8",
-        "origin": {
-          "Table": {
-            "table": "jobs",
-            "name": "lease_epoch"
           }
         }
       }
@@ -105,8 +105,8 @@
       true,
       true,
       true,
-      false
+      true
     ]
   },
-  "hash": "1633665b9a1670cbbd1e16384bca36eef3bb69b7ef502fbceceb0db347933be8"
+  "hash": "93491d8230a370cd271ef304c7d0fcab9a354bdbfd865a956d04e35dd984ed15"
 }

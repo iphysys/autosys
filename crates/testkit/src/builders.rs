@@ -3,8 +3,8 @@
 
 use chrono::{DateTime, Utc};
 use contracts::types::{
-    AgentSpec, ArtifactMetadata, CheckpointRef, Event, Evidence, Job, JobStatus, SdrDocument,
-    SdrVersionRecord, StepOutcome, Timestamp, Transition,
+    AgentSpec, ArtifactMetadata, CheckpointRef, ContinuationRecord, Event, Evidence, Job,
+    JobStatus, SdrDocument, SdrVersionRecord, StepOutcome, Timestamp, Transition,
 };
 use contracts::{ContentBlock, Message, ModelRequest, NewEvent, NewStep, Role, ToolRequest};
 use serde::de::DeserializeOwned;
@@ -78,6 +78,8 @@ pub fn job(job_id: &str, run_id: &str, created_at: DateTime<Utc>) -> Job {
         "task": task(&format!("task-{job_id}")),
         "idempotency_key": job_id,
         "attempt": 0,
+        "failed_attempts": 0,
+        "attempt_history": [],
         "created_at": at,
         "updated_at": at,
         "sdr_base_version": 0,
@@ -99,6 +101,41 @@ pub fn checkpoint(version: u64) -> CheckpointRef {
     parse(json!({
         "version": version,
         "sha256": sha256_of(format!("checkpoint {version}").as_bytes())
+    }))
+}
+
+/// Checkpoint `version` of `run_id`'s continuation: one open step with a
+/// tool call still to run, and a provider's opaque thinking block that must
+/// come back unchanged.
+pub fn continuation(run_id: &str, version: u64) -> ContinuationRecord {
+    parse(json!({
+        "schema_version": "0.1",
+        "checkpoint": version,
+        "run_id": run_id,
+        "failures": 0,
+        "model_ids": ["test-model"],
+        "committed": [],
+        "evidence_ids": [],
+        "head": 1,
+        "turn": [{ "role": "user", "content": [{ "type": "text", "text": "Size the part." }] }],
+        "open_step": {
+            "number": 1,
+            "sdr_version": 1,
+            "prompts": [],
+            "assistant": {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "opaque",
+                        "provider": "anthropic",
+                        "data": { "type": "thinking", "thinking": "Measure first.", "signature": "c2ln", "z": [3, 1, 2], "a": { "y": 1, "b": 2 } }
+                    },
+                    { "type": "tool_call", "id": "call-1", "name": "measure", "arguments": { "part_id": "p1" } }
+                ]
+            },
+            "results": [],
+            "next": 0
+        }
     }))
 }
 

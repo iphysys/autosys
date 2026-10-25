@@ -2,15 +2,19 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use chrono::{DateTime, Utc};
-use contracts::types::{Job, JobState};
+use contracts::types::{ContinuationRecord, Job, JobState};
 use contracts::{
     Clock, Error, FenceToken, FoundLease, StaleFence, SystemClock, job_state, lease_lost,
 };
 
-/// A job as the in-memory job store keeps it, with its lease epoch.
+/// A job as the in-memory job store keeps it, with what the store manages
+/// beside it: its lease epoch, its continuation record and the sequence
+/// number its wake-up scan starts after.
 pub(crate) struct Leased {
     pub(crate) job: Job,
     pub(crate) epoch: u64,
+    pub(crate) continuation: Option<ContinuationRecord>,
+    pub(crate) checked_seq: u64,
 }
 
 pub(crate) type Jobs = BTreeMap<String, Leased>;

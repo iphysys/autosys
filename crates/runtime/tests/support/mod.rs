@@ -186,6 +186,8 @@ pub fn job_for(task: Value) -> Job {
         "task": task,
         "idempotency_key": "job-1",
         "attempt": 1,
+        "failed_attempts": 0,
+        "attempt_history": [],
         "created_at": "2026-01-01T00:00:00Z",
         "updated_at": "2026-01-01T00:00:00Z",
         "sdr_base_version": 1,

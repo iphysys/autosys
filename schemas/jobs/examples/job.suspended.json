@@ -36,6 +36,8 @@
   },
   "idempotency_key": "job-0001",
   "attempt": 1,
+  "failed_attempts": 0,
+  "attempt_history": [],
   "created_at": "2026-10-22T09:00:00Z",
   "updated_at": "2026-10-22T09:04:15Z",
   "sdr_base_version": 1,

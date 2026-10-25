@@ -107,7 +107,7 @@ FOR SHARE
 4. Submission uses `JobSubmit` (renamed from `JobInsert`), and `ProjectCreate` for SDR version 0.
 5. The waker uses `JobWake`, which also permits its `job_state_changed {suspended → queued}`: superseded by the amendment "a reason covers one operation", instead of a new reason.
 6. A claim that reconciles the log appends under the new fence; recovery and the repair of `tool_call_completed` and `sdr_transition` write under it too. The lock order stays `jobs`, then the event counter.
-7. PR 12's migration becomes `0004_scheduler.sql`.
+7. PR 12's migrations are `0004_job_status.sql` and `0005_scheduler.sql`.
 8. `crates/api` is not added to the `UnfencedReason` rule: bootstrap gives it a pre-built `ApiCommand` authority (PR 14).
 
 ## Amendments
@@ -140,6 +140,15 @@ The job contract (blueprint §4.1) changes with job schema 0.2. A job's state an
 - `JobWake` permits the wake and `{waiting or suspended → queued}`, on the checkpoint the job was parked on.
 - Neither permits the other's transition, nor any transition a worker makes (claims, requeues, stops): those are job-scoped and fenced. The contracts matrix and the fencing suite test each pair on both backends.
 - Unfenced submit is for top-level runs only (the API and the CLI). A child job is a fenced insert under its parent's fence, so a parent whose lease was reclaimed cannot spawn children.
+
+### PR 12: waking needs no unfenced write of its own
+
+The wake-up scan once had a `mark_checked` write, outside any lease, to remember how far it had read. It is gone.
+
+- `wake_checked_seq` is written only by the fenced save that parks the job. A worker's own copy, advanced as it reads, is a cache: re-reading from the stored value is always safe.
+- The scan reads only the event kinds its wake condition needs (`EventLog::read_kinds`, indexed by run, kind and sequence number), so progress events and other traffic never count toward a re-read. While a job is parked, only client commands reach its run's log.
+- A parent waiting on a child will read the child's job state; nothing writes into another job's log, so that needs no authority either.
+- If re-reads become costly under fan-out, a persisted checkpoint can be added inside the Postgres adapter later, with no contract change.
 
 ## Links
 

@@ -18,12 +18,13 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use schema_types::{
-    Actor, ArtifactMetadata, Event, EventPayload, Evidence, Job, SdrDocument, SdrVersionRecord,
-    Sha256, StepOutcome, StepRecord, Timestamp,
+    Actor, ArtifactMetadata, ContinuationRecord, Event, EventPayload, Evidence, Job, SdrDocument,
+    SdrVersionRecord, Sha256, StepOutcome, StepRecord, Timestamp,
 };
 
 use crate::context::ExecutionContext;
 use crate::error::Error;
+use crate::events::EventKind;
 use crate::fence::{FenceToken, WriteAuthority};
 use crate::ids::{
     ApprovalId, ArtifactId, CorrelationId, EvidenceId, Identifier, JobId, ProjectId, RunId,
@@ -45,12 +46,59 @@ pub enum WakeReason {
 pub struct Claimed {
     pub job: Job,
     pub fence: FenceToken,
+    /// True when the job was claimed from running because its lease had
+    /// expired: the attempt before this one was interrupted.
+    pub interrupted: bool,
 }
 
 impl Claimed {
-    pub fn new(job: Job, fence: FenceToken) -> Self {
-        Self { job, fence }
+    pub fn new(job: Job, fence: FenceToken, interrupted: bool) -> Self {
+        Self {
+            job,
+            fence,
+            interrupted,
+        }
     }
+}
+
+/// What [`JobStore::save`] does with the run's continuation record.
+#[derive(Clone, Copy, Debug)]
+pub enum RecordWrite<'a> {
+    /// The stored record stays as it is.
+    Keep,
+    /// `record` replaces the stored one.
+    Replace(&'a ContinuationRecord),
+}
+
+/// One fenced write of a job (ADR-0031): the job, its continuation record and
+/// a requeue's delay, stored together.
+#[derive(Clone, Copy, Debug)]
+pub struct JobWrite<'a> {
+    pub job: &'a Job,
+    pub continuation: RecordWrite<'a>,
+    /// A requeue's delay: the store sets `not_before` this far past its own
+    /// clock. `None` clears it.
+    pub retry_after: Option<Duration>,
+}
+
+impl<'a> JobWrite<'a> {
+    /// `job` alone: the stored record stays, and there is no delay.
+    pub fn keep(job: &'a Job) -> Self {
+        Self {
+            job,
+            continuation: RecordWrite::Keep,
+            retry_after: None,
+        }
+    }
+}
+
+/// A waiting or suspended job, and the last sequence number of its run that
+/// the worker which parked it had seen: a wake-up scan reads only events
+/// after it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Parked {
+    pub job: Job,
+    pub checked_seq: u64,
 }
 
 #[async_trait]
@@ -65,11 +113,20 @@ pub trait JobStore: Send + Sync {
 
     async fn find_by_run(&self, run_id: &RunId) -> Result<Option<Job>, Error>;
 
+    /// The job's continuation record, if a save stored one. NotFound if
+    /// there is no such job.
+    async fn continuation(&self, id: &JobId) -> Result<Option<ContinuationRecord>, Error>;
+
+    /// Waiting and suspended jobs, least recently updated first, at most
+    /// `limit`.
+    async fn parked(&self, limit: usize) -> Result<Vec<Parked>, Error>;
+
     /// Atomically claims the oldest job (by `created_at`, then id) that is
-    /// queued, or running with an expired lease. The claimed job is running,
-    /// leased to `holder` for `lease_for`, with `attempt` incremented, and its
-    /// lease epoch is one higher than before: the returned fence is the only
-    /// current one. Concurrent callers never receive the same job.
+    /// queued and past its `not_before`, or running with an expired lease.
+    /// The claimed job is running, leased to `holder` for `lease_for`, with
+    /// `attempt` incremented, and its lease epoch is one higher than before:
+    /// the returned fence is the only current one. Concurrent callers never
+    /// receive the same job.
     async fn claim(
         &self,
         holder: &Identifier,
@@ -80,11 +137,14 @@ pub trait JobStore: Send + Sync {
     /// current.
     async fn renew_lease(&self, fence: &FenceToken, lease_for: Duration) -> Result<Job, Error>;
 
-    /// Writes the job while `fence` is current; LeaseLost otherwise.
-    /// InvalidInput if the fence is for another job. The store keeps its own
-    /// lease, epoch and attempt values; a status other than running clears
-    /// the lease, and with it the fence.
-    async fn save(&self, job: &Job, fence: &FenceToken) -> Result<(), Error>;
+    /// Writes the job, its continuation record and its `not_before` while
+    /// `fence` is current; LeaseLost otherwise. InvalidInput if the fence is
+    /// for another job. The store keeps its own lease, epoch and attempt
+    /// values; a status other than running clears the lease, and with it the
+    /// fence. A save into waiting or suspended sets the job's checked
+    /// sequence number ([`Parked::checked_seq`]) to its
+    /// `progress.last_event_seq`.
+    async fn save(&self, write: &JobWrite<'_>, fence: &FenceToken) -> Result<(), Error>;
 
     /// Moves a waiting or suspended job back to queued, on the checkpoint it
     /// was parked on, if `reason` matches its wake condition, with
@@ -112,8 +172,11 @@ pub struct NewEvent {
 pub trait EventLog: Send + Sync {
     /// Appends with the run's next sequence number (the first is 1, with no
     /// gaps, even under concurrent appends) and returns the stored event.
-    /// Needs a current fence, or `UnfencedReason::ApiCommand` for
-    /// `approval_answered` and `cancel_requested`.
+    /// Needs a current fence, or an unfenced reason that permits the event.
+    ///
+    /// An event that completes something ([`crate::completion_key`]) is
+    /// stored once per run: appending it again, even concurrently, returns
+    /// the event already stored, unchanged, and takes no sequence number.
     async fn append(
         &self,
         event: NewEvent,
@@ -122,6 +185,15 @@ pub trait EventLog: Send + Sync {
 
     /// Events with `seq > after`, in ascending order, at most `limit`.
     async fn read(&self, run_id: &RunId, after: u64, limit: usize) -> Result<Vec<Event>, Error>;
+
+    /// Like [`EventLog::read`], but only events of the given kinds.
+    async fn read_kinds(
+        &self,
+        run_id: &RunId,
+        after: u64,
+        kinds: &[EventKind],
+        limit: usize,
+    ) -> Result<Vec<Event>, Error>;
 
     /// The last sequence number, or 0 if the run has no events.
     async fn last_seq(&self, run_id: &RunId) -> Result<u64, Error>;

@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    UPDATE jobs SET\n                        run_id = $3,\n                        created_at = $4,\n                        document = $5,\n                        updated_at = autosys_now(),\n                        continuation = CASE WHEN $8 THEN $9 ELSE continuation END,\n                        not_before = autosys_now() + $10::interval,\n                        wake_checked_seq = CASE WHEN $11 THEN $12 ELSE wake_checked_seq END,\n                        lease_holder = CASE WHEN $6 THEN lease_holder END,\n                        lease_acquired_at = CASE WHEN $6 THEN lease_acquired_at END,\n                        lease_expires_at = CASE WHEN $6 THEN lease_expires_at END,\n                        lease_heartbeat_at = CASE WHEN $6 THEN lease_heartbeat_at END\n                    WHERE id = $1\n                        AND state = 'running'\n                        AND lease_holder = $2\n                        AND lease_epoch = $7\n                        AND lease_expires_at > autosys_now()\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Jsonb",
+        "Bool",
+        "Int8",
+        "Bool",
+        "Jsonb",
+        "Interval",
+        "Bool",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2b667977a1f8a516fe3eb0d47e241326f27b8c3fd50aa04e1302f34f4e85a1a0"
+}

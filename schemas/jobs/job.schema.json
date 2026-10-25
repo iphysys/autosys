@@ -13,6 +13,8 @@
     "task",
     "idempotency_key",
     "attempt",
+    "failed_attempts",
+    "attempt_history",
     "created_at",
     "updated_at",
     "sdr_base_version",
@@ -33,6 +35,20 @@
       "description": "How many times the job has been claimed.",
       "type": "integer",
       "minimum": 0
+    },
+    "failed_attempts": {
+      "description": "Failed attempts since the run's checkpoint last moved on: retryable errors, and claims that found the job interrupted. At the worker's max_attempts the job fails.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "attempt_history": {
+      "description": "Every failed attempt, oldest first.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/AttemptRecord" }
+    },
+    "not_before": {
+      "description": "Set by the job store when a requeue asks for a delay: the job is not claimed before this time, on the store's clock.",
+      "$ref": "../common/types.schema.json#/$defs/Timestamp"
     },
     "created_at": { "$ref": "../common/types.schema.json#/$defs/Timestamp" },
     "updated_at": { "$ref": "../common/types.schema.json#/$defs/Timestamp" },
@@ -156,6 +172,17 @@
       "properties": {
         "error": { "$ref": "../common/types.schema.json#/$defs/ErrorInfo" },
         "kind": { "type": "string", "enum": ["attempts_exhausted", "harness_error"] }
+      }
+    },
+    "AttemptRecord": {
+      "description": "A failed attempt: the claim it ran under, its error, and how far the run had got.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempt", "error", "last_event_seq"],
+      "properties": {
+        "attempt": { "type": "integer", "minimum": 1 },
+        "error": { "$ref": "../common/types.schema.json#/$defs/ErrorInfo" },
+        "last_event_seq": { "type": "integer", "minimum": 0 }
       }
     },
     "JobProgress": {

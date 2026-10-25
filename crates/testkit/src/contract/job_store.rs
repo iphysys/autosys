@@ -6,7 +6,9 @@ use std::time::Duration;
 use chrono::TimeDelta;
 use contracts::ids::{Identifier, JobId};
 use contracts::types::JobStatus;
-use contracts::{Clock, ErrorCode, JobStore, UnfencedReason, WakeReason};
+use contracts::{
+    Claimed, Clock, ErrorCode, JobStore, JobWrite, RecordWrite, UnfencedReason, WakeReason,
+};
 
 use super::{assert_code, unfenced};
 use crate::builders::{self, checkpoint, id, job};
@@ -49,6 +51,241 @@ where
     leaving_running_clears_the_lease(fresh(&make).await).await;
     expired_lease_can_be_reclaimed(fresh(&make).await).await;
     wake_follows_the_wake_condition(fresh(&make).await).await;
+    a_claim_reports_an_interrupted_job(fresh(&make).await).await;
+    the_continuation_round_trips_and_stays(fresh(&make).await).await;
+    a_refused_save_leaves_the_record(fresh(&make).await).await;
+    parked_jobs_carry_their_checked_seq(fresh(&make).await).await;
+    a_retry_delay_holds_back_the_claim(fresh(&make).await).await;
+}
+
+async fn insert_and_claim<S: JobStore>(f: &Fixture<S>, job_id: &str, n: usize) -> Claimed {
+    insert(
+        f.store.as_ref(),
+        &job(job_id, &format!("run-{job_id}"), f.clock.now()),
+        job_id,
+    )
+    .await;
+    f.store
+        .claim(&worker(n), LEASE)
+        .await
+        .expect("claim")
+        .expect("a job to claim")
+}
+
+async fn a_claim_reports_an_interrupted_job<S: JobStore>(f: Fixture<S>) {
+    let first = insert_and_claim(&f, "job-1", 1).await;
+    assert!(!first.interrupted, "interrupted: a queued job was not");
+    f.clock.advance(LEASE + Duration::from_secs(1));
+    let again = f
+        .store
+        .claim(&worker(2), LEASE)
+        .await
+        .expect("claim")
+        .expect("the expired job is claimable");
+    assert!(again.interrupted, "interrupted: an expired running job was");
+}
+
+async fn the_continuation_round_trips_and_stays<S: JobStore>(f: Fixture<S>) {
+    let claimed = insert_and_claim(&f, "job-1", 1).await;
+    let job_id = claimed.job.id.clone();
+    assert_eq!(
+        f.store.continuation(&job_id).await.expect("continuation"),
+        None,
+        "continuation: a new job has none"
+    );
+    let record = builders::continuation("run-job-1", 1);
+    f.store
+        .save(
+            &JobWrite {
+                job: &claimed.job,
+                continuation: RecordWrite::Replace(&record),
+                retry_after: None,
+            },
+            &claimed.fence,
+        )
+        .await
+        .expect("continuation: save the record");
+    assert_eq!(
+        f.store.continuation(&job_id).await.expect("continuation"),
+        Some(record.clone()),
+        "continuation: the record, opaque blocks included, comes back as saved"
+    );
+
+    // A save that keeps the record, then parking and waking, leave it.
+    let mut suspended = claimed.job.clone();
+    suspended.status = builders::suspended("appr-1", 1);
+    f.store
+        .save(&JobWrite::keep(&suspended), &claimed.fence)
+        .await
+        .expect("continuation: suspend");
+    assert!(
+        wake(f.store.as_ref(), &job_id, &WakeReason::CancelRequested).await,
+        "continuation: wake"
+    );
+    assert_eq!(
+        f.store.continuation(&job_id).await.expect("continuation"),
+        Some(record),
+        "continuation: kept through a park and a wake-up"
+    );
+    assert_code(
+        f.store.continuation(&id("job-missing")).await,
+        ErrorCode::NotFound,
+        "continuation: a missing job",
+    );
+}
+
+async fn a_refused_save_leaves_the_record<S: JobStore>(f: Fixture<S>) {
+    let first = insert_and_claim(&f, "job-1", 1).await;
+    let kept = builders::continuation("run-job-1", 1);
+    f.store
+        .save(
+            &JobWrite {
+                job: &first.job,
+                continuation: RecordWrite::Replace(&kept),
+                retry_after: None,
+            },
+            &first.fence,
+        )
+        .await
+        .expect("refused save: the first record");
+    f.clock.advance(LEASE + Duration::from_secs(1));
+    let second = f
+        .store
+        .claim(&worker(2), LEASE)
+        .await
+        .expect("claim")
+        .expect("the expired job is claimable");
+    let stale = builders::continuation("run-job-1", 2);
+    assert_code(
+        f.store
+            .save(
+                &JobWrite {
+                    job: &first.job,
+                    continuation: RecordWrite::Replace(&stale),
+                    retry_after: None,
+                },
+                &first.fence,
+            )
+            .await,
+        ErrorCode::LeaseLost,
+        "refused save: a stale fence",
+    );
+    assert_eq!(
+        f.store
+            .continuation(&second.job.id)
+            .await
+            .expect("continuation"),
+        Some(kept),
+        "refused save: the record changed"
+    );
+}
+
+async fn parked_jobs_carry_their_checked_seq<S: JobStore>(f: Fixture<S>) {
+    for (n, (job_id, seq)) in [("job-1", 7), ("job-2", 9)].into_iter().enumerate() {
+        let claimed = insert_and_claim(&f, job_id, n + 1).await;
+        let mut parked = claimed.job.clone();
+        parked.progress.last_event_seq = seq;
+        parked.status = builders::suspended("appr-1", 1);
+        f.clock.advance(Duration::from_secs(1));
+        f.store
+            .save(&JobWrite::keep(&parked), &claimed.fence)
+            .await
+            .expect("parked: suspend");
+    }
+    insert_and_claim(&f, "job-3", 3).await;
+
+    let parked = f.store.parked(10).await.expect("parked");
+    let listed: Vec<(&str, u64)> = parked
+        .iter()
+        .map(|p| (p.job.id.as_str(), p.checked_seq))
+        .collect();
+    assert_eq!(
+        listed,
+        [("job-1", 7), ("job-2", 9)],
+        "parked: the parked jobs, least recently updated first, with the seq they were parked at"
+    );
+    assert_eq!(
+        f.store.parked(1).await.expect("parked").len(),
+        1,
+        "parked: limit"
+    );
+    assert!(
+        wake(f.store.as_ref(), &id("job-1"), &WakeReason::CancelRequested).await,
+        "parked: wake"
+    );
+    let left: Vec<String> = f
+        .store
+        .parked(10)
+        .await
+        .expect("parked")
+        .into_iter()
+        .map(|p| p.job.id.as_str().to_owned())
+        .collect();
+    assert_eq!(left, ["job-2"], "parked: a woken job is no longer parked");
+}
+
+async fn a_retry_delay_holds_back_the_claim<S: JobStore>(f: Fixture<S>) {
+    let claimed = insert_and_claim(&f, "job-1", 1).await;
+    let mut running = claimed.job.clone();
+    running.failed_attempts = 1;
+    assert_code(
+        f.store
+            .save(
+                &JobWrite {
+                    job: &running,
+                    continuation: RecordWrite::Keep,
+                    retry_after: Some(Duration::from_secs(10)),
+                },
+                &claimed.fence,
+            )
+            .await,
+        ErrorCode::InvalidInput,
+        "retry delay: needs a queued job",
+    );
+    let mut queued = claimed.job.clone();
+    queued.status = JobStatus::Queued { checkpoint: None };
+    queued.failed_attempts = 1;
+    f.store
+        .save(
+            &JobWrite {
+                job: &queued,
+                continuation: RecordWrite::Keep,
+                retry_after: Some(Duration::from_secs(10)),
+            },
+            &claimed.fence,
+        )
+        .await
+        .expect("retry delay: requeue");
+    let stored = f.store.get(&queued.id).await.expect("get");
+    assert_eq!(
+        stored.not_before.map(|t| t.0),
+        Some(f.clock.now() + TimeDelta::seconds(10)),
+        "retry delay: not_before on the store's clock"
+    );
+    assert_eq!(stored.failed_attempts, 1, "retry delay: failed_attempts");
+    assert!(
+        f.store
+            .claim(&worker(2), LEASE)
+            .await
+            .expect("claim")
+            .is_none(),
+        "retry delay: claimed before not_before"
+    );
+    f.clock.advance(Duration::from_secs(11));
+    let reclaimed = f
+        .store
+        .claim(&worker(2), LEASE)
+        .await
+        .expect("claim")
+        .expect("retry delay: not claimable after not_before");
+    assert!(
+        !reclaimed.interrupted,
+        "retry delay: a requeued job was not interrupted"
+    );
+    assert_eq!(
+        reclaimed.job.not_before, None,
+        "retry delay: cleared by the claim"
+    );
 }
 
 fn worker(n: usize) -> Identifier {
@@ -109,6 +346,16 @@ async fn insert_requires_a_queued_job<S: JobStore>(f: Fixture<S>) {
             .await,
         ErrorCode::InvalidInput,
         "insert_requires_a_queued_job: with a checkpoint",
+    );
+    // A delay comes only from a requeue's save.
+    let mut delayed = job("job-1", "run-1", f.clock.now());
+    delayed.not_before = Some(contracts::types::Timestamp(f.clock.now()));
+    assert_code(
+        f.store
+            .insert(&delayed, Some(&unfenced(UnfencedReason::JobSubmit)))
+            .await,
+        ErrorCode::InvalidInput,
+        "insert_requires_a_queued_job: with a delay",
     );
 }
 
@@ -306,12 +553,14 @@ async fn save_requires_the_lease<S: JobStore>(f: Fixture<S>) {
     let mut progressed = second.job.clone();
     progressed.progress.steps_completed = 3;
     assert_code(
-        f.store.save(&progressed, &first.fence).await,
+        f.store
+            .save(&JobWrite::keep(&progressed), &first.fence)
+            .await,
         ErrorCode::LeaseLost,
         "save_requires_the_lease: save with a stale fence",
     );
     f.store
-        .save(&progressed, &second.fence)
+        .save(&JobWrite::keep(&progressed), &second.fence)
         .await
         .expect("save_requires_lease: save with the current fence");
     let stored = f
@@ -327,7 +576,7 @@ async fn save_requires_the_lease<S: JobStore>(f: Fixture<S>) {
     let mut other = stored.clone();
     other.id = id("job-2");
     assert_code(
-        f.store.save(&other, &second.fence).await,
+        f.store.save(&JobWrite::keep(&other), &second.fence).await,
         ErrorCode::InvalidInput,
         "save_requires_the_lease: a fence for another job",
     );
@@ -337,7 +586,7 @@ async fn save_requires_the_lease<S: JobStore>(f: Fixture<S>) {
     forged.attempt = 99;
     forged.lease = None;
     f.store
-        .save(&forged, &second.fence)
+        .save(&JobWrite::keep(&forged), &second.fence)
         .await
         .expect("save_requires_lease: save");
     let stored = f
@@ -368,14 +617,16 @@ async fn leaving_running_clears_the_lease<S: JobStore>(f: Fixture<S>) {
     let mut completed = claimed.job.clone();
     completed.status = builders::completed("success", 1);
     f.store
-        .save(&completed, &claimed.fence)
+        .save(&JobWrite::keep(&completed), &claimed.fence)
         .await
         .expect("leaving_running: save");
     let stored = f.store.get(&new.id).await.expect("leaving_running: get");
     assert_eq!(stored.status, completed.status, "leaving_running: status");
     assert_eq!(stored.lease, None, "leaving_running: lease not cleared");
     assert_code(
-        f.store.save(&completed, &claimed.fence).await,
+        f.store
+            .save(&JobWrite::keep(&completed), &claimed.fence)
+            .await,
         ErrorCode::LeaseLost,
         "leaving_running_clears_the_lease: save after completion",
     );
@@ -436,7 +687,9 @@ async fn expired_lease_can_be_reclaimed<S: JobStore>(f: Fixture<S>) {
         "expired_lease: new holder"
     );
     assert_code(
-        f.store.save(&first.job, &first.fence).await,
+        f.store
+            .save(&JobWrite::keep(&first.job), &first.fence)
+            .await,
         ErrorCode::LeaseLost,
         "expired_lease_can_be_reclaimed: save by the previous holder",
     );
@@ -459,7 +712,7 @@ async fn wake_follows_the_wake_condition<S: JobStore>(f: Fixture<S>) {
         let mut suspended = claimed.job.clone();
         suspended.status = builders::suspended(approval, 1);
         f.store
-            .save(&suspended, &claimed.fence)
+            .save(&JobWrite::keep(&suspended), &claimed.fence)
             .await
             .expect("wake: suspend");
     }

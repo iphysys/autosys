@@ -8,7 +8,8 @@ use async_trait::async_trait;
 use contracts::ids::RunId;
 use contracts::types::Event;
 use contracts::{
-    Error, ErrorCode, EventLog, EventSubscriber, ExecutionContext, NewEvent, WriteAuthority,
+    Error, ErrorCode, EventKind, EventLog, EventSubscriber, ExecutionContext, NewEvent,
+    WriteAuthority,
 };
 
 /// An [`EventLog`] that shows every appended event to the registered
@@ -79,6 +80,16 @@ impl EventLog for ObservedEventLog {
 
     async fn read(&self, run_id: &RunId, after: u64, limit: usize) -> Result<Vec<Event>, Error> {
         self.inner.read(run_id, after, limit).await
+    }
+
+    async fn read_kinds(
+        &self,
+        run_id: &RunId,
+        after: u64,
+        kinds: &[EventKind],
+        limit: usize,
+    ) -> Result<Vec<Event>, Error> {
+        self.inner.read_kinds(run_id, after, kinds, limit).await
     }
 
     async fn last_seq(&self, run_id: &RunId) -> Result<u64, Error> {

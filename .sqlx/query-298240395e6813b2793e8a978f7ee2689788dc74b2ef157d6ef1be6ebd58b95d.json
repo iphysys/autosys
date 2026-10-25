@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                        WITH next AS (\n                            SELECT id FROM jobs\n                            WHERE state = 'queued'\n                                OR (state = 'running'\n                                    AND (lease_expires_at IS NULL OR lease_expires_at <= autosys_now()))\n                            ORDER BY created_at, id\n                            LIMIT 1\n                            FOR UPDATE SKIP LOCKED\n                        )\n                        UPDATE jobs SET\n                            document = jsonb_set(jobs.document, '{status}', '{\"state\": \"running\"}'),\n                            attempt = jobs.attempt + 1,\n                            updated_at = autosys_now(),\n                            lease_holder = $1,\n                            lease_acquired_at = autosys_now(),\n                            lease_expires_at = autosys_now() + $2::interval,\n                            lease_heartbeat_at = autosys_now(),\n                            lease_epoch = jobs.lease_epoch + 1\n                        FROM next\n                        WHERE jobs.id = next.id\n                        RETURNING jobs.document AS \"document!: Json<Job>\",\n                            jobs.attempt AS \"attempt!\", jobs.updated_at AS \"updated_at!\",\n                            jobs.lease_holder, jobs.lease_acquired_at, jobs.lease_expires_at,\n                            jobs.lease_heartbeat_at, jobs.lease_epoch AS \"lease_epoch!\"\n                        ",
+  "query": "\n                        WITH next AS (\n                            SELECT id, state AS prior_state FROM jobs\n                            WHERE (state = 'queued'\n                                    AND (not_before IS NULL OR not_before <= autosys_now()))\n                                OR (state = 'running'\n                                    AND (lease_expires_at IS NULL OR lease_expires_at <= autosys_now()))\n                            ORDER BY created_at, id\n                            LIMIT 1\n                            FOR UPDATE SKIP LOCKED\n                        )\n                        UPDATE jobs SET\n                            document = jsonb_set(jobs.document, '{status}', '{\"state\": \"running\"}'),\n                            attempt = jobs.attempt + 1,\n                            updated_at = autosys_now(),\n                            not_before = NULL,\n                            lease_holder = $1,\n                            lease_acquired_at = autosys_now(),\n                            lease_expires_at = autosys_now() + $2::interval,\n                            lease_heartbeat_at = autosys_now(),\n                            lease_epoch = jobs.lease_epoch + 1\n                        FROM next\n                        WHERE jobs.id = next.id\n                        RETURNING jobs.document AS \"document!: Json<Job>\",\n                            jobs.attempt AS \"attempt!\", jobs.updated_at AS \"updated_at!\",\n                            jobs.lease_holder, jobs.lease_acquired_at, jobs.lease_expires_at,\n                            jobs.lease_heartbeat_at, jobs.lease_epoch AS \"lease_epoch!\",\n                            next.prior_state = 'running' AS \"interrupted!\"\n                        ",
   "describe": {
     "columns": [
       {
@@ -90,6 +90,12 @@
             "name": "lease_epoch"
           }
         }
+      },
+      {
+        "ordinal": 8,
+        "name": "interrupted!",
+        "type_info": "Bool",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -106,8 +112,9 @@
       true,
       true,
       true,
-      false
+      false,
+      null
     ]
   },
-  "hash": "1c2ed14d3b724e4827f211690d5122db1f9183096dcb9db50d9196de49b0eaf2"
+  "hash": "298240395e6813b2793e8a978f7ee2689788dc74b2ef157d6ef1be6ebd58b95d"
 }

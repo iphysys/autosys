@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                    SELECT document AS \"document!: Json<Job>\", attempt, updated_at,\n                        lease_holder, lease_acquired_at, lease_expires_at, lease_heartbeat_at,\n                        lease_epoch\n                    FROM jobs\n                    WHERE id = $1\n                    ",
+  "query": "\n                    UPDATE jobs SET\n                        lease_expires_at = autosys_now() + $3::interval,\n                        lease_heartbeat_at = autosys_now(),\n                        updated_at = autosys_now()\n                    WHERE id = $1\n                        AND state = 'running'\n                        AND lease_holder = $2\n                        AND lease_epoch = $4\n                        AND lease_expires_at > autosys_now()\n                    RETURNING document AS \"document!: Json<Job>\",\n                        attempt AS \"attempt!\", updated_at AS \"updated_at!\", not_before,\n                        lease_holder, lease_acquired_at, lease_expires_at, lease_heartbeat_at\n                    ",
   "describe": {
     "columns": [
       {
@@ -16,7 +16,7 @@
       },
       {
         "ordinal": 1,
-        "name": "attempt",
+        "name": "attempt!",
         "type_info": "Int8",
         "origin": {
           "Table": {
@@ -27,7 +27,7 @@
       },
       {
         "ordinal": 2,
-        "name": "updated_at",
+        "name": "updated_at!",
         "type_info": "Timestamptz",
         "origin": {
           "Table": {
@@ -38,6 +38,17 @@
       },
       {
         "ordinal": 3,
+        "name": "not_before",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "jobs",
+            "name": "not_before"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
         "name": "lease_holder",
         "type_info": "Text",
         "origin": {
@@ -48,7 +59,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "lease_acquired_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -59,7 +70,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "lease_expires_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -70,7 +81,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "lease_heartbeat_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -79,22 +90,14 @@
             "name": "lease_heartbeat_at"
           }
         }
-      },
-      {
-        "ordinal": 7,
-        "name": "lease_epoch",
-        "type_info": "Int8",
-        "origin": {
-          "Table": {
-            "table": "jobs",
-            "name": "lease_epoch"
-          }
-        }
       }
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Text",
+        "Text",
+        "Interval",
+        "Int8"
       ]
     },
     "nullable": [
@@ -105,8 +108,8 @@
       true,
       true,
       true,
-      false
+      true
     ]
   },
-  "hash": "a6f7797ace1c9206988e55343ef0b8395ef07d90249578a28ea9aac8dc021d2e"
+  "hash": "1340e1d321949e1ffcfc334a7fb56f93462fa236964d0ad583157de7f9e8167a"
 }

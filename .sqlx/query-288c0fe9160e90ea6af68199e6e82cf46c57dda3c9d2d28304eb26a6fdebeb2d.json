@@ -1,0 +1,124 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    SELECT document AS \"document!: Json<Job>\", attempt, updated_at, not_before,\n                        lease_holder, lease_acquired_at, lease_expires_at, lease_heartbeat_at,\n                        wake_checked_seq\n                    FROM jobs\n                    WHERE state IN ('waiting', 'suspended')\n                    ORDER BY updated_at, id\n                    LIMIT $1\n                    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "document!: Json<Job>",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "jobs",
+            "name": "document"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "attempt",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "jobs",
+            "name": "attempt"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "jobs",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "not_before",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "jobs",
+            "name": "not_before"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "lease_holder",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "jobs",
+            "name": "lease_holder"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "lease_acquired_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "jobs",
+            "name": "lease_acquired_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "lease_expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "jobs",
+            "name": "lease_expires_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "lease_heartbeat_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "jobs",
+            "name": "lease_heartbeat_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "wake_checked_seq",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "jobs",
+            "name": "wake_checked_seq"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "288c0fe9160e90ea6af68199e6e82cf46c57dda3c9d2d28304eb26a6fdebeb2d"
+}

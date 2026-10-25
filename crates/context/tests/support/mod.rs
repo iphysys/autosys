@@ -28,8 +28,8 @@ use contracts::types::{
     Transition,
 };
 use contracts::{
-    Clock, ContentBlock, Error, ErrorCode, EventLog, ExecutionContext, Message, NewEvent, Role,
-    WriteAuthority,
+    Clock, ContentBlock, Error, ErrorCode, EventKind, EventLog, ExecutionContext, Message,
+    NewEvent, Role, WriteAuthority,
 };
 use sdr::{CommitInfo, InitialVersion, SdrManager, Validation};
 use serde_json::{Value, json};
@@ -175,6 +175,8 @@ pub fn job_json(goal: &str) -> Value {
         },
         "idempotency_key": "job-1",
         "attempt": 0,
+        "failed_attempts": 0,
+        "attempt_history": [],
         "created_at": "2026-01-01T00:00:00Z",
         "updated_at": "2026-01-01T00:00:00Z",
         "sdr_base_version": 0,
@@ -594,6 +596,17 @@ impl EventLog for FlakyEvents {
     async fn read(&self, run_id: &RunId, after: u64, limit: usize) -> Result<Vec<Event>, Error> {
         behave(self.read).await?;
         self.inner.read(run_id, after, limit).await
+    }
+
+    async fn read_kinds(
+        &self,
+        run_id: &RunId,
+        after: u64,
+        kinds: &[EventKind],
+        limit: usize,
+    ) -> Result<Vec<Event>, Error> {
+        behave(self.read).await?;
+        self.inner.read_kinds(run_id, after, kinds, limit).await
     }
 
     async fn last_seq(&self, run_id: &RunId) -> Result<u64, Error> {

@@ -7,8 +7,8 @@ use std::time::Duration;
 use chrono::{TimeZone, Utc};
 use contracts::ids::{Identifier, JobId, ProjectId, RunId, SdrVersion};
 use contracts::{
-    Claimed, Clock, Error, ErrorCode, EventLog, JobStore, NewEvent, SdrRepository, StaleFence,
-    Staleness, StepStore, UnfencedReason, WakeReason, WriteAuthority,
+    Claimed, Clock, Error, ErrorCode, EventLog, JobStore, JobWrite, NewEvent, SdrRepository,
+    StaleFence, Staleness, StepStore, UnfencedReason, WakeReason, WriteAuthority,
 };
 use serde_json::{Value, json};
 
@@ -195,7 +195,7 @@ async fn the_current_fence_writes_everything(f: Fixture) {
     let mut progressed = claimed.job.clone();
     progressed.progress.steps_completed = 1;
     f.s.jobs
-        .save(&progressed, &claimed.fence)
+        .save(&JobWrite::keep(&progressed), &claimed.fence)
         .await
         .expect("current: save");
     f.s.events
@@ -259,7 +259,12 @@ async fn a_stale_fence_writes_nothing(f: Fixture) {
             "renew",
             f.s.jobs.renew_lease(&old.fence, LEASE).await.map(|_| ()),
         ),
-        ("save", f.s.jobs.save(&progressed, &old.fence).await),
+        (
+            "save",
+            f.s.jobs
+                .save(&JobWrite::keep(&progressed), &old.fence)
+                .await,
+        ),
         (
             "append",
             f.s.events
@@ -325,7 +330,7 @@ async fn a_stale_fence_writes_nothing(f: Fixture) {
         .await
         .expect("stale: renew with the current fence");
     f.s.jobs
-        .save(&progressed, &new.fence)
+        .save(&JobWrite::keep(&progressed), &new.fence)
         .await
         .expect("stale: save with the current fence");
     f.s.events
@@ -416,7 +421,7 @@ async fn a_fence_ends_when_the_job_leaves_running(f: Fixture) {
     let mut waiting = suspended.job.clone();
     waiting.status = builders::suspended("appr-1", 1);
     f.s.jobs
-        .save(&waiting, &suspended.fence)
+        .save(&JobWrite::keep(&waiting), &suspended.fence)
         .await
         .expect("left running: suspend");
     let refused = assert_stale(
@@ -455,7 +460,7 @@ async fn a_fence_ends_when_the_job_leaves_running(f: Fixture) {
     let mut done = completed.job.clone();
     done.status = builders::completed("success", 1);
     f.s.jobs
-        .save(&done, &completed.fence)
+        .save(&JobWrite::keep(&done), &completed.fence)
         .await
         .expect("left running: complete");
     assert_stale(
@@ -466,7 +471,9 @@ async fn a_fence_ends_when_the_job_leaves_running(f: Fixture) {
         "left running: append_version after completing",
     );
     assert_stale(
-        f.s.jobs.save(&done, &completed.fence).await,
+        f.s.jobs
+            .save(&JobWrite::keep(&done), &completed.fence)
+            .await,
         1,
         Some(1),
         "left running: save after completing",

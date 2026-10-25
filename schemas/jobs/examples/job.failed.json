@@ -38,7 +38,13 @@
     "result_schema": "results/result.schema.json"
   },
   "idempotency_key": "job-0001",
-  "attempt": 1,
+  "attempt": 3,
+  "failed_attempts": 3,
+  "attempt_history": [
+    { "attempt": 1, "error": { "code": "unavailable", "message": "The model provider was unavailable.", "retryable": true }, "last_event_seq": 17 },
+    { "attempt": 2, "error": { "code": "unavailable", "message": "The model provider was unavailable.", "retryable": true }, "last_event_seq": 17 },
+    { "attempt": 3, "error": { "code": "unavailable", "message": "The model provider was unavailable.", "retryable": true }, "last_event_seq": 17 }
+  ],
   "created_at": "2026-10-22T09:00:00Z",
   "updated_at": "2026-10-22T09:03:30Z",
   "sdr_base_version": 0,

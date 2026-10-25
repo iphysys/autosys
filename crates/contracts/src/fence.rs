@@ -15,6 +15,7 @@ use std::fmt;
 use schema_types::{EventPayload, JobState, JobStatus};
 
 use crate::error::{Error, ErrorCode};
+use crate::events::EventKind;
 use crate::ids::{Identifier, JobId, SdrVersion};
 
 /// Proof that a claim leased `job_id` to `holder` at `epoch`. Every claim
@@ -169,7 +170,7 @@ impl fmt::Display for StoreWrite<'_> {
         match self {
             StoreWrite::JobInsert => f.write_str("a job insert"),
             StoreWrite::JobWake => f.write_str("a job wake-up"),
-            StoreWrite::Event(payload) => write!(f, "an event of type {}", payload_type(payload)),
+            StoreWrite::Event(payload) => write!(f, "an event of type {}", EventKind::of(payload)),
             StoreWrite::StepBegin => f.write_str("a step begin"),
             StoreWrite::StepComplete => f.write_str("a step completion"),
             StoreWrite::SdrVersion(version) => write!(f, "SDR version {}", version.0),
@@ -289,14 +290,6 @@ fn describe(stale: &StaleFence) -> String {
 /// The error for a refused fence.
 pub fn lease_lost(stale: StaleFence) -> Error {
     Error::new(ErrorCode::LeaseLost, stale.to_string()).with_source(stale)
-}
-
-/// The `type` tag of an event payload, as the event schema spells it.
-fn payload_type(payload: &EventPayload) -> String {
-    serde_json::to_value(payload)
-        .ok()
-        .and_then(|v| v.get("type").and_then(|t| t.as_str()).map(str::to_owned))
-        .unwrap_or_else(|| "unknown".to_owned())
 }
 
 #[cfg(test)]

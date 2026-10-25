@@ -5,7 +5,8 @@ use async_trait::async_trait;
 use contracts::ids::RunId;
 use contracts::types::{Event, EventSchemaVersion};
 use contracts::{
-    Error, ErrorCode, EventLog, ExecutionContext, NewEvent, StoreWrite, WriteAuthority, authorize,
+    Error, ErrorCode, EventKind, EventLog, ExecutionContext, NewEvent, StoreWrite, WriteAuthority,
+    authorize, completion_key,
 };
 use sqlx::postgres::PgListener;
 use sqlx::types::Json;
@@ -39,7 +40,8 @@ enum Notice {
 
 /// [`EventLog`] on Postgres. Sequence numbers come from a per-run counter row
 /// that each append locks until commit, so they are gap-free and a run's
-/// events become visible in sequence order.
+/// events become visible in sequence order. A completion event's key is
+/// stored with it under a unique index, and checked under the same lock.
 ///
 /// Waiting uses `LISTEN`: one listener connection per log, shared by all of
 /// its waiters, so a waiting reader does not hold a pooled connection.
@@ -113,6 +115,7 @@ impl EventLog for PgEventLog {
         authority: Option<&WriteAuthority>,
     ) -> Result<Event, Error> {
         let fence = authorize(authority, StoreWrite::Event(&event.payload))?;
+        let key = completion_key(&event.payload);
         self.db
             .bounded("append event", async {
                 let mut tx = self
@@ -137,6 +140,29 @@ impl EventLog for PgEventLog {
                 .fetch_one(&mut *tx)
                 .await
                 .map_err(|e| db_error("append event", e))?;
+                if let Some(key) = &key {
+                    // Under the counter lock, an earlier append of this key
+                    // has committed if it exists. Rolling back undoes the
+                    // number just taken, so no gap is left.
+                    let stored = sqlx::query_scalar!(
+                        r#"
+                        SELECT document AS "document!: Json<Event>"
+                        FROM events
+                        WHERE run_id = $1 AND dedupe_key = $2
+                        "#,
+                        event.run_id.as_str(),
+                        key,
+                    )
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(|e| db_error("append event", e))?;
+                    if let Some(stored) = stored {
+                        tx.rollback()
+                            .await
+                            .map_err(|e| db_error("append event", e))?;
+                        return Ok(stored.0);
+                    }
+                }
                 let seq = NonZeroU64::new(from_bigint(seq, "sequence number")?)
                     .ok_or_else(|| corrupt("stored sequence number is 0"))?;
                 let stored = Event {
@@ -149,10 +175,11 @@ impl EventLog for PgEventLog {
                     payload: event.payload,
                 };
                 sqlx::query!(
-                    "INSERT INTO events (run_id, seq, document) VALUES ($1, $2, $3)",
+                    "INSERT INTO events (run_id, seq, document, dedupe_key) VALUES ($1, $2, $3, $4)",
                     stored.run_id.as_str(),
                     to_bigint(seq.get(), "sequence number")?,
                     Json(&stored) as _,
+                    key.as_deref(),
                 )
                 .execute(&mut *tx)
                 .await
@@ -186,6 +213,41 @@ impl EventLog for PgEventLog {
                 .fetch_all(&self.db.pool)
                 .await
                 .map_err(|e| db_error("read events", e))?;
+                Ok(rows.into_iter().map(|row| row.0).collect())
+            })
+            .await
+    }
+
+    async fn read_kinds(
+        &self,
+        run_id: &RunId,
+        after: u64,
+        kinds: &[EventKind],
+        limit: usize,
+    ) -> Result<Vec<Event>, Error> {
+        let Ok(after) = i64::try_from(after) else {
+            return Ok(Vec::new());
+        };
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        let kinds: Vec<String> = kinds.iter().map(|k| k.as_str().to_owned()).collect();
+        self.db
+            .bounded("read events by kind", async {
+                let rows = sqlx::query_scalar!(
+                    r#"
+                    SELECT document AS "document!: Json<Event>"
+                    FROM events
+                    WHERE run_id = $1 AND kind = ANY($2) AND seq > $3
+                    ORDER BY seq
+                    LIMIT $4
+                    "#,
+                    run_id.as_str(),
+                    &kinds,
+                    after,
+                    limit,
+                )
+                .fetch_all(&self.db.pool)
+                .await
+                .map_err(|e| db_error("read events by kind", e))?;
                 Ok(rows.into_iter().map(|row| row.0).collect())
             })
             .await

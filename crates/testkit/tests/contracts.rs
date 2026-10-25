@@ -25,7 +25,11 @@ async fn in_memory_job_store() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn in_memory_event_log() {
-    contract::event_log(|| async { InMemoryEventLog::new() }).await;
+    contract::event_log(|clock| async move {
+        let jobs = InMemoryJobStore::new(clock);
+        (InMemoryEventLog::fenced_by(jobs.leases()), jobs)
+    })
+    .await;
 }
 
 #[tokio::test]

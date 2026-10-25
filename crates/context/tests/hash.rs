@@ -257,11 +257,12 @@ async fn one_changed_byte_anywhere_changes_the_hash() {
         .await;
     check("the SDR", hash_of(&world, &job(), &open_turn).await);
 
-    // An event.
+    // An event. A step of its own: a second completion of step-1 is not
+    // stored (ADR-0031).
     let world = populated().await;
     world
         .event(json!({
-            "type": "tool_call_completed", "step_id": "step-1", "tool": "measure",
+            "type": "tool_call_completed", "step_id": "step-9", "tool": "measure",
             "outcome": "error", "evidence_ids": [], "duration_ms": 5,
             "error": { "code": "timeout", "message": "No answer!", "retryable": true }
         }))

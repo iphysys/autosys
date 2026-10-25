@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                        UPDATE jobs\n                        SET document = jsonb_set(document, '{status}', $2),\n                            not_before = NULL,\n                            updated_at = autosys_now()\n                        WHERE id = $1\n                        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2d70a3ab5a5bbee578f750dcc91c069e1f798e64a0566d5e0a4053b81ecdd81a"
+}
