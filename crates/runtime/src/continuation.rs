@@ -178,11 +178,8 @@ fn harness(record: &ContinuationRecord) -> Result<RunHarness, RuntimeError> {
     match (record.schema_version, &record.harness, &record.model_ids) {
         (ContinuationRecordSchemaVersion::X02, Some(harness), None) => Ok(harness.clone()),
         (ContinuationRecordSchemaVersion::X01, None, Some(models)) => Ok(RunHarness {
-            harness_builds: Vec::new(),
             model_ids: models.0.clone(),
-            prompts: Vec::new(),
-            skills: Vec::new(),
-            agent_specs: Vec::new(),
+            ..contracts::provenance::empty()
         }),
         (version, _, _) => Err(RuntimeError::Internal(format!(
             "a continuation record of schema {version} needs {}",

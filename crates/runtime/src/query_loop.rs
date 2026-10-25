@@ -159,13 +159,7 @@ impl LoopState {
         Self {
             job,
             failures: 0,
-            harness: RunHarness {
-                harness_builds: Vec::new(),
-                model_ids: Vec::new(),
-                prompts: Vec::new(),
-                skills: Vec::new(),
-                agent_specs: Vec::new(),
-            },
+            harness: contracts::provenance::empty(),
             committed: Vec::new(),
             evidence_ids: Vec::new(),
             head: None,
