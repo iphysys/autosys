@@ -2312,6 +2312,7 @@ dependencies = [
  "rustls",
  "serde_json",
  "sqlx",
+ "synth-artifacts",
  "synth-context",
  "synth-contracts",
  "synth-evaluation",
