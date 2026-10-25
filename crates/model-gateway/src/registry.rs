@@ -7,7 +7,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use contracts::types::ModelProfile;
-use contracts::{Error, ErrorCode, SchemaSet};
+use contracts::{Environment, Error, ErrorCode, SchemaSet};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
@@ -25,9 +25,10 @@ pub trait ProviderFactory: Send + Sync {
     fn settings_schema(&self) -> Option<&'static str>;
 
     /// Checks of a profile that its settings schema cannot express, such as
-    /// reserved headers. Runs after the schema check and needs no
-    /// environment, so `cargo xtask validate-config` runs it too.
-    fn check(&self, profile: &ModelProfile) -> Result<(), Error>;
+    /// reserved headers or a plain-http endpoint outside the Test
+    /// environment. Runs after the schema check and reads no variables, so
+    /// `cargo xtask validate-config` runs it too.
+    fn check(&self, profile: &ModelProfile, environment: Environment) -> Result<(), Error>;
 
     /// The adapter for a profile in use, with its credentials and endpoint
     /// read from `env`. A missing variable fails, naming it.
@@ -35,6 +36,7 @@ pub trait ProviderFactory: Send + Sync {
         &self,
         profile: &ModelProfile,
         env: &dyn Env,
+        environment: Environment,
     ) -> Result<Arc<dyn ProviderAdapter>, Error>;
 }
 
@@ -91,9 +93,13 @@ impl ProviderRegistry {
     }
 
     /// Checks that the profile's provider is registered, that its `settings`
-    /// satisfy the provider's schema, and the provider's own checks. The
-    /// caller names the profile in the error.
-    pub fn check_profile(&self, profile: &ModelProfile) -> Result<(), Error> {
+    /// satisfy the provider's schema, and the provider's own checks for
+    /// `environment`. The caller names the profile in the error.
+    pub fn check_profile(
+        &self,
+        profile: &ModelProfile,
+        environment: Environment,
+    ) -> Result<(), Error> {
         let factory = self.factory(profile.provider.as_str())?;
         let problems = match factory.settings_schema() {
             Some(schema) => self
@@ -108,7 +114,7 @@ impl ProviderRegistry {
                 format!("settings: {}", problems.join("; ")),
             ));
         }
-        factory.check(profile)
+        factory.check(profile, environment)
     }
 }
 

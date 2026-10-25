@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use contracts::types::{AgentSpec, ModelPrice, ModelProfile, ModelRouting};
-use contracts::{Error, ErrorCode};
+use contracts::{Environment, Error, ErrorCode};
 
 use crate::env::Env;
 use crate::registry::ProviderRegistry;
@@ -22,11 +22,17 @@ pub const PROFILE_OVERRIDE_ENV: &str = "SYNTH_MODEL_PROFILE";
 pub struct Routing {
     config: ModelRouting,
     registry: Arc<ProviderRegistry>,
+    environment: Environment,
 }
 
 impl Routing {
-    /// `InvalidInput` listing every problem found.
-    pub fn new(config: ModelRouting, registry: Arc<ProviderRegistry>) -> Result<Self, Error> {
+    /// `InvalidInput` listing every problem found. Providers check and build
+    /// their profiles for `environment`.
+    pub fn new(
+        config: ModelRouting,
+        registry: Arc<ProviderRegistry>,
+        environment: Environment,
+    ) -> Result<Self, Error> {
         let mut problems = Vec::new();
 
         let mut names = BTreeSet::new();
@@ -40,7 +46,7 @@ impl Routing {
                     "profile `{name}`: retry.initial_backoff_ms exceeds retry.max_backoff_ms"
                 ));
             }
-            if let Err(e) = registry.check_profile(profile) {
+            if let Err(e) = registry.check_profile(profile, environment) {
                 problems.push(format!("profile `{name}`: {}", e.message()));
             }
         }
@@ -60,7 +66,11 @@ impl Routing {
         }
 
         if problems.is_empty() {
-            Ok(Self { config, registry })
+            Ok(Self {
+                config,
+                registry,
+                environment,
+            })
         } else {
             Err(Error::new(
                 ErrorCode::InvalidInput,
@@ -71,6 +81,11 @@ impl Routing {
 
     pub fn config(&self) -> &ModelRouting {
         &self.config
+    }
+
+    /// The environment the providers are checked and built for.
+    pub fn environment(&self) -> Environment {
+        self.environment
     }
 
     pub fn registry(&self) -> &ProviderRegistry {

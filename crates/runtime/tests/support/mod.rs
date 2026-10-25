@@ -724,6 +724,7 @@ impl World {
         let routing = Routing::new(
             routing_config,
             Arc::new(model_gateway::providers::default_registry().expect("providers")),
+            contracts::Environment::Test,
         )
         .expect("routing");
         let (profile, provider) = setup.provider.unwrap_or_else(|| {

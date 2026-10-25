@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use contracts::{ErrorCode, ModelProvider, ModelStopReason};
+use contracts::{Environment, ErrorCode, ModelProvider, ModelStopReason};
 use serde_json::json;
 use testkit::builders::agent_spec as agent;
 use testkit::contract;
@@ -40,6 +40,7 @@ fn openai_settings(base_url: &str) -> OpenAiCompatibleSettings {
         timeout: Duration::from_secs(5),
         retry: retry(3),
         ca_bundle: None,
+        environment: Environment::Test,
     }
 }
 

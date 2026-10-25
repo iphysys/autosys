@@ -18,8 +18,8 @@ use async_trait::async_trait;
 use contracts::ids::Identifier;
 use contracts::types::{ModelProfile, ModelRetryPolicy, ModelRouting};
 use contracts::{
-    ContentBlock, Error, ExecutionContext, Message, ModelProvider, ModelRequest, ModelResponse,
-    Role, ToolSpec,
+    ContentBlock, Environment, Error, ExecutionContext, Message, ModelProvider, ModelRequest,
+    ModelResponse, Role, ToolSpec,
 };
 use serde_json::{Value, json};
 use testkit::builders::{id, parse};
@@ -90,8 +90,13 @@ pub(crate) fn committed_routing() -> Routing {
     let text = std::fs::read_to_string(crate_path("../../config/models/routing.yaml"))
         .expect("routing.yaml");
     let config: ModelRouting = serde_saphyr::from_str(&text).expect("routing.yaml parses");
-    Routing::new(config, Arc::new(default_registry().expect("registry")))
-        .expect("routing.yaml is consistent")
+    // The committed configuration is production configuration.
+    Routing::new(
+        config,
+        Arc::new(default_registry().expect("registry")),
+        Environment::Production,
+    )
+    .expect("routing.yaml is consistent")
 }
 
 /// The variable the `fake` provider's profiles need.
@@ -115,7 +120,7 @@ impl ProviderFactory for FakeFactory {
         None
     }
 
-    fn check(&self, _profile: &ModelProfile) -> Result<(), Error> {
+    fn check(&self, _profile: &ModelProfile, _environment: Environment) -> Result<(), Error> {
         Ok(())
     }
 
@@ -123,6 +128,7 @@ impl ProviderFactory for FakeFactory {
         &self,
         _profile: &ModelProfile,
         env: &dyn Env,
+        _environment: Environment,
     ) -> Result<Arc<dyn ProviderAdapter>, Error> {
         let mut vars = EnvReader::new(env);
         vars.required(&parse(json!(self.key_env)));
@@ -172,7 +178,7 @@ pub(crate) fn fake_routing(default_profile: &str, profiles: Vec<Value>, prices: 
         "profiles": profiles,
         "prices": prices
     }));
-    Routing::new(config, fake_registry()).expect("consistent routing")
+    Routing::new(config, fake_registry(), Environment::Test).expect("consistent routing")
 }
 
 /// A scripted model behind the `ProviderAdapter` trait.

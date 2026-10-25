@@ -8,6 +8,7 @@
 
 pub mod check;
 pub mod context;
+pub mod environment;
 pub mod error;
 pub mod events;
 pub mod fence;
@@ -26,6 +27,7 @@ pub use schema_types as types;
 
 pub use check::{Check, CheckDescriptor, CheckFinding, CheckSubject};
 pub use context::{Clock, ExecutionContext, ExecutionContextBuilder, SystemClock};
+pub use environment::Environment;
 pub use error::{Error, ErrorCode};
 pub use events::{EventKind, completion_key};
 pub use fence::{

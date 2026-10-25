@@ -270,7 +270,7 @@ fn build_provider(
     routing
         .registry()
         .factory(profile.provider.as_str())
-        .and_then(|factory| factory.build(profile, env))
+        .and_then(|factory| factory.build(profile, env, routing.environment()))
         .map_err(|e| {
             Error::new(
                 e.code(),

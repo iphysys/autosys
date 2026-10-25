@@ -11,7 +11,9 @@ use std::time::{Duration, Instant};
 
 use contracts::types::ModelRouting;
 use contracts::types::{ModelEffort, ModelProfile};
-use contracts::{ContentBlock, Error, ErrorCode, Message, ModelProvider, ModelStopReason, Role};
+use contracts::{
+    ContentBlock, Environment, Error, ErrorCode, Message, ModelProvider, ModelStopReason, Role,
+};
 use serde_json::{Value, json};
 use testkit::builders::{agent_spec as agent, id, parse};
 use testkit::contract;
@@ -43,6 +45,7 @@ fn anthropic_settings(base_url: &str) -> AnthropicSettings {
         timeout: Duration::from_secs(5),
         retry: retry(3),
         ca_bundle: None,
+        environment: Environment::Test,
     }
 }
 
@@ -60,7 +63,42 @@ fn claude_routing(settings: Value, prices: Value) -> Result<Routing, Error> {
         }],
         "prices": prices
     }));
-    Routing::new(config, Arc::new(default_registry().expect("registry")))
+    Routing::new(
+        config,
+        Arc::new(default_registry().expect("registry")),
+        Environment::Test,
+    )
+}
+
+#[test]
+fn a_loopback_base_url_holds_only_in_the_test_environment() {
+    let config = |environment| {
+        let config: ModelRouting = parse(json!({
+            "schema_version": "0.2",
+            "default_profile": "claude",
+            "profiles": [{
+                "name": "claude", "provider": "anthropic", "model": "claude-opus-5-5",
+                "tool_calling": true, "max_output_tokens": 16000,
+                "request_timeout_seconds": 600,
+                "retry": { "max_attempts": 3, "initial_backoff_ms": 1000, "max_backoff_ms": 30000 },
+                "settings": { "base_url": "http://127.0.0.1:9", "api_key_env": "ANTHROPIC_API_KEY" }
+            }],
+            "prices": []
+        }));
+        Routing::new(
+            config,
+            Arc::new(default_registry().expect("registry")),
+            environment,
+        )
+    };
+    assert!(config(Environment::Test).is_ok());
+    for environment in [Environment::Local, Environment::Production] {
+        let error = config(environment).expect_err("loopback http outside test");
+        assert!(
+            error.message().contains("only in the test environment"),
+            "{environment}: {error}"
+        );
+    }
 }
 
 fn overloaded() -> Reply {

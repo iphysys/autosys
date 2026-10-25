@@ -1,0 +1,31 @@
+# How a worker process leases, polls, retries and connects (ADR-0031).
+# Schema: schemas/config/worker.schema.json
+#
+# A claim leases the job for lease_ms, and the worker renews it every
+# heartbeat_ms, at most a third of the lease, so two renewals can fail before
+# it runs out. An idle worker tries a claim and scans parked jobs every
+# poll_interval_ms, give or take poll_jitter_ms. Outside the test
+# environment, lease_ms is at least 10 000, heartbeat_ms at least 1 000 and
+# poll_interval_ms at least 200.
+schema_version: "0.1"
+lease_ms: 30000
+heartbeat_ms: 10000
+poll_interval_ms: 1000
+poll_jitter_ms: 100
+# A failed attempt is a retryable error or an interrupted claim; the count
+# restarts when the run's checkpoint moves on. A retry waits
+# retry_backoff_min_ms, doubling per failed attempt up to retry_backoff_max_ms.
+max_attempts: 3
+retry_backoff_min_ms: 5000
+retry_backoff_max_ms: 60000
+# The pool. The URL is DATABASE_URL, never written here.
+database:
+  max_connections: 8
+  acquire_timeout_ms: 5000
+  operation_timeout_ms: 10000
+# The MCP servers to connect to. Their governance overlays are in config/tools/.
+tool_servers:
+  - server_id: build123d
+    url: http://127.0.0.1:18123/mcp
+    connect_timeout_ms: 10000
+    call_timeout_ms: 300000

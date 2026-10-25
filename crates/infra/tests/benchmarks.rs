@@ -21,7 +21,7 @@ fn loader() -> BenchmarkLoader {
 }
 
 fn approval_rules() -> BTreeSet<String> {
-    let policy: AutonomyPolicy = ConfigLoader::new()
+    let policy: AutonomyPolicy = ConfigLoader::new(contracts::Environment::Production)
         .expect("config schemas compile")
         .load(&repo().join("config/policies/autonomy.yaml"))
         .expect("autonomy policy");

@@ -5,8 +5,8 @@
 
 use std::sync::Arc;
 
-use contracts::ErrorCode;
 use contracts::types::ModelRouting;
+use contracts::{Environment, ErrorCode};
 use serde_json::{Value, json};
 use testkit::builders::{agent_spec as agent, id, parse};
 
@@ -188,6 +188,7 @@ fn an_unregistered_provider_is_rejected_listing_the_registered_ones() {
             "schema_version": "0.2", "default_profile": "main", "profiles": [profile], "prices": []
         })),
         fake_registry(),
+        Environment::Test,
     )
     .expect_err("unregistered");
     let message = error.message();
@@ -210,6 +211,7 @@ fn settings_for_a_provider_without_settings_are_rejected() {
             "schema_version": "0.2", "default_profile": "main", "profiles": [profile], "prices": []
         })),
         fake_registry(),
+        Environment::Test,
     )
     .expect_err("no settings allowed");
     assert!(error.message().contains("takes no settings"), "{error}");
@@ -228,6 +230,7 @@ fn duplicates_and_an_unknown_default_are_rejected() {
             ]
         })),
         fake_registry(),
+        Environment::Test,
     )
     .expect_err("inconsistent routing");
     let message = error.message();

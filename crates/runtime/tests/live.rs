@@ -76,6 +76,7 @@ async fn live_rebuilt_context_mid_turn() {
     let routing = Routing::new(
         config,
         Arc::new(model_gateway::providers::default_registry().expect("providers")),
+        contracts::Environment::Test,
     )
     .expect("routing");
     let profile = routing
@@ -85,7 +86,7 @@ async fn live_rebuilt_context_mid_turn() {
     let real = routing
         .registry()
         .factory(profile.provider.as_str())
-        .and_then(|factory| factory.build(&profile, &ProcessEnv))
+        .and_then(|factory| factory.build(&profile, &ProcessEnv, contracts::Environment::Test))
         .expect("the profile's variables are set");
     let recording = Arc::new(Recording {
         inner: real,
