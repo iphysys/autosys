@@ -13,9 +13,12 @@ name = "api_client"
 [dependencies]
 synth-contracts.workspace = true
 
-# Plain http to api-server on loopback in Increment 1, so no TLS feature
-# (ADR-0034).
-reqwest.workspace = true
+# TLS through rustls with the ring provider chosen in code, as in the
+# model gateway: a build that unifies reqwest's features with the
+# gateway's would otherwise have no provider (ADR-0034).
+reqwest = { workspace = true, features = ["rustls-no-provider"] }
+rustls.workspace = true
+rustls-platform-verifier.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

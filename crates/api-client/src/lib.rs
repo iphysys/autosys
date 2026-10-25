@@ -18,6 +18,7 @@ mod sse;
 
 use std::collections::VecDeque;
 use std::fmt;
+use std::sync::Arc;
 use std::time::Duration;
 
 use contracts::ids::{ApprovalId, ArtifactId, RunId};
@@ -27,6 +28,7 @@ use contracts::types::{
 };
 use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderValue};
 use reqwest::{Method, RequestBuilder, Response, StatusCode};
+use rustls_platform_verifier::Verifier;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
@@ -117,10 +119,7 @@ impl Client {
                 "`{base_url}` is not an http or https URL"
             )));
         }
-        let http = reqwest::Client::builder()
-            .connect_timeout(config.connect_timeout)
-            .build()
-            .map_err(|e| ClientError::InvalidInput(format!("cannot build the HTTP client: {e}")))?;
+        let http = http_client(&config)?;
         Ok(Self {
             http,
             base: base.to_owned(),
@@ -455,6 +454,33 @@ impl Backoff {
     fn reset(&mut self) {
         self.failures = 0;
     }
+}
+
+/// An HTTP client that never follows a redirect, so the token goes only
+/// to the server named. An https server is verified by the platform
+/// verifier. The ring provider is chosen here, so nothing depends on a
+/// process-wide default or on which features a build unified.
+fn http_client(config: &ClientConfig) -> Result<reqwest::Client, ClientError> {
+    let unusable = |what: &str, e: &dyn fmt::Display| {
+        ClientError::InvalidInput(format!("cannot set up {what}: {e}"))
+    };
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let verifier = Verifier::new(provider.clone())
+        .map_err(|e| unusable("TLS certificate verification", &e))?;
+    // rustls names the API for supplying a verifier `dangerous`; the verifier
+    // supplied is the platform's, so verification stays on.
+    let tls = rustls::ClientConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .map_err(|e| unusable("TLS", &e))?
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(verifier))
+        .with_no_client_auth();
+    reqwest::Client::builder()
+        .tls_backend_preconfigured(tls)
+        .connect_timeout(config.connect_timeout)
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| unusable("the HTTP client", &e))
 }
 
 fn body(value: &impl Serialize) -> Result<Vec<u8>, ClientError> {

@@ -24,7 +24,7 @@ Increment 1 exits through a CLI (`synth`) that is a thin client of api-server (i
   - `EventJournal`.
 - Request and response bodies are the generated types in `contracts::types`. The client builds no task and decides nothing; the server does.
 - Every request has a time limit. The token is never logged, and its `Debug` is redacted.
-- reqwest has no TLS feature. Increment 1 reaches api-server over loopback http, and a TLS feature is added with the first shared environment.
+- TLS goes through rustls with the ring provider chosen in code, and the platform verifier, as in the model gateway (ADR-0027). A build that unifies reqwest's features with the gateway's otherwise has no crypto provider, and building a client panics. Redirects are never followed, so the token goes only to the server named.
 
 **A benchmark problem becomes a `RunRequest` in `evaluation::benchmarks::run_request`.** It is a pure function of the problem and the agent's spec:
 

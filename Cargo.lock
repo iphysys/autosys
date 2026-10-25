@@ -2392,6 +2392,8 @@ name = "synth-api-client"
 version = "0.1.0"
 dependencies = [
  "reqwest",
+ "rustls",
+ "rustls-platform-verifier",
  "serde",
  "serde_json",
  "sha2 0.11.0",
