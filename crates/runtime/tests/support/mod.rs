@@ -828,6 +828,7 @@ async fn seed(sdr: &SdrManager, requirements: Vec<Value>, ctx: &ExecutionContext
             actor: parse(json!({ "kind": "system", "component": "test" })),
             reason: parse(json!("Start the design.")),
             harness: harness(),
+            requirements: Vec::new(),
         },
         ctx,
     )

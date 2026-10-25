@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use contracts::ids::{ProjectId, SdrVersion};
-use contracts::types::{ElementKind, Operation, SdrSlice, Timestamp};
+use contracts::types::{ElementKind, Operation, Requirement, SdrSlice, Timestamp};
 use contracts::{Clock, ErrorCode, ExecutionContext, JobStore, SdrRepository};
 use sdr::{InvalidTransition, ProblemKind, SdrManager, ValidatedTransition, Validation};
 use serde_json::json;
@@ -234,6 +234,79 @@ async fn version_zero_is_the_empty_design() {
         .create_project(&f.project, initial(), &f.ctx)
         .await;
     assert_eq!(again.map(|_| ()).unwrap_err().code(), ErrorCode::Conflict);
+}
+
+fn requirement(element_id: &str) -> Requirement {
+    match add_requirement(element_id) {
+        Operation::AddRequirement { requirement } => requirement,
+        other => panic!("not a requirement: {other:?}"),
+    }
+}
+
+/// A run's requirements are its version 0, written once, under the reason
+/// that creates the project.
+#[tokio::test]
+async fn version_zero_holds_the_requirements_it_is_given() {
+    let manager = SdrManager::new(
+        Arc::new(InMemorySdrRepository::new()),
+        Arc::new(ManualClock::at_epoch()),
+    )
+    .expect("the embedded schemas compile");
+    let project: ProjectId = id("p2");
+    let ctx = unfenced_ctx(project_create(), id("corr-create"));
+    let mut given = initial();
+    given.requirements = vec![requirement("req-1"), requirement("req-2")];
+    let record = manager
+        .create_project(&project, given, &ctx)
+        .await
+        .expect("create the project");
+    assert_eq!(record.version, SdrVersion(0));
+    assert_eq!(record.parent_version, None);
+
+    let all = SdrSlice {
+        kinds: vec![ElementKind::Requirement, ElementKind::Parameter],
+        ids: Vec::new(),
+    };
+    let doc = manager
+        .read(&project, &all, &SdrVersion(0), &ctx)
+        .await
+        .expect("read version 0");
+    let ids: Vec<&str> = doc.requirements.iter().map(|r| r.id.as_str()).collect();
+    assert_eq!(ids, ["req-1", "req-2"]);
+    assert!(doc.design.parameters.is_empty());
+    assert_eq!(doc.parent_version, None);
+}
+
+/// Invalid requirements are refused with every problem, and nothing is
+/// stored: the project can still be created with valid ones.
+#[tokio::test]
+async fn invalid_requirements_create_no_project() {
+    let manager = SdrManager::new(
+        Arc::new(InMemorySdrRepository::new()),
+        Arc::new(ManualClock::at_epoch()),
+    )
+    .expect("the embedded schemas compile");
+    let project: ProjectId = id("p2");
+    let ctx = unfenced_ctx(project_create(), id("corr-create"));
+    let mut cited = requirement("req-2");
+    cited.evidence_ids = vec![id("ev-1")];
+    let mut given = initial();
+    given.requirements = vec![requirement("req-1"), requirement("req-1"), cited];
+    let error = manager
+        .create_project(&project, given, &ctx)
+        .await
+        .expect_err("invalid requirements");
+    assert_eq!(error.code(), ErrorCode::InvalidInput, "{error}");
+    assert!(error.message().contains("req-1"), "{error}");
+    assert!(error.message().contains("cites evidence"), "{error}");
+    assert_eq!(manager.head(&project, &ctx).await.expect("head"), None);
+
+    let mut given = initial();
+    given.requirements = vec![requirement("req-1")];
+    manager
+        .create_project(&project, given, &ctx)
+        .await
+        .expect("valid requirements create it");
 }
 
 #[tokio::test]

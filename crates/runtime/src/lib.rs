@@ -20,6 +20,8 @@
 //!   at every phase boundary through a [`CheckpointSink`], as a
 //!   `ContinuationRecord`; a run then continues from the job store alone,
 //!   after a crash, a requeue or an approval (ADR-0031).
+//! - [`Submissions`] and [`Reports`] are what the API calls (ADR-0018):
+//!   they start the runs clients ask for, and serve their reports.
 //!
 //! Only `SdrManager` writes design state; the runtime reaches the SDR
 //! through it alone.
@@ -33,6 +35,7 @@ mod error;
 mod events;
 mod orchestrator;
 mod query_loop;
+mod reports;
 mod scheduler;
 mod sdr_tools;
 mod stop;
@@ -45,4 +48,5 @@ pub use orchestrator::{Components, Orchestrator};
 pub use query_loop::{
     CheckpointSink, Continuation, NoCheckpoints, RunEvent, RunOutcome, RunStream, Start,
 };
-pub use scheduler::{Ended, Scheduler, SchedulerSettings, Tick};
+pub use reports::Reports;
+pub use scheduler::{Ended, Scheduler, SchedulerSettings, Submissions, Tick};

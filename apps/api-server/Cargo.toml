@@ -1,0 +1,25 @@
+[package]
+name = "synth-api-server"
+version = "0.1.0"
+description = "The API server: serves the external HTTP API v0 until a signal asks it to stop (blueprint section 3.5, ADR-0018)."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "api-server"
+path = "src/main.rs"
+
+[dependencies]
+synth-api.workspace = true
+synth-bootstrap.workspace = true
+
+# Allowed in binaries (blueprint section 13.1).
+anyhow.workspace = true
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

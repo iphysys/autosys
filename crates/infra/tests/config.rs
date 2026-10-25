@@ -7,8 +7,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use contracts::types::{
-    AgentSpec, AgentSpecOnRepairExhausted, ApprovalTrigger, AutonomyPolicy, ContextBudgets,
-    ContextPolicy, GatesPolicy, RuntimeSettings, ToolOverlay, WorkerSettings,
+    AgentSpec, AgentSpecOnRepairExhausted, ApiSettings, ApprovalTrigger, AutonomyPolicy,
+    ContextBudgets, ContextPolicy, GatesPolicy, RuntimeSettings, ToolOverlay, WorkerSettings,
 };
 use contracts::{Environment, ErrorCode};
 use infra::config::ConfigLoader;
@@ -391,4 +391,25 @@ fn an_idempotent_tool_needs_a_named_repeat_test() {
             "build123d.yaml",
         )
         .expect("a named test satisfies the rule");
+}
+
+#[test]
+fn the_committed_api_settings_listen_on_loopback() {
+    let settings: ApiSettings = loader_for(Environment::Production)
+        .load(&config_dir().join("api.yaml"))
+        .unwrap_or_else(|e| panic!("{e}"));
+    let listen: std::net::SocketAddr = settings.listen.parse().expect("a socket address");
+    assert!(listen.ip().is_loopback(), "{listen}");
+}
+
+#[test]
+fn an_api_listen_address_must_be_a_socket_address() {
+    let yaml = fs::read_to_string(config_dir().join("api.yaml"))
+        .expect("readable")
+        .replace("listen: 127.0.0.1:8080", "listen: localhost");
+    let error = loader_for(Environment::Production)
+        .parse::<ApiSettings>(&yaml, "api.yaml")
+        .expect_err("not a socket address");
+    assert_eq!(error.code(), ErrorCode::InvalidInput);
+    assert!(error.message().contains("listen (localhost)"), "{error}");
 }

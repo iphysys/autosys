@@ -1,12 +1,14 @@
 //! The composition root (blueprint section 13.1): the only crate that sees
 //! every other, and the only place that builds stores, clients and
 //! providers. [`build_worker`] runs the startup checks and builds a worker
-//! from `config/`, `prompts/` and the environment, in a fixed order. Any
-//! failure there is a [`BootstrapError`] and the worker does not start.
+//! from `config/`, `prompts/` and the environment, in a fixed order;
+//! [`build_api`] does the same for api-server. Any failure there is a
+//! [`BootstrapError`] and the process does not start.
 //!
 //! Only here is the SDR repository adapter built, and only `SdrManager`
-//! receives it (section 7.2). Bootstrap grants no write authority: the
-//! scheduler builds every context a run writes with (ADR-0032).
+//! receives it (section 7.2). Bootstrap grants no write authority to a
+//! run: the scheduler builds every context a run writes with (ADR-0032).
+//! It hands the API one authority, for a client's commands only.
 //!
 //! Tests replace parts through [`Overrides`]: model providers, tool servers,
 //! a wrapper around each store, and the spawner. Product code passes none.
@@ -14,38 +16,50 @@
 mod checks;
 mod model;
 mod settings;
+mod signals;
 mod spawn;
 
 use std::collections::BTreeMap;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use artifacts::{ReportAssembler, ReportSources};
 use context::{ContextBuilder, ContextProfiles, PromptLibrary};
 use contracts::ids::Identifier;
+use contracts::types::{Actor, WorkerDatabase};
 use contracts::{
-    Check, Clock, Environment, EventLog, EvidenceStore, ExecutionContext, Gate, GateSubjectKind,
-    JobStore, ModelProvider, SdrRepository, Spawner, StepStore, SystemClock,
+    ArtifactStore, Check, Clock, Environment, EventLog, EvidenceStore, ExecutionContext, Gate,
+    GateSubjectKind, JobStore, ModelProvider, SdrRepository, Spawner, StepStore, SystemClock,
+    UnfencedReason, WriteAuthority,
 };
 use evaluation::Evaluator;
 use evaluation::checks::{NumericThresholdCheck, SchemaCheck, UnitsCheck};
 use governance::{ApprovalGate, GateRunner, SdrCommitGate, ToolPermissionGate};
 use infra::persistence::{
-    Database, PgEventLog, PgEvidenceStore, PgJobStore, PgSdrRepository, PgStepStore, PoolSettings,
+    Database, PgArtifactStore, PgEventLog, PgEvidenceStore, PgJobStore, PgSdrRepository,
+    PgStepStore, PoolSettings,
 };
 use model_gateway::{ModelGateway, ProviderAdapter, Routing};
-use runtime::{AgentRegistry, Components, Orchestrator, Scheduler, SchedulerSettings};
+use runtime::{
+    AgentRegistry, Components, Orchestrator, Reports, Scheduler, SchedulerSettings, Submissions,
+};
 use sdr::SdrManager;
 use tokio_util::task::TaskTracker;
 use tools::{McpServer, McpSettings, ServerTools, ToolGateway, ToolRegistry};
 
 pub use model_gateway::{Env, ProcessEnv};
-pub use settings::{DATABASE_URL_ENV, WORKER_ID_ENV, environment, worker_id};
+pub use settings::{API_TOKEN_ENV, DATABASE_URL_ENV, WORKER_ID_ENV, environment, worker_id};
+pub use signals::Signals;
 pub use spawn::TokioSpawner;
 pub use tokio_util::sync::CancellationToken;
 
 /// The build recorded with every commit.
 const HARNESS_BUILD: &str = concat!("autosys ", env!("CARGO_PKG_VERSION"));
+/// Who the development token stands for (ADR-0022): the actor of every
+/// command a client sends, and of every run's version 0.
+const DEV_USER: &str = "dev";
 
 /// A startup failure: the worker must not start (exit code 2).
 #[derive(Debug, thiserror::Error)]
@@ -170,24 +184,10 @@ pub async fn build_worker(
     let config = settings::Config::load(&config_dir, environment)?;
     let prompts =
         PromptLibrary::load_dir(&prompts_dir).map_err(|e| BootstrapError::other("prompts", e))?;
-    let url = checks::database_url(env)?;
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
 
     // The database and the stores.
-    let database = &config.worker.database;
-    let db = Database::connect(
-        &url,
-        &PoolSettings {
-            max_connections: u32::try_from(database.max_connections.get()).unwrap_or(u32::MAX),
-            acquire_timeout: Duration::from_millis(database.acquire_timeout_ms.get()),
-        },
-        Duration::from_millis(database.operation_timeout_ms.get()),
-    )
-    .await
-    .map_err(|e| BootstrapError::check("database", e))?;
-    db.migrate()
-        .await
-        .map_err(|e| BootstrapError::check("database", e))?;
+    let db = connect(env, &config.worker.database).await?;
     let mut overrides = overrides;
     let jobs = wrap(
         Arc::new(PgJobStore::new(db.clone())) as Arc<dyn JobStore>,
@@ -358,6 +358,158 @@ pub async fn build_worker(
         sdr,
         tracker,
     })
+}
+
+/// What api-server is built from.
+pub struct ApiSetup {
+    /// The `config/` directory.
+    pub config_dir: PathBuf,
+    /// The `prompts/` directory, which the agent specs name.
+    pub prompts_dir: PathBuf,
+}
+
+/// A built api-server: where to listen, and what to serve there.
+pub struct ApiServer {
+    pub environment: Environment,
+    pub listen: SocketAddr,
+    pub router: api::Router,
+}
+
+/// Runs the startup checks and builds api-server, reading environment
+/// variables from `env` only. In order: the environment; `config/` for
+/// it; the token; `prompts/` and the agents; the database, migrated; the
+/// stores and the SDR manager; the submitter and the reports; the
+/// routes. Open event streams end when `shutdown` is cancelled.
+///
+/// The agents are checked against the tools `config/tools/` lists, so a
+/// task the worker would refuse is refused at submit time; api-server
+/// connects to no tool server.
+pub async fn build_api(
+    setup: ApiSetup,
+    env: &(dyn Env + Sync),
+    shutdown: CancellationToken,
+) -> Result<ApiServer, BootstrapError> {
+    let ApiSetup {
+        config_dir,
+        prompts_dir,
+    } = setup;
+    let environment = settings::environment(env)?;
+    let config = settings::ApiConfig::load(&config_dir, environment)?;
+    let token = settings::api_token(env)?;
+    let listen: SocketAddr = config.api.listen.parse().map_err(|e| {
+        BootstrapError::new(
+            "config",
+            format!(
+                "listen ({}) is not a socket address: {e}",
+                config.api.listen.as_str()
+            ),
+        )
+    })?;
+    let prompts =
+        PromptLibrary::load_dir(&prompts_dir).map_err(|e| BootstrapError::other("prompts", e))?;
+    let tools: Vec<&str> = config
+        .overlays
+        .iter()
+        .flat_map(|overlay| overlay.tools.iter().map(|t| t.name.as_str()))
+        .collect();
+    let agents = Arc::new(
+        AgentRegistry::new(config.agents.clone(), &prompts, &tools)
+            .map_err(|e| BootstrapError::other("agents", e))?,
+    );
+    let clock: Arc<dyn Clock> = Arc::new(SystemClock);
+
+    // The database and the stores; only SdrManager gets the SDR's.
+    let db = connect(env, &config.api.database).await?;
+    let jobs: Arc<dyn JobStore> = Arc::new(PgJobStore::new(db.clone()));
+    let events: Arc<dyn EventLog> = Arc::new(
+        PgEventLog::connect(db.clone())
+            .await
+            .map_err(|e| BootstrapError::check("database", e))?,
+    );
+    let evidence: Arc<dyn EvidenceStore> = Arc::new(PgEvidenceStore::new(db.clone()));
+    let artifacts: Arc<dyn ArtifactStore> = Arc::new(PgArtifactStore::new(
+        db.clone(),
+        PathBuf::from(config.api.artifact_root.as_str()),
+    ));
+    let storage: Arc<dyn SdrRepository> = Arc::new(PgSdrRepository::new(db));
+    let sdr = Arc::new(
+        SdrManager::new(storage, clock.clone()).map_err(|e| BootstrapError::other("sdr", e))?,
+    );
+
+    // What the routes call.
+    let harness_build = HARNESS_BUILD
+        .parse()
+        .map_err(|_| BootstrapError::new("api", "the harness build is empty"))?;
+    let submitter = Arc::new(
+        Submissions::new(
+            jobs.clone(),
+            events.clone(),
+            sdr.clone(),
+            agents,
+            clock.clone(),
+            harness_build,
+        )
+        .map_err(|e| BootstrapError::other("api", e))?,
+    );
+    let io_timeout = Duration::from_millis(config.api.database.operation_timeout_ms.get());
+    let assembler = ReportAssembler::new(
+        ReportSources {
+            jobs: jobs.clone(),
+            events: events.clone(),
+            evidence,
+            artifacts: artifacts.clone(),
+            sdr,
+        },
+        io_timeout,
+    )
+    .map_err(|e| BootstrapError::other("api", e))?;
+    let actor = Actor::User {
+        user_id: DEV_USER
+            .parse()
+            .map_err(|_| BootstrapError::new("api", "the development user id is invalid"))?,
+    };
+    let services = api::Services {
+        jobs,
+        events,
+        artifacts,
+        submitter,
+        reports: Arc::new(Reports::new(assembler)),
+        command: WriteAuthority::Unfenced(UnfencedReason::ApiCommand),
+        actor,
+        clock,
+        token,
+        limits: api::Limits::new(&config.api),
+    };
+    let router = api::router(services, shutdown).map_err(|e| BootstrapError::check("api", e))?;
+    Ok(ApiServer {
+        environment,
+        listen,
+        router,
+    })
+}
+
+/// Connects to `DATABASE_URL` with `database`'s pool and brings its schema
+/// up to date. Both binaries migrate; concurrent migrations wait for each
+/// other on the database's lock.
+async fn connect(
+    env: &(dyn Env + Sync),
+    database: &WorkerDatabase,
+) -> Result<Database, BootstrapError> {
+    let url = checks::database_url(env)?;
+    let db = Database::connect(
+        &url,
+        &PoolSettings {
+            max_connections: u32::try_from(database.max_connections.get()).unwrap_or(u32::MAX),
+            acquire_timeout: Duration::from_millis(database.acquire_timeout_ms.get()),
+        },
+        Duration::from_millis(database.operation_timeout_ms.get()),
+    )
+    .await
+    .map_err(|e| BootstrapError::check("database", e))?;
+    db.migrate()
+        .await
+        .map_err(|e| BootstrapError::check("database", e))?;
+    Ok(db)
 }
 
 /// Installs ring as the process's TLS crypto provider, unless one is

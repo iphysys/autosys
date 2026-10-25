@@ -1,0 +1,23 @@
+# How api-server listens and bounds its work (ADR-0018).
+# Schema: schemas/config/api.schema.json
+#
+# The development token is SYNTH_API_TOKEN and the database URL is
+# DATABASE_URL; neither is ever written here. The token suits a developer's
+# machine only (ADR-0022), so the server listens on loopback.
+schema_version: "0.1"
+listen: 127.0.0.1:8080
+# Every request but an event stream. An event stream stays open while its
+# run can still change, and sends a comment every keep_alive_ms when idle.
+request_timeout_ms: 30000
+max_body_bytes: 1048576
+stream:
+  keep_alive_ms: 15000
+  page_size: 256
+# The pool. The URL is DATABASE_URL, never written here.
+database:
+  max_connections: 8
+  acquire_timeout_ms: 5000
+  operation_timeout_ms: 10000
+# The artifact volume (ADR-0016): artifact files are read from here; their
+# metadata is in the database.
+artifact_root: runtime-data/artifacts

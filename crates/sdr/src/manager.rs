@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use contracts::ids::{EvidenceId, ProjectId, SdrVersion, TransitionId};
 use contracts::types::{
-    Actor, DesignDefinition, ElementKind, HarnessVersions, NonEmptyString, SdrDocument,
-    SdrDocumentSchemaVersion, SdrSlice, SdrVersionRecord, SdrVersionRecordSchemaVersion, Sha256,
-    Timestamp, Transition,
+    Actor, DesignDefinition, ElementKind, HarnessVersions, NonEmptyString, Operation, Requirement,
+    SdrDocument, SdrDocumentSchemaVersion, SdrSlice, SdrVersionRecord,
+    SdrVersionRecordSchemaVersion, Sha256, Timestamp, Transition,
 };
 use contracts::{Clock, Error, ErrorCode, ExecutionContext, SdrRepository};
 use serde_json::Value;
@@ -27,13 +27,17 @@ pub struct CommitInfo {
     pub harness: HarnessVersions,
 }
 
-/// Provenance of version 0, the empty design.
+/// Version 0: the project's requirements, an empty design, and where they
+/// came from.
 #[derive(Clone, Debug, PartialEq)]
 pub struct InitialVersion {
     pub transition_id: TransitionId,
     pub actor: Actor,
     pub reason: NonEmptyString,
     pub harness: HarnessVersions,
+    /// The requirements a run starts from. They cite no evidence: nothing
+    /// has been checked yet.
+    pub requirements: Vec<Requirement>,
 }
 
 /// The only way to change design state (blueprint section 7.2). Versions are
@@ -55,32 +59,23 @@ impl SdrManager {
         })
     }
 
-    /// Stores version 0, the empty design. Conflict if the project already
-    /// has versions.
+    /// Stores version 0: the given requirements and an empty design, checked
+    /// by the rules a transition's `add_requirement` meets, and by
+    /// `system.schema.json`. InvalidInput listing every problem; Conflict if
+    /// the project already has versions.
     pub async fn create_project(
         &self,
         project_id: &ProjectId,
         initial: InitialVersion,
         ctx: &ExecutionContext,
     ) -> Result<SdrVersionRecord, Error> {
+        let document = self.initial_document(project_id, &initial.requirements)?;
         if self.store.head(project_id, ctx).await?.is_some() {
             return Err(Error::new(
                 ErrorCode::Conflict,
                 format!("project {} already has an SDR", project_id.as_str()),
             ));
         }
-        let document = SdrDocument {
-            schema_version: SdrDocumentSchemaVersion::X01,
-            project_id: project_id.clone(),
-            version: SdrVersion(0),
-            parent_version: None,
-            requirements: Vec::new(),
-            design: DesignDefinition {
-                parameters: Vec::new(),
-                decisions: Vec::new(),
-                assumptions: Vec::new(),
-            },
-        };
         let record = self.record(
             &document,
             initial.transition_id,
@@ -313,6 +308,62 @@ impl SdrManager {
             )
             .with_source(e)
         })
+    }
+
+    /// Version 0 of `project_id` holding `requirements`, or every problem
+    /// with them.
+    fn initial_document(
+        &self,
+        project_id: &ProjectId,
+        requirements: &[Requirement],
+    ) -> Result<SdrDocument, Error> {
+        let empty = SdrDocument {
+            schema_version: SdrDocumentSchemaVersion::X01,
+            project_id: project_id.clone(),
+            version: SdrVersion(0),
+            parent_version: None,
+            requirements: Vec::new(),
+            design: DesignDefinition {
+                parameters: Vec::new(),
+                decisions: Vec::new(),
+                assumptions: Vec::new(),
+            },
+        };
+        let mut problems: Vec<String> = requirements
+            .iter()
+            .filter(|r| !r.evidence_ids.is_empty())
+            .map(|r| {
+                format!(
+                    "requirement {} cites evidence; version 0 cites none",
+                    r.id.as_str()
+                )
+            })
+            .collect();
+        let operations: Vec<Operation> = requirements
+            .iter()
+            .map(|requirement| Operation::AddRequirement {
+                requirement: requirement.clone(),
+            })
+            .collect();
+        let (mut document, semantic) = apply(&empty, SdrVersion(0), &operations);
+        // Version 0 has no parent; apply() names the base as one.
+        document.parent_version = None;
+        problems.extend(semantic.into_iter().map(|p| p.message));
+        if problems.is_empty() {
+            problems.extend(self.schemas.document_errors(&document)?);
+        }
+        if problems.is_empty() {
+            Ok(document)
+        } else {
+            Err(Error::new(
+                ErrorCode::InvalidInput,
+                format!(
+                    "the requirements of project {} are invalid: {}",
+                    project_id.as_str(),
+                    problems.join("; ")
+                ),
+            ))
+        }
     }
 
     fn record(

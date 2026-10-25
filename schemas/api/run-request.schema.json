@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RunRequest",
+  "description": "POST /v0/runs: what a client asks a run to achieve (ADR-0018). The server assigns every id, builds the task from the named agent's spec, and stores the requirements as the new project's SDR version 0. The agent's spec is the ceiling of the budget.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "agent_id",
+    "name",
+    "description",
+    "goal",
+    "acceptance_criteria",
+    "requirements"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "agent_id": { "$ref": "../common/types.schema.json#/$defs/AgentId" },
+    "name": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+    "description": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+    "goal": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+    "acceptance_criteria": {
+      "description": "Guidance for the model. Success is decided by checks and gates, never by these strings.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" }
+    },
+    "requirements": {
+      "description": "The requirements the run must satisfy. They cite no evidence yet.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "../sdr/requirement.schema.json" }
+    },
+    "budget": {
+      "description": "The task's limits. Absent means the agent's own limits.",
+      "$ref": "../common/types.schema.json#/$defs/Budget"
+    }
+  }
+}

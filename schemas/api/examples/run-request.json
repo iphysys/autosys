@@ -1,0 +1,20 @@
+{
+  "schema_version": "0.1",
+  "agent_id": "main_orchestrator",
+  "name": "Size the plate",
+  "description": "Choose plate dimensions that meet the requirements.",
+  "goal": "A committed design whose requirements all have passing checks.",
+  "acceptance_criteria": ["Every requirement has a passing check."],
+  "requirements": [
+    {
+      "id": "R-mass",
+      "text": "The plate mass shall not exceed 150 g.",
+      "priority": "must",
+      "numeric": {
+        "parameter_id": "part.mass",
+        "criterion": { "comparator": "le", "limit": { "value": 150, "unit": "g" } }
+      },
+      "evidence_ids": []
+    }
+  ]
+}

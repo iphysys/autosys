@@ -20,7 +20,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use anyhow::Context as _;
-use bootstrap::{CancellationToken, Overrides, ProcessEnv, WorkerSetup, build_worker};
+use bootstrap::{CancellationToken, Overrides, ProcessEnv, Signals, WorkerSetup, build_worker};
 use tracing_subscriber::EnvFilter;
 
 const USAGE: &str = "usage: worker [--config <dir>] [--prompts <dir>] [--id <id>]";
@@ -121,45 +121,6 @@ fn serve(args: Args) -> anyhow::Result<ExitCode> {
         tracing::info!(worker = worker.id.as_str(), "worker exited cleanly");
         Ok(ExitCode::SUCCESS)
     })
-}
-
-/// The signals that ask the worker to stop.
-struct Signals {
-    #[cfg(unix)]
-    terminate: tokio::signal::unix::Signal,
-    #[cfg(windows)]
-    ctrl_break: tokio::signal::windows::CtrlBreak,
-    #[cfg(windows)]
-    close: tokio::signal::windows::CtrlClose,
-}
-
-impl Signals {
-    fn listen() -> std::io::Result<Self> {
-        Ok(Self {
-            #[cfg(unix)]
-            terminate: tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?,
-            #[cfg(windows)]
-            ctrl_break: tokio::signal::windows::ctrl_break()?,
-            #[cfg(windows)]
-            close: tokio::signal::windows::ctrl_close()?,
-        })
-    }
-
-    /// Waits for the next signal. If listening fails, that counts as one,
-    /// so the worker still stops.
-    async fn next(&mut self) {
-        #[cfg(unix)]
-        tokio::select! {
-            _ = tokio::signal::ctrl_c() => {}
-            _ = self.terminate.recv() => {}
-        }
-        #[cfg(windows)]
-        tokio::select! {
-            _ = tokio::signal::ctrl_c() => {}
-            _ = self.ctrl_break.recv() => {}
-            _ = self.close.recv() => {}
-        }
-    }
 }
 
 #[cfg(test)]

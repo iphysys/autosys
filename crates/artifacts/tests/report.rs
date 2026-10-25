@@ -112,6 +112,7 @@ impl Fixture {
                     actor: parse(json!({ "kind": "system", "component": "test" })),
                     reason: parse(json!("Start the design.")),
                     harness: parse(harness()),
+                    requirements: Vec::new(),
                 },
                 &f.ctx,
             )

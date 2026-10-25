@@ -7,7 +7,8 @@
 //! This module is the only product code that gives a context its write
 //! authority, and the only one that names an unfenced reason: `JobSubmit`
 //! for a submit, `ProjectCreate` for a new project's version 0, `JobWake`
-//! for a wake-up.
+//! for a wake-up. [`Submissions`] starts the runs clients ask for, through
+//! the same submit.
 //!
 //! A job leaves running by checkpoint, event, save: the fence ends with the
 //! save, so the event that records the change comes first, naming the
@@ -17,6 +18,7 @@
 
 mod heartbeat;
 mod held;
+mod submit;
 mod transition;
 
 use std::collections::HashMap;
@@ -35,6 +37,8 @@ use contracts::{
 };
 use sdr::{InitialVersion, SdrManager};
 use tokio_util::sync::CancellationToken;
+
+pub use self::submit::Submissions;
 
 use self::held::{HeldJob, Leave};
 use self::transition::{WOKEN_BY_ANSWER, WOKEN_BY_CANCEL};
@@ -181,32 +185,16 @@ impl Scheduler {
     /// `initial` if given, inserts the job and records it queued. A child
     /// job is not submitted here: its parent inserts it under its own fence.
     pub async fn submit(&self, job: &Job, initial: Option<InitialVersion>) -> Result<(), Error> {
-        let corr = correlation(&job.id, 0)?;
         if let Some(initial) = initial {
-            let ctx = ExecutionContext::builder(corr.clone())
-                .project(job.project_id.clone())
-                .authorized_by(WriteAuthority::Unfenced(UnfencedReason::ProjectCreate))
-                .build();
-            self.sdr
-                .create_project(&job.project_id, initial, &ctx)
-                .await?;
+            submit::create_project(&self.sdr, job, initial).await?;
         }
-        let submit = WriteAuthority::Unfenced(UnfencedReason::JobSubmit);
-        self.jobs.insert(job, Some(&submit)).await?;
-        transition::record(
+        submit::insert_and_record(
+            self.jobs.as_ref(),
             self.events.as_ref(),
             self.clock.as_ref(),
-            &job.run_id,
-            &corr,
-            transition::changed(
-                None,
-                JobStatus::Queued { checkpoint: None },
-                transition::SUBMITTED,
-            ),
-            &submit,
+            job,
         )
-        .await?;
-        Ok(())
+        .await
     }
 
     /// Claims and runs work until `shutdown`, polling with jitter when there

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ApprovalAnswerRequest",
+  "description": "POST /v0/runs/{run_id}/approvals/{approval_id}: a human's answer. It is recorded as an approval_answered event whose actor is the caller (ADR-0018).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["answer"],
+  "properties": {
+    "answer": { "$ref": "../events/event.schema.json#/$defs/ApprovalAnswer" },
+    "comment": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" }
+  }
+}

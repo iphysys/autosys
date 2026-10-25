@@ -185,6 +185,39 @@ async fn a_submitted_job_runs_to_completion() {
     );
 }
 
+/// `Reports` keeps the run-reports contract (ADR-0033) on a run the
+/// scheduler completed, while the world's own run-1 is still running.
+#[tokio::test]
+async fn reports_keep_the_run_reports_contract() {
+    let world = World::new(Setup::new(succeeding())).await;
+    let scheduler = scheduler(&world, "worker-a");
+    scheduler.submit(&job2(), None).await.unwrap();
+    assert!(matches!(
+        scheduler.tick(&CancellationToken::new()).await.unwrap(),
+        Tick::Ran {
+            ended: Ended::Left(Completed),
+            ..
+        }
+    ));
+    let assembler = artifacts::ReportAssembler::new(
+        artifacts::ReportSources {
+            jobs: world.leased.jobs().clone(),
+            events: world.events.clone(),
+            evidence: world.evidence.clone(),
+            artifacts: Arc::new(testkit::stores::InMemoryArtifactStore::new()),
+            sdr: world.sdr.clone(),
+        },
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    testkit::contract::run_reports(testkit::contract::ReportsWorld {
+        reports: Arc::new(runtime::Reports::new(assembler)),
+        not_stopped: id("run-1"),
+        stopped: id(RUN_2),
+    })
+    .await;
+}
+
 #[tokio::test]
 async fn a_suspended_job_wakes_on_its_answer_and_completes() {
     let world = World::new(Setup::new(succeeding()).autonomy(committed_autonomy())).await;

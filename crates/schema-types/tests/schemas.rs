@@ -27,6 +27,23 @@ type RoundTrip = fn(&Value) -> Result<Value, String>;
 /// Every schema file with a root type, and the Rust type generated for it.
 const ROOT_TYPES: &[(&str, RoundTrip)] = &[
     (
+        "api/approval-answer.schema.json",
+        round_trip::<schema_types::ApprovalAnswerRequest>,
+    ),
+    (
+        "api/cancel.schema.json",
+        round_trip::<schema_types::CancelRequest>,
+    ),
+    (
+        "api/error.schema.json",
+        round_trip::<schema_types::ApiError>,
+    ),
+    (
+        "api/run-request.schema.json",
+        round_trip::<schema_types::RunRequest>,
+    ),
+    ("api/run.schema.json", round_trip::<schema_types::Run>),
+    (
         "artifacts/artifact.schema.json",
         round_trip::<schema_types::ArtifactMetadata>,
     ),
@@ -37,6 +54,10 @@ const ROOT_TYPES: &[(&str, RoundTrip)] = &[
     (
         "config/agent.schema.json",
         round_trip::<schema_types::AgentSpec>,
+    ),
+    (
+        "config/api.schema.json",
+        round_trip::<schema_types::ApiSettings>,
     ),
     (
         "config/autonomy-policy.schema.json",
