@@ -15,9 +15,12 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, Utc};
 use contracts::Clock;
-use infra::persistence::{Database, PoolSettings};
+use infra::persistence::{
+    Database, PgEventLog, PgJobStore, PgSdrRepository, PgStepStore, PoolSettings,
+};
 use sqlx::AssertSqlSafe;
 use sqlx::postgres::{PgConnectOptions, PgConnection, PgPool, PgPoolOptions};
+use testkit::contract::FencedStores;
 
 /// Limit on each store operation, and on connecting.
 pub const TIMEOUT: Duration = Duration::from_secs(10);
@@ -146,6 +149,23 @@ impl TestDb {
             })
             .connect_lazy_with(self.options.clone());
         Database::new(pool, TIMEOUT)
+    }
+
+    /// The job store, event log, step store and SDR repository on one pool
+    /// that [`Self::following`] `clock`, for the fencing suite. Needs
+    /// [`Self::use_session_clock`].
+    pub async fn fenced_stores(&self, clock: Arc<dyn Clock>) -> FencedStores {
+        let database = self.following(clock);
+        FencedStores {
+            jobs: Arc::new(PgJobStore::new(database.clone())),
+            events: Arc::new(
+                PgEventLog::connect(database.clone())
+                    .await
+                    .expect("cannot start the event listener"),
+            ),
+            steps: Arc::new(PgStepStore::new(database.clone())),
+            sdr: Arc::new(PgSdrRepository::new(database)),
+        }
     }
 
     /// The database clock, read directly.

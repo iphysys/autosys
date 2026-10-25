@@ -1,6 +1,7 @@
 //! `cargo xtask arch-check`: enforces the allowed dependencies between
-//! workspace crates (blueprint sections 3.3 and 10.3) and the SDR single-writer
-//! rule (section 7.2).
+//! workspace crates (blueprint sections 3.3 and 10.3), the SDR single-writer
+//! rule (section 7.2), and who may issue lease fences, grant write authority
+//! and call tools (ADR-0032).
 
 use std::fs;
 use std::path::{Component, Path};
@@ -70,10 +71,55 @@ const EXEMPT: &[&str] = &["xtask"];
 const SDR_REPOSITORY_USERS: &[&str] = &["contracts", "testkit", "sdr", "infra", "bootstrap"];
 const SDR_REPOSITORY: &str = "SdrRepository";
 
-/// Runs both checks and fails with every violation found.
+/// Where write authority may be granted: the scheduler, through bootstrap,
+/// plus the contract itself and test support. `bootstrap` and the scheduler
+/// do not exist yet (PR 12).
+const AUTHORITY_GRANTERS: &[&str] = &[
+    "crates/contracts",
+    "crates/testkit",
+    "crates/bootstrap",
+    "crates/runtime/src/scheduler",
+];
+
+/// A name that may appear only under the listed paths (ADR-0032). Like the
+/// SDR rule, these are text rules: an alias defeats them, so review must
+/// catch one.
+pub struct NameRule {
+    pub name: &'static str,
+    /// Workspace-relative directories or files, compared by path component.
+    pub allowed: &'static [&'static str],
+    pub why: &'static str,
+}
+
+pub const NAME_RULES: &[NameRule] = &[
+    NameRule {
+        name: "issue_for_claim",
+        allowed: &["crates/contracts", "crates/testkit", "crates/infra"],
+        why: "only JobStore::claim implementations issue fence tokens",
+    },
+    NameRule {
+        name: "authorized_by",
+        allowed: AUTHORITY_GRANTERS,
+        why: "only the scheduler, through bootstrap, gives a context its write authority",
+    },
+    NameRule {
+        name: "UnfencedReason",
+        allowed: AUTHORITY_GRANTERS,
+        why: "unfenced write authority is a capability; tests get it from testkit::leases",
+    },
+    NameRule {
+        name: ".invoke(",
+        allowed: &["crates/tools/src/gateway.rs", "crates/testkit"],
+        why: "only ToolGateway calls Tool::invoke, after the fenced tool_call_started",
+    },
+];
+
+/// Runs every check and fails with every violation found.
 pub fn run(root: &Path, metadata: &Value) -> Result<()> {
     let mut violations = dependency_violations(metadata)?;
-    violations.extend(sdr_repository_violations(&source_files(root)?));
+    let files = source_files(root)?;
+    violations.extend(sdr_repository_violations(&files));
+    violations.extend(name_violations(&files, NAME_RULES));
     if !violations.is_empty() {
         bail!(
             "architecture rules violated:\n  - {}",
@@ -253,6 +299,44 @@ pub fn sdr_repository_violations(files: &[SourceFile]) -> Vec<String> {
         .collect()
 }
 
+/// Whether `path` is `prefix` or lies under it. Both are split on slashes
+/// and backslashes, so a Windows path matches a rule written with `/`.
+fn is_under(path: &str, prefix: &str) -> bool {
+    let parts = |p: &str| -> Vec<String> {
+        p.split(['/', '\\'])
+            .filter(|s| !s.is_empty() && *s != ".")
+            .map(str::to_owned)
+            .collect()
+    };
+    let (path, prefix) = (parts(path), parts(prefix));
+    path.len() >= prefix.len() && path[..prefix.len()] == prefix[..]
+}
+
+/// Lines outside a rule's allowed paths that name its name. Comment lines
+/// are ignored.
+pub fn name_violations(files: &[SourceFile], rules: &[NameRule]) -> Vec<String> {
+    let mut violations = Vec::new();
+    for rule in rules {
+        for file in files {
+            if rule.allowed.iter().any(|a| is_under(&file.path, a)) {
+                continue;
+            }
+            for (n, line) in file.text.lines().enumerate() {
+                if !line.trim_start().starts_with("//") && line.contains(rule.name) {
+                    violations.push(format!(
+                        "{}:{} names {}; {} (ADR-0032)",
+                        file.path,
+                        n + 1,
+                        rule.name,
+                        rule.why
+                    ));
+                }
+            }
+        }
+    }
+    violations
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -391,5 +475,168 @@ mod tests {
         assert_eq!(violations.len(), 2, "{violations:?}");
         assert!(violations[0].starts_with("runtime/src/lib.rs:1"));
         assert!(violations[1].starts_with("worker/src/lib.rs:1"));
+    }
+
+    fn at(path: &str, text: &str) -> SourceFile {
+        SourceFile {
+            crate_dir: path
+                .split(['/', '\\'])
+                .nth(1)
+                .unwrap_or_default()
+                .to_owned(),
+            under_apps: path.starts_with("apps"),
+            path: path.to_owned(),
+            text: text.to_owned(),
+        }
+    }
+
+    fn rule(name: &str) -> &'static NameRule {
+        NAME_RULES
+            .iter()
+            .find(|r| r.name == name)
+            .expect("the rule exists")
+    }
+
+    #[test]
+    fn paths_match_by_component_on_every_os() {
+        assert!(is_under(
+            "crates/infra/src/persistence/jobs.rs",
+            "crates/infra"
+        ));
+        assert!(is_under(
+            "crates\\infra\\src\\persistence\\jobs.rs",
+            "crates/infra"
+        ));
+        assert!(is_under(
+            "crates\\tools\\src\\gateway.rs",
+            "crates/tools/src/gateway.rs"
+        ));
+        assert!(!is_under(
+            "crates/infrastructure/src/lib.rs",
+            "crates/infra"
+        ));
+        assert!(!is_under(
+            "crates/tools/src/gateway_extra.rs",
+            "crates/tools/src/gateway.rs"
+        ));
+        assert!(!is_under("crates", "crates/infra"));
+    }
+
+    #[test]
+    fn only_claim_implementations_issue_fences() {
+        let files = [
+            at(
+                "crates/infra/src/persistence/jobs.rs",
+                "FenceToken::issue_for_claim(id, h, 1)",
+            ),
+            at(
+                "crates\\testkit\\src\\stores\\job.rs",
+                "FenceToken::issue_for_claim(id, h, 1)",
+            ),
+            at(
+                "crates/runtime/src/lib.rs",
+                "// issue_for_claim in a comment",
+            ),
+            at(
+                "crates/runtime/src/lib.rs",
+                "let f = FenceToken::issue_for_claim(id, h, 9);",
+            ),
+            at(
+                "crates/runtime/tests/support/mod.rs",
+                "FenceToken::issue_for_claim(id, h, 9)",
+            ),
+        ];
+        let violations = name_violations(&files, std::slice::from_ref(rule("issue_for_claim")));
+        assert_eq!(violations.len(), 2, "{violations:?}");
+        assert!(violations[0].starts_with("crates/runtime/src/lib.rs:1"));
+        assert!(violations[1].starts_with("crates/runtime/tests/support/mod.rs:1"));
+    }
+
+    #[test]
+    fn only_the_scheduler_grants_write_authority() {
+        let files = [
+            at(
+                "crates/runtime/src/scheduler/claim.rs",
+                ".authorized_by(authority)",
+            ),
+            at(
+                "crates\\bootstrap\\src\\lib.rs",
+                ".authorized_by(authority)",
+            ),
+            at(
+                "crates/runtime/src/agents/bounded_worker.rs",
+                ".authorized_by(authority)",
+            ),
+            at("crates/api/src/lib.rs", ".authorized_by(authority)"),
+            at("apps/worker/src/main.rs", ".authorized_by(authority)"),
+        ];
+        let violations = name_violations(&files, std::slice::from_ref(rule("authorized_by")));
+        assert_eq!(violations.len(), 3, "{violations:?}");
+        assert!(violations[0].starts_with("crates/runtime/src/agents"));
+        assert!(violations[1].starts_with("crates/api"));
+        assert!(violations[2].starts_with("apps/worker"));
+    }
+
+    #[test]
+    fn only_authority_granters_name_unfenced_reasons() {
+        let files = [
+            at("crates/contracts/src/fence.rs", "pub enum UnfencedReason {"),
+            at(
+                "crates/testkit/src/leases.rs",
+                "WriteAuthority::Unfenced(UnfencedReason::JobInsert)",
+            ),
+            at(
+                "crates/infra/src/persistence/jobs.rs",
+                "UnfencedReason::JobInsert",
+            ),
+            at(
+                "crates/infra/tests/claiming.rs",
+                "UnfencedReason::JobInsert",
+            ),
+            at("crates/api/src/routes.rs", "UnfencedReason::ApiCommand"),
+        ];
+        let violations = name_violations(&files, std::slice::from_ref(rule("UnfencedReason")));
+        assert_eq!(violations.len(), 3, "{violations:?}");
+        assert!(
+            violations
+                .iter()
+                .all(|v| !v.starts_with("crates/contracts"))
+        );
+        assert!(violations.iter().all(|v| !v.starts_with("crates/testkit")));
+    }
+
+    #[test]
+    fn only_the_gateway_invokes_tools() {
+        let files = [
+            at(
+                "crates\\tools\\src\\gateway.rs",
+                "registered.tool.invoke(call.request, ctx)",
+            ),
+            at(
+                "crates/testkit/src/contract/tool.rs",
+                "tool.invoke(&valid_request, &ctx())",
+            ),
+            at(
+                "crates/tools/src/mcp/client.rs",
+                "self.inner.invoke(request, ctx)",
+            ),
+            at(
+                "crates/runtime/tests/fencing.rs",
+                "tool.invoke(&request, &ctx)",
+            ),
+            at("crates/tools/src/registry.rs", "async fn invoke(&self) {}"),
+        ];
+        let violations = name_violations(&files, std::slice::from_ref(rule(".invoke(")));
+        assert_eq!(violations.len(), 2, "{violations:?}");
+        assert!(violations[0].starts_with("crates/tools/src/mcp/client.rs:1"));
+        assert!(violations[1].starts_with("crates/runtime/tests/fencing.rs:1"));
+    }
+
+    #[test]
+    fn the_repository_passes_the_name_rules() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let files = source_files(&root).expect("read the sources");
+        let violations = name_violations(&files, NAME_RULES);
+        assert!(violations.is_empty(), "{violations:#?}");
     }
 }

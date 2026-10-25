@@ -4,13 +4,20 @@ use chrono::{DateTime, Utc};
 use tokio_util::sync::CancellationToken;
 
 use crate::error::{Error, ErrorCode};
+use crate::fence::WriteAuthority;
 use crate::ids::{AgentId, CorrelationId, ProjectId, RunId, StepId, TaskId};
 
-/// Correlation ids for tracing and a cancellation token.
+/// Correlation ids for tracing, a cancellation token, and the authority for
+/// store writes.
 ///
 /// Cloning shares the token. [`ExecutionContext::for_step`] creates a child:
 /// cancelling the run cancels its steps, but cancelling a step leaves the run
 /// alone.
+///
+/// A root context comes from [`ExecutionContext::builder`]. Its write
+/// authority (ADR-0032) is what every writer passes to the stores; children
+/// and contexts refined with the `with_*` methods keep it.
+#[non_exhaustive]
 #[derive(Clone, Debug)]
 pub struct ExecutionContext {
     correlation_id: CorrelationId,
@@ -20,9 +27,11 @@ pub struct ExecutionContext {
     step_id: Option<StepId>,
     agent_id: Option<AgentId>,
     cancellation: CancellationToken,
+    authority: Option<WriteAuthority>,
 }
 
 impl ExecutionContext {
+    /// A context with no ids and no write authority.
     pub fn new(correlation_id: CorrelationId) -> Self {
         Self {
             correlation_id,
@@ -32,6 +41,14 @@ impl ExecutionContext {
             step_id: None,
             agent_id: None,
             cancellation: CancellationToken::new(),
+            authority: None,
+        }
+    }
+
+    /// Starts a root context.
+    pub fn builder(correlation_id: CorrelationId) -> ExecutionContextBuilder {
+        ExecutionContextBuilder {
+            ctx: Self::new(correlation_id),
         }
     }
 
@@ -88,6 +105,12 @@ impl ExecutionContext {
         self.agent_id.as_ref()
     }
 
+    /// What every store write made with this context passes as its
+    /// authority. `None` writes nothing.
+    pub fn write_authority(&self) -> Option<&WriteAuthority> {
+        self.authority.as_ref()
+    }
+
     pub fn cancel(&self) {
         self.cancellation.cancel();
     }
@@ -112,6 +135,46 @@ impl ExecutionContext {
     }
 }
 
+/// Builds a root [`ExecutionContext`]. A future field is one more setter here,
+/// inherited by the child constructors, so no call site changes.
+#[derive(Debug)]
+pub struct ExecutionContextBuilder {
+    ctx: ExecutionContext,
+}
+
+impl ExecutionContextBuilder {
+    pub fn project(mut self, id: ProjectId) -> Self {
+        self.ctx.project_id = Some(id);
+        self
+    }
+
+    pub fn run(mut self, id: RunId) -> Self {
+        self.ctx.run_id = Some(id);
+        self
+    }
+
+    pub fn task(mut self, id: TaskId) -> Self {
+        self.ctx.task_id = Some(id);
+        self
+    }
+
+    pub fn agent(mut self, id: AgentId) -> Self {
+        self.ctx.agent_id = Some(id);
+        self
+    }
+
+    /// Gives the context its write authority. Only the scheduler, through
+    /// bootstrap, does this for a claimed job (arch-check).
+    pub fn authorized_by(mut self, authority: WriteAuthority) -> Self {
+        self.ctx.authority = Some(authority);
+        self
+    }
+
+    pub fn build(self) -> ExecutionContext {
+        self.ctx
+    }
+}
+
 /// The source of the current time. Injected so time-dependent behavior, such
 /// as lease expiry, is testable and the same in every store implementation.
 pub trait Clock: Send + Sync {
@@ -131,6 +194,8 @@ impl Clock for SystemClock {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fence::{FenceToken, UnfencedReason};
+    use crate::ids::JobId;
 
     fn ctx() -> ExecutionContext {
         ExecutionContext::new(CorrelationId::try_from("corr-1").expect("valid id"))
@@ -168,6 +233,60 @@ mod tests {
         assert_eq!(step.correlation_id(), run.correlation_id());
         assert_eq!(step.run_id(), run.run_id());
         assert_eq!(step.step_id().map(|s| s.as_str()), Some("step-7"));
+    }
+
+    fn fenced() -> WriteAuthority {
+        WriteAuthority::Fenced(FenceToken::issue_for_claim(
+            JobId::try_from("job-1").expect("valid id"),
+            "worker-1".parse().expect("valid id"),
+            3,
+        ))
+    }
+
+    #[test]
+    fn a_bare_context_has_no_authority() {
+        assert_eq!(ctx().write_authority(), None);
+    }
+
+    #[test]
+    fn the_builder_sets_ids_and_authority() {
+        let built = ExecutionContext::builder(CorrelationId::try_from("corr-1").expect("valid id"))
+            .project(ProjectId::try_from("p1").expect("valid id"))
+            .run(RunId::try_from("run-1").expect("valid id"))
+            .task(TaskId::try_from("task-1").expect("valid id"))
+            .agent(AgentId::try_from("agent-1").expect("valid id"))
+            .authorized_by(fenced())
+            .build();
+        assert_eq!(built.project_id().map(|p| p.as_str()), Some("p1"));
+        assert_eq!(built.run_id().map(|r| r.as_str()), Some("run-1"));
+        assert_eq!(built.task_id().map(|t| t.as_str()), Some("task-1"));
+        assert_eq!(built.agent_id().map(|a| a.as_str()), Some("agent-1"));
+        assert_eq!(built.write_authority(), Some(&fenced()));
+    }
+
+    #[test]
+    fn children_and_refined_contexts_keep_the_authority() {
+        let root = ExecutionContext::builder(CorrelationId::try_from("corr-1").expect("valid id"))
+            .authorized_by(fenced())
+            .build();
+        let refined = root
+            .clone()
+            .with_run(RunId::try_from("run-1").expect("valid id"))
+            .with_agent(AgentId::try_from("agent-1").expect("valid id"));
+        let child = refined.for_step(step("step-1"));
+        let nested = child.for_step(step("step-1.1"));
+        for ctx in [&refined, &child, &nested] {
+            assert_eq!(ctx.write_authority(), Some(&fenced()));
+        }
+
+        let unfenced = WriteAuthority::Unfenced(UnfencedReason::ApiCommand);
+        let api = ExecutionContext::builder(CorrelationId::try_from("corr-2").expect("valid id"))
+            .authorized_by(unfenced.clone())
+            .build();
+        assert_eq!(
+            api.for_step(step("step-1")).write_authority(),
+            Some(&unfenced)
+        );
     }
 
     #[tokio::test]

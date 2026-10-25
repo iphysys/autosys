@@ -7,6 +7,10 @@
 //! different hosts agree on time whatever their own clocks say (ADR-0023). No
 //! store here takes a [`contracts::Clock`].
 //!
+//! A fenced write checks its fence with the first statement of its own
+//! transaction, which share-locks the job row (ADR-0032). The lock order is
+//! always `jobs` first, then the store's own rows.
+//!
 //! Queries are checked at compile time against the database at `DATABASE_URL`
 //! or, with `SQLX_OFFLINE=true`, against the query data committed in `.sqlx/`.
 
@@ -14,6 +18,7 @@ mod artifacts;
 mod error;
 mod events;
 mod evidence;
+mod fence;
 mod jobs;
 mod sdr;
 mod steps;

@@ -9,6 +9,7 @@
 pub mod check;
 pub mod context;
 pub mod error;
+pub mod fence;
 pub mod gate;
 pub mod hooks;
 pub mod ids;
@@ -22,8 +23,12 @@ pub mod tool;
 pub use schema_types as types;
 
 pub use check::{Check, CheckDescriptor, CheckFinding, CheckSubject};
-pub use context::{Clock, ExecutionContext, SystemClock};
+pub use context::{Clock, ExecutionContext, ExecutionContextBuilder, SystemClock};
 pub use error::{Error, ErrorCode};
+pub use fence::{
+    FenceToken, FoundLease, StaleFence, Staleness, StoreWrite, UnfencedReason, WriteAuthority,
+    authorize, lease_lost,
+};
 pub use gate::{Gate, GateOutcome, GateRequest, GateSubject, GateSubjectKind};
 pub use hooks::EventSubscriber;
 pub use model::{
@@ -32,7 +37,7 @@ pub use model::{
 };
 pub use schema::SchemaSet;
 pub use storage::{
-    ArtifactStore, EventLog, EvidenceStore, JobStore, NewEvent, NewStep, SdrRepository, StepStart,
-    StepStore, WakeReason,
+    ArtifactStore, Claimed, EventLog, EvidenceStore, JobStore, NewEvent, NewStep, SdrRepository,
+    StepStart, StepStore, WakeReason,
 };
 pub use tool::{Tool, ToolDescriptor, ToolOutput, ToolRequest};

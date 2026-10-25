@@ -1,18 +1,19 @@
 //! Behavior of the fakes that later PRs rely on, beyond their contracts.
 
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use contracts::ids::{ProjectId, SdrVersion};
 use contracts::types::{ApprovalAnswer, GateDecision};
 use contracts::{
-    ErrorCode, ExecutionContext, Gate, GateRequest, GateSubject, GateSubjectKind, ModelProvider,
-    SdrRepository, Tool,
+    Error, ErrorCode, ExecutionContext, Gate, GateRequest, GateSubject, GateSubjectKind,
+    ModelProvider, SdrRepository, Tool,
 };
 use serde_json::json;
 use testkit::builders::{id, model_request, sdr_document, tool_request, transition};
 use testkit::fakes::{
-    FakeGate, FakeTool, Fault, FaultySdrRepository, RecordedModelProvider, ScriptedModelProvider,
-    text_response,
+    FakeGate, FakeTool, Fault, FaultySdrRepository, HookFuture, RecordedModelProvider,
+    ScriptedModelProvider, Slot, text_response,
 };
 
 fn ctx() -> ExecutionContext {
@@ -145,6 +146,57 @@ async fn slow_tool_stops_when_cancelled() {
 }
 
 #[tokio::test]
+async fn a_hook_sees_each_call_after_it_is_counted_and_may_fail_it() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let tool = {
+        let seen = Arc::clone(&seen);
+        FakeTool::echo("create_part").before_answer(move |index, request| {
+            seen.lock()
+                .unwrap()
+                .push((index, request.step_id.as_str().to_owned()));
+            Box::pin(async move {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+                if index == 1 {
+                    Err(Error::new(ErrorCode::Unavailable, "killed mid-call"))
+                } else {
+                    Ok(())
+                }
+            }) as HookFuture
+        })
+    };
+    let first = tool_request("create_part", "step-1", json!({}));
+    let second = tool_request("create_part", "step-2", json!({}));
+    assert!(tool.invoke(&first, &ctx()).await.is_ok());
+    assert_eq!(
+        tool.invoke(&second, &ctx()).await.map_err(|e| e.code()),
+        Err(ErrorCode::Unavailable)
+    );
+    assert_eq!(tool.calls(), 2, "the call the hook failed is counted");
+    assert_eq!(
+        *seen.lock().unwrap(),
+        [(0, "step-1".to_owned()), (1, "step-2".to_owned())]
+    );
+}
+
+#[test]
+fn a_slot_read_before_it_is_filled_names_itself() {
+    let slot: Slot<u32> = Slot::new("world");
+    let early = std::panic::catch_unwind(|| *slot.get());
+    let message = early.expect_err("an empty slot panics");
+    let text = message
+        .downcast_ref::<String>()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        text.contains("slot world was read before it was filled"),
+        "{text}"
+    );
+    let shared = slot.clone();
+    slot.fill(7);
+    assert_eq!(*shared.get(), 7);
+}
+
+#[tokio::test]
 async fn faulty_sdr_storage_fails_every_call_with_its_code() {
     let project: ProjectId = id("p1");
     let version = SdrVersion(0);
@@ -169,6 +221,9 @@ async fn faulty_sdr_storage_fails_every_call_with_its_code() {
             .append_version(
                 &sdr_document("p1", 0, None),
                 &testkit::builders::version_record("p1", 0, None, chrono::Utc::now()),
+                Some(&contracts::WriteAuthority::Unfenced(
+                    contracts::UnfencedReason::ProjectCreate,
+                )),
             )
             .await
             .map_err(|e| e.code()),

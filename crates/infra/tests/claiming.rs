@@ -16,6 +16,7 @@ use contracts::ids::Identifier;
 use infra::persistence::PgJobStore;
 use support::TestDb;
 use testkit::builders::{id, job};
+use testkit::leases::job_insert;
 
 const LEASE: Duration = Duration::from_secs(30);
 
@@ -32,7 +33,9 @@ async fn two_workers_never_claim_the_same_job() {
     let created = Utc::now();
     for n in 0..JOBS {
         let new = job(&format!("job-{n:03}"), &format!("run-{n:03}"), created);
-        seed.insert(&new).await.expect("insert");
+        seed.insert(&new, Some(&job_insert()))
+            .await
+            .expect("insert");
     }
 
     let mut loops = Vec::new();
@@ -45,7 +48,8 @@ async fn two_workers_never_claim_the_same_job() {
             let holder: Identifier = id(&format!("worker-{w}-loop-{l}"));
             loops.push(tokio::spawn(async move {
                 let mut claimed = Vec::new();
-                while let Some(job) = store.claim(&holder, LEASE).await.expect("claim") {
+                while let Some(claim) = store.claim(&holder, LEASE).await.expect("claim") {
+                    let job = claim.job;
                     let lease = job.lease.as_ref().expect("a claimed job has a lease");
                     assert_eq!(lease.holder, holder, "lease holder");
                     assert_eq!(job.attempt, 1, "{} was claimed before", job.id.as_str());
@@ -75,7 +79,7 @@ async fn lease_times_come_from_the_database_clock() {
     db.stop_clock_at(stopped_at).await;
     let store = PgJobStore::new(db.database());
     store
-        .insert(&job("job-1", "run-1", Utc::now()))
+        .insert(&job("job-1", "run-1", Utc::now()), Some(&job_insert()))
         .await
         .expect("insert");
 
@@ -83,7 +87,8 @@ async fn lease_times_come_from_the_database_clock() {
         .claim(&id("worker-1"), LEASE)
         .await
         .expect("claim")
-        .expect("no job claimed");
+        .expect("no job claimed")
+        .job;
     let lease = claimed.lease.expect("no lease");
     assert_eq!(lease.acquired_at.0, stopped_at, "acquired_at");
     assert_eq!(lease.heartbeat_at.0, stopped_at, "heartbeat_at");
@@ -103,7 +108,7 @@ async fn leases_expire_on_the_real_database_clock() {
     let db = TestDb::create().await;
     let store = PgJobStore::new(db.database());
     store
-        .insert(&job("job-1", "run-1", Utc::now()))
+        .insert(&job("job-1", "run-1", Utc::now()), Some(&job_insert()))
         .await
         .expect("insert");
 
@@ -112,7 +117,8 @@ async fn leases_expire_on_the_real_database_clock() {
         .claim(&id("worker-1"), Duration::from_secs(2))
         .await
         .expect("claim")
-        .expect("no job claimed");
+        .expect("no job claimed")
+        .job;
     let after = db.now().await;
     let lease = claimed.lease.expect("no lease");
     assert!(
@@ -134,6 +140,7 @@ async fn leases_expire_on_the_real_database_clock() {
         .await
         .expect("claim")
         .expect("the expired lease was not reclaimed");
-    assert_eq!(reclaimed.attempt, 2, "attempt");
+    assert_eq!(reclaimed.job.attempt, 2, "attempt");
+    assert_eq!(reclaimed.fence.epoch(), 2, "lease epoch");
     db.drop().await;
 }

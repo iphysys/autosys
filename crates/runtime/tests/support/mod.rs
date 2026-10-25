@@ -4,8 +4,10 @@
 //! tools behind the tool gateway.
 //!
 //! Tests here may not name the SDR repository trait (arch-check scans test
-//! files); the `SdrManager` gets testkit's `sdr_storage()`. Test
-//! requirements are fixtures written here, never read from `evals/`.
+//! files); the `SdrManager` gets testkit's `fenced_sdr_storage()`. Every
+//! store is fenced by one claimed job, and the run's context carries its
+//! fence. Test requirements are fixtures written here, never read from
+//! `evals/`.
 
 #![allow(
     clippy::expect_used,
@@ -46,7 +48,10 @@ use serde_json::{Value, json};
 use testkit::builders::{id, parse};
 use testkit::clock::ManualClock;
 use testkit::fakes::FakeTool;
-use testkit::stores::{InMemoryEventLog, InMemoryEvidenceStore, InMemoryStepStore, sdr_storage};
+use testkit::leases::{HOLDER, LONG_LEASE, LeasedJob};
+use testkit::stores::{
+    InMemoryEventLog, InMemoryEvidenceStore, InMemoryStepStore, fenced_sdr_storage,
+};
 use tools::{ServerTools, ToolGateway, ToolRegistry};
 
 pub const AGENT: &str = "main_orchestrator";
@@ -531,6 +536,10 @@ pub struct Setup {
     /// A profile and the adapter that answers for it instead of the script,
     /// for the live tests. The profile becomes the default.
     pub provider: Option<(String, Arc<dyn ProviderAdapter>)>,
+    /// The tool overlay, the committed build123d one unless a test changes it.
+    pub overlay: ToolOverlay,
+    /// How long `worker-1`'s claim of the job lasts.
+    pub lease: Duration,
 }
 
 impl Setup {
@@ -543,7 +552,20 @@ impl Setup {
             create_plate: returning("create_plate", plate_result()),
             measure: returning("measure", measure_result()),
             provider: None,
+            overlay: build123d_overlay(),
+            lease: LONG_LEASE,
         }
+    }
+
+    pub fn overlay(mut self, overlay: ToolOverlay) -> Self {
+        self.overlay = overlay;
+        self
+    }
+
+    /// A lease short enough for the test to let it expire.
+    pub fn lease(mut self, lease: Duration) -> Self {
+        self.lease = lease;
+        self
     }
 
     pub fn provider(mut self, profile: &str, provider: Arc<dyn ProviderAdapter>) -> Self {
@@ -581,6 +603,10 @@ pub struct World {
     pub model: Arc<ScriptedAdapter>,
     pub create_plate: Arc<FakeTool>,
     pub measure: Arc<FakeTool>,
+    /// The claimed job of run `run-1`, whose fence every store checks.
+    pub leased: LeasedJob,
+    pub tools: Arc<ToolGateway>,
+    pub steps: Arc<InMemoryStepStore>,
 }
 
 pub fn harness() -> HarnessVersions {
@@ -602,13 +628,17 @@ impl World {
     /// committed ones.
     pub async fn with_gates(setup: Setup, commit_gates: Option<Vec<Arc<dyn Gate>>>) -> Self {
         let clock = Arc::new(ManualClock::at_epoch());
-        let events = Arc::new(InMemoryEventLog::new());
+        let leased = LeasedJob::with_lease(clock.clone(), RUN, &id(HOLDER), setup.lease);
+        let events = Arc::new(InMemoryEventLog::fenced_by(leased.leases()));
         let evidence = Arc::new(InMemoryEvidenceStore::new());
-        let steps = Arc::new(InMemoryStepStore::new(clock.clone()));
-        let sdr = Arc::new(SdrManager::new(sdr_storage(), clock.clone()).expect("SDR schemas"));
-        seed(&sdr, setup.requirements).await;
+        let steps = Arc::new(InMemoryStepStore::fenced_by(leased.leases()));
+        let sdr = Arc::new(
+            SdrManager::new(fenced_sdr_storage(leased.leases()), clock.clone())
+                .expect("SDR schemas"),
+        );
+        seed(&sdr, setup.requirements, &run_ctx(&leased)).await;
 
-        let overlay = build123d_overlay();
+        let overlay = setup.overlay;
         let tool_gates = GateRunner::new(
             vec![
                 Arc::new(
@@ -645,7 +675,7 @@ impl World {
         let tools = Arc::new(ToolGateway::new(
             registry,
             tool_gates,
-            steps,
+            steps.clone(),
             evidence.clone(),
             events.clone(),
             clock.clone(),
@@ -717,7 +747,7 @@ impl World {
             sdr: sdr.clone(),
             context,
             context_profiles: context_profiles(),
-            tools,
+            tools: tools.clone(),
             evaluator,
             commit_gates,
             models,
@@ -736,11 +766,19 @@ impl World {
             model,
             create_plate,
             measure,
+            leased,
+            tools,
+            steps,
         }
     }
 
+    /// The run's root context, fenced by the claimed job.
+    pub fn ctx(&self) -> ExecutionContext {
+        run_ctx(&self.leased)
+    }
+
     pub async fn run(&self, job: Job) -> Ran {
-        collect(self.orchestrator.run(job, ctx())).await
+        collect(self.orchestrator.run(job, self.ctx())).await
     }
 
     pub async fn run_with(&self, job: Job, ctx: ExecutionContext) -> Ran {
@@ -748,7 +786,7 @@ impl World {
     }
 
     pub async fn resume(&self, continuation: Continuation, answer: ApprovalAnswer) -> Ran {
-        collect(self.orchestrator.resume(continuation, answer, ctx())).await
+        collect(self.orchestrator.resume(continuation, answer, self.ctx())).await
     }
 
     /// Every event of run `run-1` in the log.
@@ -761,7 +799,7 @@ impl World {
 
     pub async fn head(&self) -> u64 {
         self.sdr
-            .head(&id::<ProjectId>(PROJECT), &ctx())
+            .head(&id::<ProjectId>(PROJECT), &self.ctx())
             .await
             .expect("head")
             .expect("the project exists")
@@ -769,13 +807,13 @@ impl World {
     }
 }
 
-pub fn ctx() -> ExecutionContext {
-    ExecutionContext::new(id("corr-run"))
+/// The root context of a run fenced by `leased`'s claim.
+pub fn run_ctx(leased: &LeasedJob) -> ExecutionContext {
+    leased.ctx("corr-run")
 }
 
 /// Creates version 0, then commits `requirements` as version 1.
-async fn seed(sdr: &SdrManager, requirements: Vec<Value>) {
-    let ctx = ctx();
+async fn seed(sdr: &SdrManager, requirements: Vec<Value>, ctx: &ExecutionContext) {
     let project: ProjectId = id(PROJECT);
     sdr.create_project(
         &project,
@@ -785,7 +823,7 @@ async fn seed(sdr: &SdrManager, requirements: Vec<Value>) {
             reason: parse(json!("Start the design.")),
             harness: harness(),
         },
-        &ctx,
+        ctx,
     )
     .await
     .expect("create the project");
@@ -799,7 +837,7 @@ async fn seed(sdr: &SdrManager, requirements: Vec<Value>) {
         "operations": requirements
     }));
     let proposed = sdr.propose(project, transition);
-    let Validation::Valid(validated) = sdr.validate(proposed, &ctx).await.expect("validation runs")
+    let Validation::Valid(validated) = sdr.validate(proposed, ctx).await.expect("validation runs")
     else {
         panic!("the seed requirements are invalid");
     };
@@ -810,7 +848,7 @@ async fn seed(sdr: &SdrManager, requirements: Vec<Value>) {
                 evidence_ids: Vec::new(),
                 harness: harness(),
             },
-            &ctx,
+            ctx,
         )
         .await
         .expect("commit the requirements");

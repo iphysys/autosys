@@ -27,6 +27,7 @@ use serde_json::{Value, json};
 use testkit::builders::{id, parse, sdr_document, tool_request};
 use testkit::clock::ManualClock;
 use testkit::fakes::RecordingSubscriber;
+use testkit::leases::LeasedJob;
 use testkit::stores::InMemoryEventLog;
 
 fn gates_policy() -> GatesPolicy {
@@ -96,7 +97,9 @@ struct Fixture {
 }
 
 fn fixture_with(extra: Vec<Arc<dyn Gate>>) -> Fixture {
-    let log = Arc::new(InMemoryEventLog::new());
+    let clock = Arc::new(ManualClock::at_epoch());
+    let leased = LeasedJob::new(clock.clone(), "run-1");
+    let log = Arc::new(InMemoryEventLog::fenced_by(leased.leases()));
     let hook = Arc::new(RecordingSubscriber::new());
     let observed = ObservedEventLog::new(
         log.clone(),
@@ -115,13 +118,12 @@ fn fixture_with(extra: Vec<Arc<dyn Gate>>) -> Fixture {
         ),
     ];
     gates.extend(extra);
-    let runner = GateRunner::new(gates, Arc::new(observed), Arc::new(ManualClock::at_epoch()))
-        .expect("runner");
+    let runner = GateRunner::new(gates, Arc::new(observed), clock).expect("runner");
     Fixture {
         runner,
         log,
         hook,
-        ctx: ExecutionContext::new(id("corr-gates")).with_run(id("run-1")),
+        ctx: leased.ctx("corr-gates").with_run(id("run-1")),
     }
 }
 

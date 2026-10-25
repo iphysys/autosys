@@ -19,7 +19,7 @@ use contracts::types::{EventPayload, EvidenceBody, GateDecision};
 use contracts::{EvidenceStore, ExecutionContext};
 use serde_json::Value;
 use support::relay::Relay;
-use support::{Harness, Listed, agent, autonomy, call, measure, overlay, plate, run_id, step_ctx};
+use support::{Harness, Listed, agent, autonomy, call, measure, overlay, plate, run_id};
 use testkit::builders::{id, tool_request};
 use tools::{McpServer, McpSettings, ToolObservation};
 
@@ -97,7 +97,7 @@ async fn create_plate_then_measure_returns_normalized_results_with_evidence() {
     let create = tool_request("create_plate", "step-1", plate());
     let created = h
         .gateway
-        .call(call(&create, &agent), &step_ctx("step-1"))
+        .call(call(&create, &agent), &h.step_ctx("step-1"))
         .await
         .unwrap();
     let ToolObservation::Succeeded { result, .. } = created else {
@@ -108,7 +108,7 @@ async fn create_plate_then_measure_returns_normalized_results_with_evidence() {
     let request = tool_request("measure", "step-2", measure(&part));
     let measured = h
         .gateway
-        .call(call(&request, &agent), &step_ctx("step-2"))
+        .call(call(&request, &agent), &h.step_ctx("step-2"))
         .await
         .unwrap();
     let ToolObservation::Succeeded {
@@ -176,7 +176,7 @@ async fn a_tool_without_an_overlay_entry_is_denied() {
 
     let observed = h
         .gateway
-        .call(call(&request, &agent), &step_ctx("step-1"))
+        .call(call(&request, &agent), &h.step_ctx("step-1"))
         .await
         .unwrap();
 
@@ -209,7 +209,7 @@ async fn a_timeout_returns_an_error_observation() {
     let started = Instant::now();
     let observed = h
         .gateway
-        .call(call(&request, &agent), &step_ctx("step-1"))
+        .call(call(&request, &agent), &h.step_ctx("step-1"))
         .await
         .unwrap();
 
@@ -239,14 +239,14 @@ async fn a_replayed_step_returns_the_stored_result_without_calling_the_server() 
 
     let first = h
         .gateway
-        .call(call(&request, &agent), &step_ctx("step-1"))
+        .call(call(&request, &agent), &h.step_ctx("step-1"))
         .await
         .unwrap();
     let posts = relay.posts();
     assert!(posts > 0, "the relay saw no request");
     let again = h
         .gateway
-        .call(call(&request, &agent), &step_ctx("step-1"))
+        .call(call(&request, &agent), &h.step_ctx("step-1"))
         .await
         .unwrap();
 

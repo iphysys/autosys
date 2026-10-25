@@ -8,12 +8,15 @@ use crate::ids::{CorrelationId, Identifier};
 
 /// Stable error codes. The strings from [`ErrorCode::as_str`] are part of the
 /// contract: they appear in events and results and are never renamed.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ErrorCode {
     /// The request failed validation.
     InvalidInput,
     NotFound,
-    /// The request conflicts with current state, for example a stale version or a lost lease.
+    /// The request conflicts with current state, for example a stale SDR
+    /// version, a reused key or a duplicate insert. A lost lease is
+    /// [`ErrorCode::LeaseLost`].
     Conflict,
     PermissionDenied,
     Timeout,
@@ -26,12 +29,17 @@ pub enum ErrorCode {
     /// refused the prompt as too long. Repeating the same request cannot help:
     /// the work has to shrink or the budget change (ADR-0029).
     ContextOverflow,
+    /// The write's lease fence is stale: another claim took the job, its lease
+    /// expired, or it left running. The worker abandons the run; it never
+    /// marks the job failed, retries, or shows the error to the model
+    /// (ADR-0032).
+    LeaseLost,
     /// A bug or broken invariant.
     Internal,
 }
 
 impl ErrorCode {
-    pub const ALL: [ErrorCode; 10] = [
+    pub const ALL: [ErrorCode; 11] = [
         ErrorCode::InvalidInput,
         ErrorCode::NotFound,
         ErrorCode::Conflict,
@@ -41,6 +49,7 @@ impl ErrorCode {
         ErrorCode::Unavailable,
         ErrorCode::ToolFailed,
         ErrorCode::ContextOverflow,
+        ErrorCode::LeaseLost,
         ErrorCode::Internal,
     ];
 
@@ -55,6 +64,7 @@ impl ErrorCode {
             ErrorCode::Unavailable => "unavailable",
             ErrorCode::ToolFailed => "tool_failed",
             ErrorCode::ContextOverflow => "context_overflow",
+            ErrorCode::LeaseLost => "lease_lost",
             ErrorCode::Internal => "internal",
         }
     }
@@ -182,6 +192,20 @@ mod tests {
             Error::new(ErrorCode::ContextOverflow, "design_state needs 9000 tokens").to_info();
         assert_eq!(info.code.as_str(), "context_overflow");
         assert!(!info.retryable);
+    }
+
+    #[test]
+    fn lease_lost_has_a_stable_string_and_is_not_retryable() {
+        assert_eq!(ErrorCode::LeaseLost.as_str(), "lease_lost");
+        assert!(!ErrorCode::LeaseLost.is_retryable());
+        let info = Error::new(ErrorCode::LeaseLost, "fence worker-1@3 on job-1 refused").to_info();
+        assert_eq!(info.code.as_str(), "lease_lost");
+        assert!(!info.retryable);
+    }
+
+    #[test]
+    fn there_are_eleven_codes() {
+        assert_eq!(ErrorCode::ALL.len(), 11);
     }
 
     #[test]

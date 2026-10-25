@@ -1,17 +1,20 @@
 use async_trait::async_trait;
 use contracts::ids::{ProjectId, SdrVersion};
 use contracts::types::{SdrDocument, SdrVersionRecord};
-use contracts::{Error, SdrRepository};
+use contracts::{Error, SdrRepository, StoreWrite, WriteAuthority, authorize};
+use sqlx::postgres::PgExecutor;
 use sqlx::types::Json;
 
 use super::Database;
 use super::error::{
     conflict, db_error, from_bigint, invalid, is_unique_violation, not_found, to_bigint,
 };
+use super::fence::verify_fence;
 
 /// [`SdrRepository`] on Postgres. Versions are linear per project; the
 /// primary key turns a concurrent append of the same version into a
-/// conflict. Only `SdrManager` receives this repository (blueprint 7.2).
+/// conflict. An append checks its fence, reads the head and inserts in one
+/// transaction. Only `SdrManager` receives this repository (blueprint 7.2).
 pub struct PgSdrRepository {
     db: Database,
 }
@@ -20,17 +23,20 @@ impl PgSdrRepository {
     pub fn new(db: Database) -> Self {
         Self { db }
     }
+}
 
-    async fn current_head(&self, project_id: &str) -> Result<Option<u64>, Error> {
-        let head = sqlx::query_scalar!(
-            "SELECT max(version) FROM sdr_versions WHERE project_id = $1",
-            project_id,
-        )
-        .fetch_one(&self.db.pool)
-        .await
-        .map_err(|e| db_error("read SDR head", e))?;
-        head.map(|v| from_bigint(v, "SDR version")).transpose()
-    }
+async fn current_head<'e>(
+    executor: impl PgExecutor<'e>,
+    project_id: &str,
+) -> Result<Option<u64>, Error> {
+    let head = sqlx::query_scalar!(
+        "SELECT max(version) FROM sdr_versions WHERE project_id = $1",
+        project_id,
+    )
+    .fetch_one(executor)
+    .await
+    .map_err(|e| db_error("read SDR head", e))?;
+    head.map(|v| from_bigint(v, "SDR version")).transpose()
 }
 
 fn missing(project_id: &ProjectId, version: &SdrVersion) -> Error {
@@ -45,8 +51,7 @@ impl SdrRepository for PgSdrRepository {
     async fn head(&self, project_id: &ProjectId) -> Result<Option<SdrVersion>, Error> {
         self.db
             .bounded("read SDR head", async {
-                Ok(self
-                    .current_head(project_id.as_str())
+                Ok(current_head(&self.db.pool, project_id.as_str())
                     .await?
                     .map(SdrVersion))
             })
@@ -113,7 +118,9 @@ impl SdrRepository for PgSdrRepository {
         &self,
         document: &SdrDocument,
         record: &SdrVersionRecord,
+        authority: Option<&WriteAuthority>,
     ) -> Result<(), Error> {
+        let fence = authorize(authority, StoreWrite::SdrVersion(&document.version))?;
         if document.project_id != record.project_id
             || document.version != record.version
             || document.parent_version != record.parent_version
@@ -127,7 +134,18 @@ impl SdrRepository for PgSdrRepository {
         let project = document.project_id.as_str();
         self.db
             .bounded("append SDR version", async {
-                let head = self.current_head(project).await?;
+                let mut tx = self
+                    .db
+                    .pool
+                    .begin()
+                    .await
+                    .map_err(|e| db_error("append SDR version", e))?;
+                // The fence first: a stale fence with a stale version is
+                // LeaseLost, not Conflict.
+                if let Some(fence) = fence {
+                    verify_fence(&mut tx, fence, "append SDR version").await?;
+                }
+                let head = current_head(&mut *tx, project).await?;
                 let expected = head.map_or(0, |h| h + 1);
                 if version != expected || parent != head {
                     return Err(conflict(format!(
@@ -145,10 +163,13 @@ impl SdrRepository for PgSdrRepository {
                     Json(document) as _,
                     Json(record) as _,
                 )
-                .execute(&self.db.pool)
+                .execute(&mut *tx)
                 .await;
                 match stored {
-                    Ok(_) => Ok(()),
+                    Ok(_) => tx
+                        .commit()
+                        .await
+                        .map_err(|e| db_error("append SDR version", e)),
                     // Another writer appended this version after the head was read.
                     Err(e) if is_unique_violation(&e) => Err(conflict(format!(
                         "version {version} of {project} was appended concurrently"

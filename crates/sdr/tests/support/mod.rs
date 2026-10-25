@@ -16,6 +16,7 @@ use sdr::{CommitInfo, InitialVersion, SdrManager, Validation};
 use serde_json::{Value, json};
 use testkit::builders::{id, parse};
 use testkit::clock::ManualClock;
+use testkit::leases::LeasedJob;
 use testkit::stores::InMemorySdrRepository;
 
 pub struct Fixture {
@@ -23,17 +24,21 @@ pub struct Fixture {
     pub repository: Arc<InMemorySdrRepository>,
     pub clock: Arc<ManualClock>,
     pub project: ProjectId,
+    /// Fenced by `leased`'s claim.
     pub ctx: ExecutionContext,
+    /// The claimed job whose fence the repository checks.
+    pub leased: LeasedJob,
 }
 
 /// A manager whose project `p1` has version 0.
 pub async fn fixture() -> Fixture {
-    let repository = Arc::new(InMemorySdrRepository::new());
     let clock = Arc::new(ManualClock::at_epoch());
+    let leased = LeasedJob::new(clock.clone(), "run-1");
+    let repository = Arc::new(InMemorySdrRepository::fenced_by(leased.leases()));
     let manager =
         SdrManager::new(repository.clone(), clock.clone()).expect("the embedded schemas compile");
     let project: ProjectId = id("p1");
-    let ctx = ExecutionContext::new(id("corr-sdr"));
+    let ctx = leased.ctx("corr-sdr");
     manager
         .create_project(&project, initial(), &ctx)
         .await
@@ -44,6 +49,7 @@ pub async fn fixture() -> Fixture {
         clock,
         project,
         ctx,
+        leased,
     }
 }
 

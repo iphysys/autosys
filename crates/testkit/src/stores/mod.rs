@@ -5,6 +5,7 @@ mod artifact;
 mod event;
 mod evidence;
 mod job;
+mod leases;
 mod sdr;
 mod step;
 
@@ -12,6 +13,7 @@ pub use artifact::InMemoryArtifactStore;
 pub use event::InMemoryEventLog;
 pub use evidence::InMemoryEvidenceStore;
 pub use job::InMemoryJobStore;
+pub use leases::Leases;
 pub use sdr::InMemorySdrRepository;
 pub use step::InMemoryStepStore;
 
@@ -25,6 +27,11 @@ use contracts::{Error, ErrorCode, SdrRepository};
 /// any other way (blueprint section 7.2).
 pub fn sdr_storage() -> Arc<dyn SdrRepository> {
     Arc::new(InMemorySdrRepository::new())
+}
+
+/// Like [`sdr_storage`], with appends fenced by a job store's `leases`.
+pub fn fenced_sdr_storage(leases: Leases) -> Arc<dyn SdrRepository> {
+    Arc::new(InMemorySdrRepository::fenced_by(leases))
 }
 
 fn not_found(what: &str, id: &str) -> Error {

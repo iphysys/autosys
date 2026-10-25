@@ -5,6 +5,14 @@
 //! stores read the database clock. The in-memory stores take a
 //! [`crate::Clock`] at construction that stands in for it, so tests control
 //! time.
+//!
+//! Every write takes its authority (ADR-0032), normally
+//! `ctx.write_authority()`. A store first applies [`crate::authorize`]; for a
+//! fenced write it then checks, in the write's own transaction and before
+//! any other condition, that the job is still running under the fence's
+//! holder and epoch with an unexpired lease. A stale fence, a missing
+//! authority and an unfenced reason that does not cover the write all fail
+//! with `LeaseLost`. Reads take no authority.
 
 use std::time::Duration;
 
@@ -16,6 +24,7 @@ use schema_types::{
 
 use crate::context::ExecutionContext;
 use crate::error::Error;
+use crate::fence::{FenceToken, WriteAuthority};
 use crate::ids::{
     ApprovalId, ArtifactId, CorrelationId, EvidenceId, Identifier, JobId, ProjectId, RunId,
     SdrVersion, StepId, ToolName,
@@ -29,11 +38,27 @@ pub enum WakeReason {
     CancelRequested,
 }
 
+/// A job a claim leased, and the fence every write under that lease carries
+/// (ADR-0032).
+#[non_exhaustive]
+#[derive(Clone, Debug, PartialEq)]
+pub struct Claimed {
+    pub job: Job,
+    pub fence: FenceToken,
+}
+
+impl Claimed {
+    pub fn new(job: Job, fence: FenceToken) -> Self {
+        Self { job, fence }
+    }
+}
+
 #[async_trait]
 pub trait JobStore: Send + Sync {
-    /// Stores a new job. InvalidInput unless it is queued without a lease;
-    /// Conflict if the id exists.
-    async fn insert(&self, job: &Job) -> Result<(), Error>;
+    /// Stores a new job, with `UnfencedReason::JobInsert` or a current fence.
+    /// InvalidInput unless it is queued without a lease; Conflict if the id
+    /// exists.
+    async fn insert(&self, job: &Job, authority: Option<&WriteAuthority>) -> Result<(), Error>;
 
     /// NotFound if there is no such job.
     async fn get(&self, id: &JobId) -> Result<Job, Error>;
@@ -42,26 +67,34 @@ pub trait JobStore: Send + Sync {
 
     /// Atomically claims the oldest job (by `created_at`, then id) that is
     /// queued, or running with an expired lease. The claimed job is running,
-    /// leased to `holder` for `lease_for`, with `attempt` incremented.
-    /// Concurrent callers never receive the same job.
-    async fn claim(&self, holder: &Identifier, lease_for: Duration) -> Result<Option<Job>, Error>;
-
-    /// Extends the lease. Conflict if `holder` does not hold an unexpired lease.
-    async fn renew_lease(
+    /// leased to `holder` for `lease_for`, with `attempt` incremented, and its
+    /// lease epoch is one higher than before: the returned fence is the only
+    /// current one. Concurrent callers never receive the same job.
+    async fn claim(
         &self,
-        id: &JobId,
         holder: &Identifier,
         lease_for: Duration,
-    ) -> Result<Job, Error>;
+    ) -> Result<Option<Claimed>, Error>;
 
-    /// Writes the job while `holder` holds an unexpired lease; Conflict
-    /// otherwise. The store keeps its own lease and attempt values; a state
-    /// other than running clears the lease.
-    async fn save(&self, job: &Job, holder: &Identifier) -> Result<(), Error>;
+    /// Extends the lease of the fence's job. LeaseLost unless the fence is
+    /// current.
+    async fn renew_lease(&self, fence: &FenceToken, lease_for: Duration) -> Result<Job, Error>;
+
+    /// Writes the job while `fence` is current; LeaseLost otherwise.
+    /// InvalidInput if the fence is for another job. The store keeps its own
+    /// lease, epoch and attempt values; a state other than running clears the
+    /// lease, and with it the fence.
+    async fn save(&self, job: &Job, fence: &FenceToken) -> Result<(), Error>;
 
     /// Moves a waiting or suspended job back to queued if `reason` matches its
-    /// wake condition. Returns whether it woke. NotFound if there is no such job.
-    async fn wake(&self, id: &JobId, reason: &WakeReason) -> Result<bool, Error>;
+    /// wake condition, with `UnfencedReason::JobWake` or a current fence.
+    /// Returns whether it woke. NotFound if there is no such job.
+    async fn wake(
+        &self,
+        id: &JobId,
+        reason: &WakeReason,
+        authority: Option<&WriteAuthority>,
+    ) -> Result<bool, Error>;
 }
 
 /// An event before the log assigns its sequence number.
@@ -78,7 +111,13 @@ pub struct NewEvent {
 pub trait EventLog: Send + Sync {
     /// Appends with the run's next sequence number (the first is 1, with no
     /// gaps, even under concurrent appends) and returns the stored event.
-    async fn append(&self, event: NewEvent) -> Result<Event, Error>;
+    /// Needs a current fence, or `UnfencedReason::ApiCommand` for
+    /// `approval_answered` and `cancel_requested`.
+    async fn append(
+        &self,
+        event: NewEvent,
+        authority: Option<&WriteAuthority>,
+    ) -> Result<Event, Error>;
 
     /// Events with `seq > after`, in ascending order, at most `limit`.
     async fn read(&self, run_id: &RunId, after: u64, limit: usize) -> Result<Vec<Event>, Error>;
@@ -115,13 +154,16 @@ pub trait SdrRepository: Send + Sync {
         version: &SdrVersion,
     ) -> Result<SdrVersionRecord, Error>;
 
-    /// Stores a new version atomically. InvalidInput if the document and record
-    /// disagree on project, version or parent. Conflict unless the version is
-    /// head + 1 (0 when empty) and its parent is the current head.
+    /// Stores a new version atomically. Needs a current fence, or
+    /// `UnfencedReason::ProjectCreate` for version 0. InvalidInput if the
+    /// document and record disagree on project, version or parent. Conflict
+    /// unless the version is head + 1 (0 when empty) and its parent is the
+    /// current head; a stale fence is LeaseLost even then.
     async fn append_version(
         &self,
         document: &SdrDocument,
         record: &SdrVersionRecord,
+        authority: Option<&WriteAuthority>,
     ) -> Result<(), Error>;
 }
 
@@ -162,18 +204,28 @@ pub enum StepStart {
 
 /// Step records keyed by idempotency key (blueprint section 6.3, ADR-0026).
 /// The store sets `started_at` and `completed_at` from its own clock
-/// (ADR-0023).
+/// (ADR-0023). Both writes need a current fence; no unfenced reason covers
+/// them.
 #[async_trait]
 pub trait StepStore: Send + Sync {
     /// Atomically stores a started record unless the key exists. Of
     /// concurrent callers with one key, exactly one gets `Started`. Conflict
     /// if the key exists for a different run, step, tool or request hash.
-    async fn begin(&self, step: &NewStep) -> Result<StepStart, Error>;
+    async fn begin(
+        &self,
+        step: &NewStep,
+        authority: Option<&WriteAuthority>,
+    ) -> Result<StepStart, Error>;
 
     /// Stores the outcome of a started step. Completing again with the same
     /// outcome is Ok and returns the stored record; a different outcome is
     /// Conflict. NotFound if no step has the key.
-    async fn complete(&self, key: &Identifier, outcome: &StepOutcome) -> Result<StepRecord, Error>;
+    async fn complete(
+        &self,
+        key: &Identifier,
+        outcome: &StepOutcome,
+        authority: Option<&WriteAuthority>,
+    ) -> Result<StepRecord, Error>;
 
     /// NotFound if no step has the key.
     async fn get(&self, key: &Identifier) -> Result<StepRecord, Error>;

@@ -618,18 +618,21 @@ impl ContextBuilder {
             ctx,
             limit,
             "recording the context",
-            self.events.append(NewEvent {
-                run_id: run_id.clone(),
-                occurred_at: Timestamp(self.clock.now()),
-                correlation_id: ctx.correlation_id().clone(),
-                actor: self.actor.clone(),
-                payload: EventPayload::ContextAssembled {
-                    context_hash: assembled.hash.clone(),
-                    total_tokens: assembled.total_tokens,
-                    sdr_version: snapshot.sdr_version.clone(),
-                    last_event_seq: snapshot.last_event_seq,
+            self.events.append(
+                NewEvent {
+                    run_id: run_id.clone(),
+                    occurred_at: Timestamp(self.clock.now()),
+                    correlation_id: ctx.correlation_id().clone(),
+                    actor: self.actor.clone(),
+                    payload: EventPayload::ContextAssembled {
+                        context_hash: assembled.hash.clone(),
+                        total_tokens: assembled.total_tokens,
+                        sdr_version: snapshot.sdr_version.clone(),
+                        last_event_seq: snapshot.last_event_seq,
+                    },
                 },
-            }),
+                ctx.write_authority(),
+            ),
             ContextError::Events,
         )
         .await?;

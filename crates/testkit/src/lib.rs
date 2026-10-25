@@ -16,6 +16,7 @@ pub mod builders;
 pub mod clock;
 pub mod contract;
 pub mod fakes;
+pub mod leases;
 pub mod stores;
 
 pub use clock::ManualClock;

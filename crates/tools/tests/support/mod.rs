@@ -13,6 +13,7 @@ use governance::{ApprovalGate, GateRunner, ToolPermissionGate};
 use serde_json::{Value, json};
 use testkit::builders::{id, parse};
 use testkit::clock::ManualClock;
+use testkit::leases::LeasedJob;
 use testkit::stores::{InMemoryEventLog, InMemoryEvidenceStore, InMemoryStepStore};
 use tools::{ServerTools, ToolCall, ToolGateway, ToolRegistry};
 
@@ -99,6 +100,8 @@ pub struct Harness {
     pub evidence: Arc<InMemoryEvidenceStore>,
     pub events: Arc<InMemoryEventLog>,
     pub clock: Arc<ManualClock>,
+    /// The claimed job of run `run-1`, whose fence the stores check.
+    pub leased: LeasedJob,
 }
 
 impl Harness {
@@ -110,9 +113,10 @@ impl Harness {
         servers: Vec<ServerTools>,
     ) -> Self {
         let clock = Arc::new(ManualClock::at_epoch());
-        let steps = Arc::new(InMemoryStepStore::new(clock.clone()));
+        let leased = LeasedJob::new(clock.clone(), "run-1");
+        let steps = Arc::new(InMemoryStepStore::fenced_by(leased.leases()));
         let evidence = Arc::new(InMemoryEvidenceStore::new());
-        let events = Arc::new(InMemoryEventLog::new());
+        let events = Arc::new(InMemoryEventLog::fenced_by(leased.leases()));
         let gates = GateRunner::new(
             vec![
                 Arc::new(ToolPermissionGate::new(overlays).expect("permission gate")),
@@ -139,7 +143,16 @@ impl Harness {
             evidence,
             events,
             clock,
+            leased,
         }
+    }
+
+    /// The context of one step of run `run-1`, fenced by the claimed job.
+    pub fn step_ctx(&self, step: &str) -> ExecutionContext {
+        self.leased
+            .ctx("corr-1")
+            .with_run(run_id())
+            .for_step(id(step))
     }
 
     pub async fn events(&self) -> Vec<Event> {
@@ -175,13 +188,6 @@ pub fn run_id() -> RunId {
 
 pub fn agent() -> AgentId {
     id("main_orchestrator")
-}
-
-/// The context of one step of run `run-1`.
-pub fn step_ctx(step: &str) -> ExecutionContext {
-    ExecutionContext::new(id("corr-1"))
-        .with_run(run_id())
-        .for_step(id(step))
 }
 
 pub fn call<'a>(request: &'a ToolRequest, agent: &'a AgentId) -> ToolCall<'a> {

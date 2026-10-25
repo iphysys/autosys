@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT 1 AS \"current!\" FROM jobs\n        WHERE id = $1 AND lease_holder = $2 AND lease_epoch = $3\n            AND state = 'running' AND lease_expires_at > autosys_now()\n        FOR SHARE\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "current!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "df515e6182eb1d2382ceb99e881a30fb55ac0bba793d6b9fe97aad8ecf069f87"
+}

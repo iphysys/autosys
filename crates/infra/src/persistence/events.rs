@@ -4,7 +4,9 @@ use std::time::Duration;
 use async_trait::async_trait;
 use contracts::ids::RunId;
 use contracts::types::{Event, EventSchemaVersion};
-use contracts::{Error, ErrorCode, EventLog, ExecutionContext, NewEvent};
+use contracts::{
+    Error, ErrorCode, EventLog, ExecutionContext, NewEvent, StoreWrite, WriteAuthority, authorize,
+};
 use sqlx::postgres::PgListener;
 use sqlx::types::Json;
 use tokio::sync::broadcast;
@@ -14,6 +16,7 @@ use tokio::time::{Instant, MissedTickBehavior};
 
 use super::Database;
 use super::error::{corrupt, db_error, from_bigint, to_bigint};
+use super::fence::verify_fence;
 
 /// Notified by the `events_notify` trigger, with the run ID as payload.
 const CHANNEL: &str = "autosys_events";
@@ -104,7 +107,12 @@ async fn forward(mut listener: PgListener, notices: broadcast::Sender<Notice>) {
 
 #[async_trait]
 impl EventLog for PgEventLog {
-    async fn append(&self, event: NewEvent) -> Result<Event, Error> {
+    async fn append(
+        &self,
+        event: NewEvent,
+        authority: Option<&WriteAuthority>,
+    ) -> Result<Event, Error> {
+        let fence = authorize(authority, StoreWrite::Event(&event.payload))?;
         self.db
             .bounded("append event", async {
                 let mut tx = self
@@ -113,6 +121,9 @@ impl EventLog for PgEventLog {
                     .begin()
                     .await
                     .map_err(|e| db_error("append event", e))?;
+                if let Some(fence) = fence {
+                    verify_fence(&mut tx, fence, "append event").await?;
+                }
                 // Locks the run's counter row until commit: concurrent appends
                 // to the run wait here, then take the next number.
                 let seq = sqlx::query_scalar!(

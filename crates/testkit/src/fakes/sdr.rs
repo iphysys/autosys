@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use contracts::ids::{ProjectId, SdrVersion};
 use contracts::types::{SdrDocument, SdrVersionRecord};
-use contracts::{Error, ErrorCode, SdrRepository};
+use contracts::{Error, ErrorCode, SdrRepository, WriteAuthority};
 
 /// How a [`FaultySdrRepository`] misbehaves.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -79,6 +79,7 @@ impl SdrRepository for FaultySdrRepository {
         &self,
         _document: &SdrDocument,
         _record: &SdrVersionRecord,
+        _authority: Option<&WriteAuthority>,
     ) -> Result<(), Error> {
         self.faulted().await
     }

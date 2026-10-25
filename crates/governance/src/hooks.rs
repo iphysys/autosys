@@ -7,7 +7,9 @@ use std::time::Duration;
 use async_trait::async_trait;
 use contracts::ids::RunId;
 use contracts::types::Event;
-use contracts::{Error, ErrorCode, EventLog, EventSubscriber, ExecutionContext, NewEvent};
+use contracts::{
+    Error, ErrorCode, EventLog, EventSubscriber, ExecutionContext, NewEvent, WriteAuthority,
+};
 
 /// An [`EventLog`] that shows every appended event to the registered
 /// subscribers. Give every component this log, and hooks see every event
@@ -15,7 +17,8 @@ use contracts::{Error, ErrorCode, EventLog, EventSubscriber, ExecutionContext, N
 ///
 /// Subscribers run after the append, each within `timeout`. A subscriber that
 /// fails or times out is logged and skipped: it can never change or stop the
-/// run.
+/// run. Its context carries no write authority: hooks observe, they never
+/// write (blueprint section 15.2).
 pub struct ObservedEventLog {
     inner: Arc<dyn EventLog>,
     subscribers: Vec<Arc<dyn EventSubscriber>>,
@@ -51,8 +54,12 @@ impl ObservedEventLog {
 
 #[async_trait]
 impl EventLog for ObservedEventLog {
-    async fn append(&self, event: NewEvent) -> Result<Event, Error> {
-        let stored = self.inner.append(event).await?;
+    async fn append(
+        &self,
+        event: NewEvent,
+        authority: Option<&WriteAuthority>,
+    ) -> Result<Event, Error> {
+        let stored = self.inner.append(event, authority).await?;
         let ctx =
             ExecutionContext::new(stored.correlation_id.clone()).with_run(stored.run_id.clone());
         for subscriber in &self.subscribers {

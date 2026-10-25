@@ -45,19 +45,30 @@ async fn postgres_event_log() {
     db.drop().await;
 }
 
+/// Appends are fenced by a job the suite claims, so the repository and its
+/// job store share the database, whose clock follows the suite's.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn postgres_sdr_repository() {
     let db = TestDb::create().await;
-    contract::sdr_repository(|| async {
-        db.empty().await;
-        PgSdrRepository::new(db.database())
+    db.use_session_clock().await;
+    contract::sdr_repository(|clock| {
+        let db = &db;
+        async move {
+            db.empty().await;
+            let database = db.following(clock);
+            (
+                PgSdrRepository::new(database.clone()),
+                PgJobStore::new(database),
+            )
+        }
     })
     .await;
     db.drop().await;
 }
 
 /// Like the job store: `PgStepStore` reads time only from the database, so
-/// the database clock follows the suite's clock.
+/// the database clock follows the suite's clock. Its job store, which fences
+/// the writes, shares the database.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn postgres_step_store() {
     let db = TestDb::create().await;
@@ -66,7 +77,29 @@ async fn postgres_step_store() {
         let db = &db;
         async move {
             db.empty().await;
-            PgStepStore::new(db.following(clock))
+            let database = db.following(clock);
+            (
+                PgStepStore::new(database.clone()),
+                PgJobStore::new(database),
+            )
+        }
+    })
+    .await;
+    db.drop().await;
+}
+
+/// Lease fencing across the four fenced stores, on one database whose clock
+/// follows the suite's. The interleaving case runs `FOR SHARE` against the
+/// claim's `FOR UPDATE SKIP LOCKED`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn postgres_fencing() {
+    let db = TestDb::create().await;
+    db.use_session_clock().await;
+    contract::fencing(|clock| {
+        let db = &db;
+        async move {
+            db.empty().await;
+            db.fenced_stores(clock).await
         }
     })
     .await;

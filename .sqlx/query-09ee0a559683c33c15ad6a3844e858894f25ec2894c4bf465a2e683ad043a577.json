@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                    UPDATE jobs SET\n                        lease_expires_at = autosys_now() + $3::interval,\n                        lease_heartbeat_at = autosys_now(),\n                        updated_at = autosys_now()\n                    WHERE id = $1\n                        AND state = 'running'\n                        AND lease_holder = $2\n                        AND lease_expires_at > autosys_now()\n                    RETURNING document AS \"document!: Json<Job>\", state AS \"state!\",\n                        attempt AS \"attempt!\", updated_at AS \"updated_at!\",\n                        wake_condition AS \"wake_condition: Json<WakeCondition>\",\n                        lease_holder, lease_acquired_at, lease_expires_at, lease_heartbeat_at\n                    ",
+  "query": "\n                    SELECT document AS \"document!: Json<Job>\", state, attempt, updated_at,\n                        wake_condition AS \"wake_condition: Json<WakeCondition>\",\n                        lease_holder, lease_acquired_at, lease_expires_at, lease_heartbeat_at,\n                        lease_epoch\n                    FROM jobs\n                    WHERE run_id = $1\n                    ORDER BY created_at, id\n                    LIMIT 1\n                    ",
   "describe": {
     "columns": [
       {
@@ -16,7 +16,7 @@
       },
       {
         "ordinal": 1,
-        "name": "state!",
+        "name": "state",
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -27,7 +27,7 @@
       },
       {
         "ordinal": 2,
-        "name": "attempt!",
+        "name": "attempt",
         "type_info": "Int8",
         "origin": {
           "Table": {
@@ -38,7 +38,7 @@
       },
       {
         "ordinal": 3,
-        "name": "updated_at!",
+        "name": "updated_at",
         "type_info": "Timestamptz",
         "origin": {
           "Table": {
@@ -101,13 +101,22 @@
             "name": "lease_heartbeat_at"
           }
         }
+      },
+      {
+        "ordinal": 9,
+        "name": "lease_epoch",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "jobs",
+            "name": "lease_epoch"
+          }
+        }
       }
     ],
     "parameters": {
       "Left": [
-        "Text",
-        "Text",
-        "Interval"
+        "Text"
       ]
     },
     "nullable": [
@@ -119,8 +128,9 @@
       true,
       true,
       true,
-      true
+      true,
+      false
     ]
   },
-  "hash": "bc688e0c4eb8dfd2a3c09123c8b0872b1733d1f1385458e1756d2eb95b09533b"
+  "hash": "09ee0a559683c33c15ad6a3844e858894f25ec2894c4bf465a2e683ad043a577"
 }

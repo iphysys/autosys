@@ -5,14 +5,20 @@
 
 mod support;
 
-use contracts::ids::SdrVersion;
+use std::sync::Arc;
+use std::time::Duration;
+
+use contracts::ids::{ProjectId, SdrVersion};
 use contracts::types::{ElementKind, Operation, SdrSlice, Timestamp};
-use contracts::{Clock, ErrorCode, SdrRepository};
-use sdr::{InvalidTransition, ProblemKind, ValidatedTransition, Validation};
+use contracts::{Clock, ErrorCode, ExecutionContext, JobStore, SdrRepository};
+use sdr::{InvalidTransition, ProblemKind, SdrManager, ValidatedTransition, Validation};
 use serde_json::json;
 use sha2::Digest;
 use support::*;
 use testkit::builders::{id, parse};
+use testkit::clock::ManualClock;
+use testkit::leases::{LONG_LEASE, fenced_ctx, project_create, unfenced_ctx};
+use testkit::stores::InMemorySdrRepository;
 
 fn invalid(validation: Validation) -> InvalidTransition {
     match validation {
@@ -315,4 +321,81 @@ async fn documents_are_upgraded_and_checked() {
             ErrorCode::InvalidInput
         );
     }
+}
+
+/// A worker whose job was reclaimed cannot commit (ADR-0032): the append is
+/// refused with lease_lost and the head stays where it was. The new holder
+/// commits the same transition.
+#[tokio::test]
+async fn a_stale_fence_commits_nothing() {
+    let f = fixture().await;
+    f.clock.advance(LONG_LEASE + Duration::from_secs(1));
+    let reclaimed = f
+        .leased
+        .jobs()
+        .claim(&id("worker-2"), LONG_LEASE)
+        .await
+        .expect("claim")
+        .expect("the expired job is reclaimed");
+
+    let proposed = || transition("tr-1", 0, vec![add_requirement("req-1")]);
+    let validated = valid(f.validate(proposed()).await);
+    let error = f
+        .manager
+        .commit(validated, commit_info(&[]), &f.ctx)
+        .await
+        .expect_err("a stale fence cannot commit");
+    assert_eq!(error.code(), ErrorCode::LeaseLost, "{error}");
+    assert_eq!(
+        f.manager.head(&f.project, &f.ctx).await.expect("head"),
+        Some(SdrVersion(0)),
+        "the head moved"
+    );
+
+    let current = fenced_ctx(&reclaimed, id("corr-sdr-2"));
+    let validated = valid(f.validate(proposed()).await);
+    let record = f
+        .manager
+        .commit(validated, commit_info(&[]), &current)
+        .await
+        .expect("the new holder commits");
+    assert_eq!(record.version, SdrVersion(1));
+}
+
+/// Creating a project is a write from outside any job: version 0 needs no
+/// fence, and that reason permits nothing else.
+#[tokio::test]
+async fn a_project_is_created_without_a_fence() {
+    let clock = Arc::new(ManualClock::at_epoch());
+    let manager = SdrManager::new(Arc::new(InMemorySdrRepository::new()), clock)
+        .expect("the embedded schemas compile");
+    let project: ProjectId = id("p2");
+    let ctx = unfenced_ctx(project_create(), id("corr-create"));
+    let record = manager
+        .create_project(&project, initial(), &ctx)
+        .await
+        .expect("create the project");
+    assert_eq!(record.version, SdrVersion(0));
+
+    let proposed = manager.propose(
+        project.clone(),
+        transition("tr-1", 0, vec![add_requirement("req-1")]),
+    );
+    let validated = valid(manager.validate(proposed, &ctx).await.expect("validate"));
+    let error = manager
+        .commit(validated, commit_info(&[]), &ctx)
+        .await
+        .expect_err("project_create permits only version 0");
+    assert_eq!(error.code(), ErrorCode::LeaseLost, "{error}");
+    assert_eq!(
+        manager.head(&project, &ctx).await.expect("head"),
+        Some(SdrVersion(0))
+    );
+
+    let none = ExecutionContext::new(id("corr-none"));
+    let error = manager
+        .create_project(&id("p3"), initial(), &none)
+        .await
+        .expect_err("no authority, no project");
+    assert_eq!(error.code(), ErrorCode::LeaseLost, "{error}");
 }

@@ -42,13 +42,16 @@ impl Recorder<'_> {
         timed(
             self.io_timeout,
             "appending an event",
-            self.events.append(NewEvent {
-                run_id,
-                occurred_at: Timestamp(self.clock.now()),
-                correlation_id: ctx.correlation_id().clone(),
-                actor: Actor::System { component },
-                payload,
-            }),
+            self.events.append(
+                NewEvent {
+                    run_id,
+                    occurred_at: Timestamp(self.clock.now()),
+                    correlation_id: ctx.correlation_id().clone(),
+                    actor: Actor::System { component },
+                    payload,
+                },
+                ctx.write_authority(),
+            ),
         )
         .await
     }
