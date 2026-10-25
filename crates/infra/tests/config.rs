@@ -139,6 +139,7 @@ tools:
     access: mutating
     external_side_effects: false
     idempotent: true
+    idempotency_test: tests/test_cad.py::test_create_part_twice_with_one_key
     concurrency_safe: true
     timeout_seconds: 60
     requires_approval: false
@@ -218,6 +219,8 @@ fn overlay_schema_paths_must_name_schemas_that_exist() {
     assert!(!problems[0].contains("request_schema"), "{problems:#?}");
 }
 
+/// Not idempotent until the server has a test that repeats a call with one
+/// idempotency key (ADR-0031).
 #[test]
 fn the_build123d_tools_are_read_only_without_side_effects_or_approval() {
     let overlay: ToolOverlay = loader()
@@ -227,7 +230,7 @@ fn the_build123d_tools_are_read_only_without_side_effects_or_approval() {
     assert_eq!(names, ["create_plate", "measure"]);
     for tool in &overlay.tools {
         assert!(!tool.external_side_effects, "{}", tool.name.as_str());
-        assert!(tool.idempotent, "{}", tool.name.as_str());
+        assert!(!tool.idempotent, "{}", tool.name.as_str());
         assert!(!tool.requires_approval, "{}", tool.name.as_str());
         assert!(tool.request_schema.is_some() && tool.result_schema.is_some());
     }
@@ -368,4 +371,24 @@ fn the_worker_intervals_must_fit_each_other() {
     );
     let message = worker_problem(test, &twice);
     assert!(message.contains("build123d is listed twice"), "{message}");
+}
+
+#[test]
+fn an_idempotent_tool_needs_a_named_repeat_test() {
+    let overlay = |extra: &str| {
+        format!(
+            "schema_version: \"0.1\"\nserver_id: build123d\ndescription: d\ntools:\n  - name: create_plate\n    access: read_only\n    external_side_effects: false\n    idempotent: true\n{extra}    concurrency_safe: true\n    timeout_seconds: 5\n    requires_approval: false\n"
+        )
+    };
+    let message = rejected::<ToolOverlay>(&overlay(""));
+    assert!(
+        message.contains("create_plate: idempotent: true needs an idempotency_test"),
+        "{message}"
+    );
+    loader()
+        .parse::<ToolOverlay>(
+            &overlay("    idempotency_test: tests/test_tools.py::test_repeat_with_one_key\n"),
+            "build123d.yaml",
+        )
+        .expect("a named test satisfies the rule");
 }

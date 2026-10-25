@@ -290,7 +290,8 @@ async fn a_lease_lost_mid_call_ends_the_run_without_a_trace() {
 
     // Worker 2 resumes the call with the same idempotency key. The step's
     // outcome is unknown and create_plate is not idempotent, so it fails as
-    // an observation instead of calling the tool again (ADR-0026).
+    // an outcome_unknown observation instead of calling the tool again
+    // (ADR-0026).
     let agent = agent();
     let current = reclaimed_ctx(&reclaimed)
         .with_run(id(RUN))
@@ -310,7 +311,7 @@ async fn a_lease_lost_mid_call_ends_the_run_without_a_trace() {
         .expect("worker 2's call");
     match observation {
         ToolObservation::Failed { error, replayed } => {
-            assert_eq!(error.code.as_str(), "conflict", "{error:?}");
+            assert_eq!(error.code.as_str(), "outcome_unknown", "{error:?}");
             assert!(!replayed);
         }
         other => panic!("expected a failed observation, got {other:?}"),

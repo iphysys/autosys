@@ -19,7 +19,7 @@ mod normalizer;
 mod registry;
 
 pub use gateway::{ToolCall, ToolGateway, ToolObservation};
-pub use mcp::{McpServer, McpSettings, McpTool, PROTOCOL_VERSION};
+pub use mcp::{IDEMPOTENCY_KEY_META, McpServer, McpSettings, McpTool, PROTOCOL_VERSION};
 pub use registry::{ServerTools, ToolRegistry};
 
 use std::future::Future;

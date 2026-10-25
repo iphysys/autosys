@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use contracts::ids::{AgentId, ApprovalId, EvidenceId, RunId, SdrVersion};
+use contracts::ids::{AgentId, ApprovalId, EvidenceId, RunId, SdrVersion, StepId, ToolName};
 use contracts::types::{
     Actor, ApprovalAnswer, ErrorInfo, EventPayload, Evidence, EvidenceBody, EvidenceSchemaVersion,
     GateDecision, NonEmptyString, StepOutcome, StepRecord, Timestamp, ToolCallOutcome,
@@ -61,7 +61,9 @@ pub enum ToolObservation {
 /// Runs tool calls:
 ///
 /// 1. replay: a step whose record holds an outcome returns it without
-///    calling the tool, writing evidence or appending events;
+///    calling the tool or writing evidence. Its `tool_call_completed` is
+///    appended again, marked `recovered`, from the record: the log keeps
+///    the first one, so this only repairs one a crash lost (ADR-0031);
 /// 2. resolve the tool; an unavailable tool is still put to the gates, so
 ///    its denial is recorded;
 /// 3. validate the arguments against the tool's request schema;
@@ -74,7 +76,8 @@ pub enum ToolObservation {
 /// 9. complete the step record and append `tool_call_completed`.
 ///
 /// A step whose earlier attempt was interrupted runs again only if its tool
-/// is idempotent; otherwise it fails without calling the tool (ADR-0026).
+/// is idempotent; otherwise it fails with `outcome_unknown` without calling
+/// the tool (ADR-0026).
 ///
 /// Every write carries the context's authority (ADR-0032). A worker whose
 /// lease was reclaimed fails with `lease_lost` at its first write, before the
@@ -148,7 +151,7 @@ impl ToolGateway {
             Ok(record) => {
                 ensure_same_request(&record, &step)?;
                 if let Some(outcome) = &record.outcome {
-                    return Ok(replayed(outcome));
+                    return self.replay(&record, outcome, ctx).await;
                 }
                 true
             }
@@ -243,7 +246,7 @@ impl ToolGateway {
                 StepStart::Started(_) => {}
                 StepStart::Existing(record) => {
                     if let Some(outcome) = &record.outcome {
-                        return Ok(replayed(outcome));
+                        return self.replay(&record, outcome, ctx).await;
                     }
                     if !registered.policy.idempotent {
                         let error = Error::new(
@@ -346,26 +349,11 @@ impl ToolGateway {
             .complete(&step.idempotency_key, &outcome, ctx.write_authority())
             .await?;
         let stored = record.outcome.as_ref().unwrap_or(&outcome);
-        let (result_kind, error, evidence_ids) = match stored {
-            StepOutcome::Succeeded { evidence_ids, .. } => {
-                (ToolCallOutcome::Ok, None, evidence_ids.clone())
-            }
-            StepOutcome::Failed { error } => {
-                (ToolCallOutcome::Error, Some(error.clone()), Vec::new())
-            }
-        };
+        let duration_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
         self.record(
             &step.run_id,
             ctx,
-            EventPayload::ToolCallCompleted {
-                step_id: step.step_id.clone(),
-                tool: step.tool.clone(),
-                outcome: result_kind,
-                error,
-                evidence_ids,
-                duration_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
-                recovered: None,
-            },
+            completed_event(&step.step_id, &step.tool, stored, duration_ms, None),
         )
         .await?;
         Ok(match stored {
@@ -384,6 +372,36 @@ impl ToolGateway {
                 replayed: false,
             },
         })
+    }
+
+    /// The stored outcome of a completed step. Appends its
+    /// `tool_call_completed` again, as the normal path builds it, from the
+    /// record and marked `recovered`; if the first one was written, the log
+    /// returns it and this adds nothing.
+    async fn replay(
+        &self,
+        record: &StepRecord,
+        outcome: &StepOutcome,
+        ctx: &ExecutionContext,
+    ) -> Result<ToolObservation, Error> {
+        let duration_ms = record
+            .completed_at
+            .as_ref()
+            .and_then(|completed| (completed.0 - record.started_at.0).to_std().ok())
+            .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX));
+        self.record(
+            &record.run_id,
+            ctx,
+            completed_event(
+                &record.step_id,
+                &record.tool,
+                outcome,
+                duration_ms,
+                Some(true),
+            ),
+        )
+        .await?;
+        Ok(replayed(outcome))
     }
 
     fn tool_version(&self, step: &NewStep) -> Result<NonEmptyString, Error> {
@@ -499,6 +517,32 @@ fn ensure_same_request(record: &StepRecord, step: &NewStep) -> Result<(), Error>
     }
 }
 
+/// The `tool_call_completed` of a step with `outcome`: the one builder of the
+/// normal path and of a replay that repairs a lost event.
+fn completed_event(
+    step_id: &StepId,
+    tool: &ToolName,
+    outcome: &StepOutcome,
+    duration_ms: u64,
+    recovered: Option<bool>,
+) -> EventPayload {
+    let (result, error, evidence_ids) = match outcome {
+        StepOutcome::Succeeded { evidence_ids, .. } => {
+            (ToolCallOutcome::Ok, None, evidence_ids.clone())
+        }
+        StepOutcome::Failed { error } => (ToolCallOutcome::Error, Some(error.clone()), Vec::new()),
+    };
+    EventPayload::ToolCallCompleted {
+        step_id: step_id.clone(),
+        tool: tool.clone(),
+        outcome: result,
+        error,
+        evidence_ids,
+        duration_ms,
+        recovered,
+    }
+}
+
 fn replayed(outcome: &StepOutcome) -> ToolObservation {
     match outcome {
         StepOutcome::Succeeded {
@@ -535,7 +579,7 @@ fn with_correlation(error: Error, ctx: &ExecutionContext) -> Error {
 
 fn not_repeated(tool: &str) -> Error {
     Error::new(
-        ErrorCode::Conflict,
+        ErrorCode::OutcomeUnknown,
         format!(
             "an earlier attempt of this step was interrupted and its outcome is unknown; \
              {tool} is not idempotent, so it is not called again"

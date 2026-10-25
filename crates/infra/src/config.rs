@@ -53,6 +53,22 @@ impl ConfigFile for GatesPolicy {
 
 impl ConfigFile for ToolOverlay {
     const SCHEMA: &'static str = "config/tool-overlay.schema.json";
+
+    /// A tool promises idempotency only with a named test that repeats a
+    /// call with one key and shows one effect (ADR-0031); validate-config
+    /// checks that the test exists.
+    fn validate(&self, _environment: Environment) -> Vec<String> {
+        self.tools
+            .iter()
+            .filter(|tool| tool.idempotent && tool.idempotency_test.is_none())
+            .map(|tool| {
+                format!(
+                    "tool {}: idempotent: true needs an idempotency_test",
+                    tool.name.as_str()
+                )
+            })
+            .collect()
+    }
 }
 
 impl ConfigFile for AgentSpec {
