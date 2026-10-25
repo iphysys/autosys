@@ -247,6 +247,27 @@ impl SdrManager {
         Ok(record)
     }
 
+    /// The record of the version that `transition_id` committed on `base`,
+    /// if it did: after a crash, whether a commit landed before its
+    /// `sdr_transition` was written (ADR-0031). Versions are linear
+    /// (ADR-0020), so only `base + 1` can hold it; `None` if that version
+    /// does not exist or another transition made it.
+    pub async fn find_commit(
+        &self,
+        project_id: &ProjectId,
+        transition_id: &TransitionId,
+        base: &SdrVersion,
+        ctx: &ExecutionContext,
+    ) -> Result<Option<SdrVersionRecord>, Error> {
+        let next = SdrVersion(base.0 + 1);
+        match self.store.head(project_id, ctx).await? {
+            Some(head) if head.0 >= next.0 => {}
+            _ => return Ok(None),
+        }
+        let record = self.store.version_record(project_id, &next, ctx).await?;
+        Ok((&record.transition_id == transition_id).then_some(record))
+    }
+
     /// Refuses a validated transition, for example on a gate's decision.
     /// Consumes it, so it can never be committed.
     pub fn reject(&self, validated: ValidatedTransition, reasons: Vec<String>) -> Rejection {
