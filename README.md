@@ -248,18 +248,21 @@ SYNTH_API_TOKEN=<a long random string> cargo run -p synth-api-server -- --config
 
 ## CLI
 
-The `synth` binary (`apps/cli`) is a thin client of the API server, built on `crates/api-client` ([ADR-0034](docs/adr/0034-cli-and-api-client.md)). It sends requests and prints the server's JSON; the server decides everything.
+The `synth` binary (`apps/cli`) is a thin client of the API server, built on `crates/api-client` ([ADR-0034](docs/adr/0034-cli-and-api-client.md), [ADR-0036](docs/adr/0036-synth-cli-v1.md)). It sends requests and prints what the server answers; the server decides everything.
 
 ```sh
 cargo xtask benchmark-request part_design_001 > request.json
-synth run start request.json
-synth run watch <run_id>
+synth run start request.json --watch
 synth run approve <run_id> <approval_id> --answer approve
 synth run report <run_id>
 ```
 
-- **Environment.** `SYNTH_API_URL` (default `http://127.0.0.1:8080`) and `SYNTH_API_TOKEN`, which has no flag.
-- **Watching.** `watch` journals every event under `runtime-data/cli/runs/<run_id>/` before printing it, so run again it resumes after the last event it received, with no gaps or repeats.
+`synth --help` lists every command: `run start|status|watch|approve|cancel|report`, `config show`, `doctor` and `completions <shell>`.
+
+- **Output.** On a terminal, `synth` prints a short human view: one line per event, the exact `synth run approve` command when a run asks for approval, and a requirement table for the report. When stdout is not a terminal, it prints the API's JSON unchanged, one event per line for `watch`. `--output human|json` overrides this, and `--color auto|always|never` sets the colour (`NO_COLOR` is honoured under `auto`).
+- **Settings.** Defaults < environment < flags. The API URL is `http://127.0.0.1:8080`, `SYNTH_API_URL` or `--api-url`. The state dir is `runtime-data/cli`, `SYNTH_STATE_DIR` or `--state-dir`. `SYNTH_API_TOKEN` holds the token and has no flag. `synth config show` prints each setting and where it came from. `synth doctor` checks the server, the token and the state dir.
+- **Watching.** `watch` journals every event under `<state dir>/runs/<run_id>/` before printing it, so run again it resumes after the last event it received, with no gaps or repeats. `watch --from-start` replays the run from its first event without touching that journal.
+- **Cancelling.** On a terminal, `run cancel` asks first unless given `--yes`.
 - **Benchmarks.** `cargo xtask benchmark-request <id>` builds a dev problem's `RunRequest` with `evaluation::benchmarks::run_request`. Notes and expected outcomes never reach the run.
 
 `cargo xtask test-tools` runs the dev benchmark end to end through `synth`, `api-server` and two `worker` processes, one of them killed mid-run. To run the stack yourself, follow [Running a design run locally](docs/developer-guide/running-locally.md).
@@ -323,6 +326,7 @@ A mass or other reference value is an arithmetic expression over parameter IDs. 
 | [0032](docs/adr/0032-lease-fencing.md) | Lease fencing | Proposed |
 | [0033](docs/adr/0033-run-report-v0.md) | Run report v0 | Proposed |
 | [0034](docs/adr/0034-cli-and-api-client.md) | The CLI, the API client and benchmark run requests | Proposed |
+| [0036](docs/adr/0036-synth-cli-v1.md) | synth CLI v1 | Proposed |
 
 ## License
 

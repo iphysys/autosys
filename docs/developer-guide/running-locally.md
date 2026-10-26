@@ -69,30 +69,30 @@ cargo xtask benchmark-request part_design_001 > request.json
 
 The request carries the problem's description and givens, its requirements and its budget. It never carries the reviewer notes or the expected outcomes ([ADR-0034](../adr/0034-cli-and-api-client.md)). Any other `RunRequest` file works the same way; see `schemas/api/run-request.schema.json`.
 
-Start the run and watch it:
+Check the setup, then start the run and watch it:
 
 ```sh
-target/debug/synth run start request.json
-target/debug/synth run watch <run_id>
+target/debug/synth doctor
+target/debug/synth run start request.json --watch
 ```
 
-`start` prints the run, including its `run_id`, and prints the idempotency key on stderr. Passing the same key again with `--idempotency-key` returns the same run instead of starting a second one.
+`doctor` checks that the server answers, that it accepts the token and that the state dir is writable. `start` prints the run's id and prints the idempotency key on stderr. Passing the same key again with `--idempotency-key` returns the same run instead of starting a second one. With `--watch` it then follows the run, as `synth run watch <run_id>` does.
 
-`watch` prints one event per line as JSON. It also journals each event under `runtime-data/cli/runs/<run_id>/`, so if you stop it and run it again, it carries on after the last event it received.
+On a terminal, `watch` prints one line per event, with each burst of checks on a single line. Piped or redirected, it prints one event per line as JSON instead, and `--output human|json` overrides either. It journals each event under `runtime-data/cli/runs/<run_id>/` (`SYNTH_STATE_DIR` or `--state-dir` moves it), so if you stop it and run it again, it carries on after the last event it received. `watch --from-start` replays the whole run without touching that journal.
 
-Before the final design is committed, the autonomy policy asks for approval (`config/policies/autonomy.yaml`). The stream shows an `approval_requested` event with an `approval_id`, and the run waits. Answer it from another shell:
+Before the final design is committed, the autonomy policy asks for approval (`config/policies/autonomy.yaml`). The run waits, and `watch` prints the exact commands that answer it. Run one from another shell:
 
 ```sh
 target/debug/synth run approve <run_id> <approval_id> --answer approve
 ```
 
-The run continues, and `watch` ends once the run has stopped. Then read the report:
+The run continues, and `watch` ends once the run has stopped. `synth run status <run_id>` shows where a run is at any time. Then read the report:
 
 ```sh
 target/debug/synth run report <run_id>
 ```
 
-The report gives the stop reason and, for each requirement, its status and the check findings that decided it, by evidence id. To stop a run early, use `synth run cancel <run_id> --reason "<why>"`.
+The report gives the stop reason and, for each requirement, its status and the evidence ids of the check findings that decided it. Pipe it, or pass `--output json`, for the full JSON. To stop a run early, use `synth run cancel <run_id> --reason "<why>"`. On a terminal it asks first; `--yes` skips the question.
 
 ## 6. Try a crash
 
