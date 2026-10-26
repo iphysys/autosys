@@ -125,7 +125,8 @@ Engineering tools are MCP servers in `mcp_servers/`, one container each (bluepri
   2. starts the forwarder and checks it: on the server's network and one other, one port on 127.0.0.1 only, the same hardening;
   3. runs an egress probe inside the server container, with the forwarder up, which must reach nothing on the internet;
   4. runs the server's test container: tests, ruff and `mypy --strict`;
-  5. runs the tool gateway's tests in `crates/tools/tests/` against the server, through the forwarder.
+  5. runs the tool gateway's tests in `crates/tools/tests/` against the server, through the forwarder;
+  6. builds `worker`, `api-server` and `synth`, and runs the process tests through the forwarder: a worker killed mid-run, and the dev benchmark end to end through the CLI.
 
 ## Tool gateway
 
@@ -245,6 +246,24 @@ SYNTH_API_TOKEN=<a long random string> cargo run -p synth-api-server -- --config
 
 `cargo test -p synth-api` checks every documented response against the OpenAPI document, in memory.
 
+## CLI
+
+The `synth` binary (`apps/cli`) is a thin client of the API server, built on `crates/api-client` ([ADR-0034](docs/adr/0034-cli-and-api-client.md)). It sends requests and prints the server's JSON; the server decides everything.
+
+```sh
+cargo xtask benchmark-request part_design_001 > request.json
+synth run start request.json
+synth run watch <run_id>
+synth run approve <run_id> <approval_id> --answer approve
+synth run report <run_id>
+```
+
+- **Environment.** `SYNTH_API_URL` (default `http://127.0.0.1:8080`) and `SYNTH_API_TOKEN`, which has no flag.
+- **Watching.** `watch` journals every event under `runtime-data/cli/runs/<run_id>/` before printing it, so run again it resumes after the last event it received, with no gaps or repeats.
+- **Benchmarks.** `cargo xtask benchmark-request <id>` builds a dev problem's `RunRequest` with `evaluation::benchmarks::run_request`. Notes and expected outcomes never reach the run.
+
+`cargo xtask test-tools` runs the dev benchmark end to end through `synth`, `api-server` and two `worker` processes, one of them killed mid-run. To run the stack yourself, follow [Running a design run locally](docs/developer-guide/running-locally.md).
+
 ## Benchmarks
 
 Benchmark problems live in `evals/benchmarks/<split>/<id>/problem.yaml` and follow `schemas/benchmarks/benchmark-problem.schema.json` ([ADR-0025](docs/adr/0025-benchmark-problem-format.md)). Only `dev` problems are stored in the repository. The team writes them; values come from the specification each file cites in `source`, unchanged.
@@ -276,6 +295,7 @@ A mass or other reference value is an arithmetic expression over parameter IDs. 
 
 - [Engineering standards and repository blueprint](docs/architecture/blueprint.md) (normative)
 - [Increment 1 plan](docs/plans/increment-1.md)
+- [Running a design run locally](docs/developer-guide/running-locally.md)
 - [CLAUDE.md](CLAUDE.md): working rules for coding agents
 
 ### Architecture decisions
@@ -301,6 +321,8 @@ A mass or other reference value is an arithmetic expression over parameter IDs. 
 | [0030](docs/adr/0030-query-loop-v0.md) | Query loop v0 | Proposed |
 | [0031](docs/adr/0031-scheduler-and-recovery-v0.md) | Scheduler and recovery v0 | Proposed |
 | [0032](docs/adr/0032-lease-fencing.md) | Lease fencing | Proposed |
+| [0033](docs/adr/0033-run-report-v0.md) | Run report v0 | Proposed |
+| [0034](docs/adr/0034-cli-and-api-client.md) | The CLI, the API client and benchmark run requests | Proposed |
 
 ## License
 

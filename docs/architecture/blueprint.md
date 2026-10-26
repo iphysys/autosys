@@ -740,6 +740,7 @@ repo-root/
 │   │       │   └── openshell.rs
 │   │       └── telemetry.rs
 │   ├── api/                        # HTTP API and resumable event stream; conforms to schemas/api/
+│   ├── api-client/                 # typed client of the HTTP API for the CLI and xtask (ADR-0034)
 │   ├── bootstrap/                  # composition root shared by all binaries
 │   │   └── src/
 │   │       ├── lib.rs
@@ -868,9 +869,10 @@ Otherwise it is a module of an existing crate. This is why agents and the skill 
 | `improvement` | `contracts`, `runtime`, `evaluation` |
 | `infra` | `contracts`, `schema-types` |
 | `api` | `contracts`, `runtime` |
+| `api-client` | `contracts` |
 | `bootstrap` | all of the above |
 | `testkit` | `contracts`, `schema-types` (dev-dependency only) |
-| `apps/*` | `bootstrap`, `api` |
+| `apps/*` | `bootstrap`, `api`, `api-client` |
 
 ---
 

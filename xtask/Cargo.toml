@@ -11,6 +11,8 @@ publish.workspace = true
 # building xtask needs no database.
 synth-context.workspace = true
 synth-contracts.workspace = true
+# Benchmark problems as run requests: the evaluation crate's own (ADR-0034).
+synth-evaluation.workspace = true
 synth-infra = { workspace = true, default-features = false }
 # Model routing checks beyond the schema: the gateway's own (ADR-0027).
 synth-model-gateway.workspace = true

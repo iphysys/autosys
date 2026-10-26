@@ -21,22 +21,28 @@ use tokio_util::sync::CancellationToken;
 use crate::support::db::TestDb;
 use crate::support::*;
 
-const TOKEN: &str = "system-test-token-0123456789abcdef";
+pub(crate) const TOKEN: &str = "system-test-token-0123456789abcdef";
 
-/// api-server serving on an ephemeral loopback port until dropped.
-struct Server {
-    base: String,
+/// api-server serving on a loopback port until stopped.
+pub(crate) struct Server {
+    pub(crate) base: String,
     shutdown: CancellationToken,
     task: tokio::task::JoinHandle<()>,
 }
 
 impl Server {
-    async fn start(db: &TestDb, config: &TestConfig) -> Self {
+    /// On an ephemeral port.
+    pub(crate) async fn start(db: &TestDb, config: &TestConfig) -> Self {
+        Self::start_at(db, config, SocketAddr::from(([127, 0, 0, 1], 0))).await
+    }
+
+    /// On `address`, for example the port of a server stopped before.
+    pub(crate) async fn start_at(db: &TestDb, config: &TestConfig, address: SocketAddr) -> Self {
         let shutdown = CancellationToken::new();
         let built = build_api(setup(config), &api_vars(db), shutdown.clone())
             .await
             .unwrap_or_else(|e| panic!("api-server does not build: {e}"));
-        let listener = tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
+        let listener = tokio::net::TcpListener::bind(address)
             .await
             .expect("bind a loopback port");
         let base = format!("http://{}", listener.local_addr().expect("an address"));
@@ -55,7 +61,7 @@ impl Server {
         }
     }
 
-    async fn stop(self) {
+    pub(crate) async fn stop(self) {
         self.shutdown.cancel();
         tokio::time::timeout(WAIT, self.task)
             .await
@@ -63,7 +69,7 @@ impl Server {
             .expect("the server task does not panic");
     }
 
-    fn url(&self, path: &str) -> String {
+    pub(crate) fn url(&self, path: &str) -> String {
         format!("{}{path}", self.base)
     }
 }
@@ -93,7 +99,7 @@ fn authorized(builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
     builder.bearer_auth(TOKEN)
 }
 
-fn brief() -> Value {
+pub(crate) fn brief() -> Value {
     json!({
         "schema_version": "0.1",
         "agent_id": "main_orchestrator",
@@ -197,7 +203,7 @@ async fn wait_for_state(server: &Server, run: &RunId, state: &str) -> Value {
     }
 }
 
-async fn stored_events(worker: &Worker, run: &RunId) -> Vec<Event> {
+pub(crate) async fn stored_events(worker: &Worker, run: &RunId) -> Vec<Event> {
     worker.events.read(run, 0, 10_000).await.expect("the log")
 }
 

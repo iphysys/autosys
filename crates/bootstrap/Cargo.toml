@@ -36,6 +36,8 @@ tokio-util = { workspace = true, features = ["rt"] }
 tracing.workspace = true
 
 [dev-dependencies]
+# The client the CLI uses, against the real server (ADR-0034).
+synth-api-client.workspace = true
 synth-testkit.workspace = true
 
 chrono = { workspace = true, features = ["clock"] }

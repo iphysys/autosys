@@ -20,9 +20,12 @@
 //!    strict type check;
 //! 5. runs the tool gateway's tests against the server, from the host
 //!    through the forwarder (`crates/tools/tests/`);
-//! 6. builds the `worker` binary and runs the system test that kills a
-//!    worker process mid-run, against the server through the forwarder
-//!    (`tests/system/worker_process.rs`). It needs `DATABASE_URL`.
+//! 6. builds the `worker`, `api-server` and `synth` binaries and runs the
+//!    system tests that run them as processes against the server through
+//!    the forwarder: a worker killed mid-run
+//!    (`tests/system/worker_process.rs`) and the dev benchmark end to end
+//!    through the CLI (`tests/system/cli_e2e.rs`). They need
+//!    `DATABASE_URL`.
 //!
 //! The stack is taken down afterwards, pass or fail.
 
@@ -52,10 +55,13 @@ struct ToolServer {
     /// variable that tells it the server's URL.
     gateway_test: &'static str,
     url_env: &'static str,
-    /// The ignored test of `synth-bootstrap`'s `system` target that runs
-    /// worker processes against this server, if any.
-    worker_test: Option<&'static str>,
+    /// The ignored tests of `synth-bootstrap`'s `system` target that run
+    /// the binaries as processes against this server.
+    process_tests: &'static [&'static str],
 }
+
+/// The packages whose binaries the process tests start.
+const PROCESS_BINARIES: &[&str] = &["synth-worker", "synth-api-server", "synth-cli"];
 
 const SERVERS: &[ToolServer] = &[ToolServer {
     service: "build123d",
@@ -67,7 +73,7 @@ const SERVERS: &[ToolServer] = &[ToolServer {
     control: "127.0.0.1:8000",
     gateway_test: "build123d",
     url_env: "BUILD123D_URL",
-    worker_test: Some("worker_process"),
+    process_tests: &["worker_process", "cli_e2e"],
 }];
 
 pub fn run(root: &Path) -> Result<()> {
@@ -177,14 +183,16 @@ fn test_server(root: &Path, server: &ToolServer) -> Result<()> {
         bail!("tool gateway tests against {name} failed ({status})");
     }
 
-    if let Some(filter) = server.worker_test {
-        eprintln!("xtask: test-tools: {name}: worker processes through {forwarder} ({url})");
-        let built = cargo(root)
-            .args(["build", "--locked", "-p", "synth-worker"])
-            .status()
-            .context("failed to build the worker binary")?;
+    if !server.process_tests.is_empty() {
+        eprintln!("xtask: test-tools: {name}: processes through {forwarder} ({url})");
+        let mut build = cargo(root);
+        build.args(["build", "--locked"]);
+        for package in PROCESS_BINARIES {
+            build.args(["-p", package]);
+        }
+        let built = build.status().context("failed to build the binaries")?;
         if !built.success() {
-            bail!("building the worker binary failed ({built})");
+            bail!("building the binaries failed ({built})");
         }
         let status = cargo(root)
             .env(server.url_env, &url)
@@ -195,14 +203,14 @@ fn test_server(root: &Path, server: &ToolServer) -> Result<()> {
                 "synth-bootstrap",
                 "--test",
                 "system",
-                filter,
                 "--",
                 "--ignored",
             ])
+            .args(server.process_tests)
             .status()
-            .context("failed to run the worker process test")?;
+            .context("failed to run the process tests")?;
         if !status.success() {
-            bail!("the worker process test against {name} failed ({status})");
+            bail!("the process tests against {name} failed ({status})");
         }
     }
     Ok(())

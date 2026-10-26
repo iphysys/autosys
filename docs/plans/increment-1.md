@@ -58,7 +58,7 @@ The CLI only talks to `api-server`. The worker claims jobs from Postgres, calls 
 
 ## PR overview
 
-Fifteen PRs in four tracks. The critical path is PR 1 → 2 → 3 → 5 → 6 → 8 → 11 → 12a → 12 → 15; everything else runs beside it once PR 3 lands.
+Fifteen PRs in four tracks. The critical path is PR 1 → 2 → 3 → 5 → 6 → 8 → 11 → 12a → 12 → 15a → 15b; everything else runs beside it once PR 3 lands.
 
 | PR | Title | Track | Depends on | Size |
 | --- | --- | --- | --- | --- |
@@ -77,7 +77,8 @@ Fifteen PRs in four tracks. The critical path is PR 1 → 2 → 3 → 5 → 6 �
 | 12 | Scheduler, worker and recovery | Agent | 4, 11, 12a | L |
 | 13 | Run report and artifacts | Core | 5, 6 | S |
 | 14 | API v0 and api-server | Interface | 4, 13 | M |
-| 15 | CLI, end-to-end run and baseline | Interface | 12, 14 | M |
+| 15a | CLI, API client and end-to-end run | Interface | 12, 14 | M |
+| 15b | Replay store, evaluation and baseline | Interface | 15a | M |
 
 PR 7 can start as soon as PR 2 lands, since porting the build123d tool needs only its tool schemas. Every PR leaves CI green and follows the commit and PR rules in blueprint §19.
 
@@ -373,7 +374,7 @@ Follow-ups, not in this PR:
 
 ### PR 15 — CLI, end-to-end run and baseline
 
-The exit criterion, proved through the CLI.
+The exit criterion, proved through the CLI. Split in two while planning: 15a proves exit criteria 1–5, and 15b proves criterion 6 and records the baseline.
 
 - `apps/cli` (`synth`): `run start`, `run watch`, `run approve`, `run cancel`, `run report`. Payloads use `schema-types`; the CLI holds no logic.
 - An end-to-end test in `tests/system/` through the CLI, with the real build123d container and the recorded model.
@@ -381,6 +382,32 @@ The exit criterion, proved through the CLI.
 - A developer guide for running the stack locally.
 
 **Done when:** all six exit criteria in the scope section pass and the baseline is recorded.
+
+#### PR 15a — CLI, API client and end-to-end run
+
+- `crates/api-client`: the typed client of API v0, shared by the CLI, the system tests and `cargo xtask eval`.
+- `evaluation::benchmarks::run_request` and `cargo xtask benchmark-request <id>`: a benchmark problem as a `RunRequest`.
+- `apps/cli` (`synth`) with the five commands.
+- `tests/system/cli_e2e.rs`: the `synth`, `api-server` and `worker` binaries, the build123d container, and a scripted model on the fake Claude server.
+- `docs/developer-guide/running-locally.md`.
+
+**Done when:** the end-to-end test passes exit criteria 1–5.
+
+Settled while planning, and recorded in [ADR-0034](../adr/0034-cli-and-api-client.md):
+- **A client crate.** `crates/api-client` depends on `contracts` only; `apps/*` may depend on it.
+- **Benchmark requests are built outside the CLI.** The mapping lives in `evaluation`, so the improvement loop can reuse it. Notes and expected outcomes never reach the task. `synth run start` takes any `RunRequest` file.
+- **`watch` keeps a journal.** The journal is the cursor across processes, so an interrupt, a kill included, leaves no gap or duplicate.
+- **A scripted model in CI.** The end-to-end test answers from the request, so a call sent again after a worker kill gets the same reply. Live runs are 15b's.
+
+#### PR 15b — Replay store, evaluation and baseline
+
+- The replay store of content-addressed context sections (ADR-0029, ADR-0031).
+- An SDR read route in API v0, so a client can score a run's final design.
+- Scoring of a problem's expected outcomes from the report, the SDR and the event log, beside `run_request` in `evaluation`. `infra::benchmarks::expression` moves there (an ADR-0025 amendment).
+- `cargo xtask eval`: repeated live runs with spread, written to `evals/baselines/`.
+- The blueprint §24 edit below.
+
+**Done when:** exit criterion 6 passes and the baseline is committed.
 
 ## Out of scope
 

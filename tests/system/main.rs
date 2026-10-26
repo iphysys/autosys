@@ -5,6 +5,8 @@
 #![allow(clippy::expect_used, clippy::unwrap_used, reason = "integration tests")]
 
 mod api;
+mod cli_e2e;
+mod client;
 mod crash_points;
 mod report;
 mod scenarios;
