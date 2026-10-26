@@ -2,13 +2,12 @@
 //!
 //! A file goes YAML → `schemas/benchmarks/benchmark-problem.schema.json` →
 //! typed value, with the same strict YAML parser as configuration. Then come
-//! the checks a schema cannot express: identifiers are unique, every
-//! reference names something the problem declares, and every reference
-//! expression parses. [`BenchmarkLoader::validate_dir`] also checks that each
-//! problem sits at `<split>/<id>/problem.yaml` and that approval outcomes name
-//! rules of the autonomy policy.
-
-pub mod expression;
+//! the checks a schema cannot express: identifiers are unique and every
+//! reference names something the problem declares.
+//! [`BenchmarkLoader::validate_dir`] also checks that each problem sits at
+//! `<split>/<id>/problem.yaml` and that approval outcomes name rules of the
+//! autonomy policy. Reference expressions are evaluation's: it parses them
+//! (ADR-0025 amendment).
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -217,7 +216,6 @@ fn consistency_problems(problem: &BenchmarkProblem) -> Vec<String> {
                     requirement(&at, requirement_id.as_str(), &mut problems);
                 }
                 OutcomeCheck::ParameterMatchesReference {
-                    expression,
                     parameter_id,
                     variables,
                     ..
@@ -232,18 +230,6 @@ fn consistency_problems(problem: &BenchmarkProblem) -> Vec<String> {
                         }
                         if !names.insert(id) {
                             problems.push(format!("{at}: variable {id} is listed twice"));
-                        }
-                    }
-                    match expression::parse(expression.as_str()) {
-                        Err(e) => problems.push(format!("{at}: expression: {e}")),
-                        Ok(parsed) => {
-                            for used in parsed.variables() {
-                                if !names.contains(used) {
-                                    problems.push(format!(
-                                        "{at}: expression uses {used}, which is not in variables"
-                                    ));
-                                }
-                            }
                         }
                     }
                 }

@@ -2551,7 +2551,6 @@ dependencies = [
  "synth-contracts",
  "synth-testkit",
  "tempfile",
- "thiserror",
  "tokio",
  "tracing",
 ]

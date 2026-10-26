@@ -31,7 +31,8 @@ Tasks:
                 the runtime's agent registry: prompt, tools, skills, result schema and
                 repair behavior (ADR-0030)
   validate-benchmarks
-                Every problem in evals/benchmarks/ against its schema (blueprint 14.7)
+                Every problem in evals/benchmarks/ against its schema (blueprint 14.7), and
+                its reference expressions through evaluation (ADR-0025)
   benchmark-request <problem-id> [--agent <agent-id>]
                 Prints the RunRequest that starts a run on a dev benchmark problem, for
                 `synth run start` (ADR-0034); the agent defaults to main_orchestrator
@@ -406,14 +407,55 @@ fn validate_benchmarks(root: &Path) -> Result<()> {
     let rules: BTreeSet<String> = policy.approvals.iter().map(|r| r.id.to_string()).collect();
     let loader =
         infra::benchmarks::BenchmarkLoader::new().context("loading the benchmark schema")?;
-    let problems = loader
-        .validate_dir(&root.join("evals/benchmarks"), &rules)
+    let benchmarks = root.join("evals/benchmarks");
+    let mut problems = loader
+        .validate_dir(&benchmarks, &rules)
         .context("reading evals/benchmarks/")?;
+    // Reference expressions are evaluation's to parse (ADR-0025 amendment).
+    // A problem that does not load is already reported above.
+    for path in problem_files(&benchmarks)? {
+        if let Ok(problem) = loader.load(&path) {
+            problems.extend(
+                evaluation::benchmarks::expression_problems(&problem)
+                    .into_iter()
+                    .map(|p| format!("{}: {p}", path.display())),
+            );
+        }
+    }
     if !problems.is_empty() {
         bail!("invalid benchmarks:\n  - {}", problems.join("\n  - "));
     }
     eprintln!("xtask: validate-benchmarks: passed");
     Ok(())
+}
+
+/// Every `<split>/<id>/problem.yaml` under `benchmarks`, sorted.
+fn problem_files(benchmarks: &Path) -> Result<Vec<PathBuf>> {
+    let mut files = Vec::new();
+    for split in read_dirs(benchmarks)? {
+        for problem in read_dirs(&split)? {
+            let file = problem.join(infra::benchmarks::PROBLEM_FILE);
+            if file.is_file() {
+                files.push(file);
+            }
+        }
+    }
+    files.sort();
+    Ok(files)
+}
+
+/// The directories directly inside `dir`.
+fn read_dirs(dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut dirs = Vec::new();
+    for entry in std::fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
+        let path = entry
+            .with_context(|| format!("reading {}", dir.display()))?
+            .path();
+        if path.is_dir() {
+            dirs.push(path);
+        }
+    }
+    Ok(dirs)
 }
 
 /// The agent a benchmark request names unless `--agent` says otherwise.
