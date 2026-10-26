@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    SELECT record AS \"record!: Json<ModelCallRecord>\"\n                    FROM replay_calls WHERE run_id = $1 ORDER BY context_seq\n                    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "record!: Json<ModelCallRecord>",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "replay_calls",
+            "name": "record"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6c01fa633f3ef77fe45c3e2e61c7268879e90d4105232e0c0646637074958790"
+}

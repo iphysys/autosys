@@ -20,7 +20,7 @@ use testkit::fakes::{
 };
 use testkit::stores::{
     InMemoryArtifactStore, InMemoryEventLog, InMemoryEvidenceStore, InMemoryJobStore,
-    InMemorySdrRepository, InMemoryStepStore,
+    InMemoryReplayStore, InMemorySdrRepository, InMemoryStepStore,
 };
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -74,6 +74,11 @@ async fn in_memory_fencing() {
 #[tokio::test]
 async fn in_memory_evidence_store() {
     contract::evidence_store(|| async { InMemoryEvidenceStore::new() }).await;
+}
+
+#[tokio::test]
+async fn in_memory_replay_store() {
+    contract::replay_store(|| async { InMemoryReplayStore::new() }).await;
 }
 
 #[tokio::test]
