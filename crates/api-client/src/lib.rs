@@ -6,11 +6,13 @@
 //! server does. [`Client::events`] streams a run's events and reconnects
 //! with `Last-Event-ID` when the connection breaks, so its caller sees
 //! every event once, in order. [`EventJournal`] keeps them on disk for a
-//! caller that stops and starts again.
+//! caller that stops and starts again. [`drive::drive`] runs one request to
+//! its end, answering its approvals, for evaluation (ADR-0035).
 //!
 //! Every request carries the development token (ADR-0022), which is never
 //! logged, and has a time limit.
 
+pub mod drive;
 mod error;
 mod journal;
 mod key;
