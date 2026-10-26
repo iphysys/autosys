@@ -1430,8 +1430,8 @@ No query-loop change should be needed.
 | 0012 | STEP is the primary neutral CAD interchange format | Proposed |
 | 0013 | Persistent Python CAD kernel as a sandboxed MCP server | Open |
 | 0014 | Knowledge graph store adapter | Proposed |
-| 0015 | Async methods on trait objects: `async-trait` or boxed futures | Open |
-| 0016 | Persistence backend for SDR, job store, and session logs | Open |
+| 0015 | Async methods on trait objects: `async-trait` or boxed futures | Accepted (`async-trait`) |
+| 0016 | Persistence backend for SDR, job store, and session logs | Accepted (PostgreSQL) |
 | 0017 | Role of the retained BFF: migration adapter, then kept thin or folded into `crates/api` | Open |
 | 0018 | Schema-first external API (OpenAPI 3.1 in `schemas/api/`) with a resumable server-sent event stream | Proposed |
 | 0019 | Retain the previous frontend; rebuild everything else (Appendix B) | Accepted |
@@ -1446,7 +1446,7 @@ Crates and folders are created when their increment starts. Each increment ends 
 
 | Increment | Builds | Exit criterion |
 | --- | --- | --- |
-| 1. Execution kernel | `contracts`, `schema-types`, `runtime` (loop and minimal scheduler), `tools` with MCP, SDR v0 (no branches), schema and units checks, run report, one benchmark problem. `api` with `schemas/api/` v0; retained frontend moved and connected through the BFF adapter (start a run, stream events, answer an approval, view the run report) | One benchmark problem runs end to end from the UI, survives a worker kill and a browser reconnect, and shows its run report |
+| 1. Execution kernel | `contracts`, `schema-types`, `runtime` (loop and minimal scheduler), `tools` with MCP, SDR v0 (no branches), schema, units and numeric requirement checks, run report, one benchmark problem and its single-loop baseline. `api` with `schemas/api/` v0 and the `synth` CLI as its first client. The retained frontend and the BFF move to a later increment, as a second client of the same API | One benchmark problem runs end to end from the CLI, survives a worker kill and a CLI reconnect, shows its run report, and is scored over repeated runs as the baseline |
 | 2. Authoritative design model | SDR branching, invalidation, and migrations; `process` levels; backtracking; `cad_views` worker; UI views for branches, staleness, and CAD views | The reference scenario (§5.3) is handled by branching and invalidation, without restarting, and is visible in the UI |
 | 3. Delegation and evaluation | Specialist agents, result contracts, disjoint write scopes, requirements check, 3–5 benchmark problems | Delegation beats the single-loop baseline on the benchmark, or it is dropped |
 | 4. Reuse and self-improvement | `improvement` crate enabled, held-out split, project overlays, a second problem class | The core is unchanged across problem classes; harness edits are accepted only on held-out gains |

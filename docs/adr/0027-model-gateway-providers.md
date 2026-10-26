@@ -1,6 +1,6 @@
 # ADR-0027: Model gateway with two providers, Claude by default
 
-- Status: Proposed; its profile format is superseded by ADR-0028
+- Status: Accepted (2026-10-26, Increment 1 exit); its profile format is superseded by ADR-0028
 - Date: 2026-10-24
 
 ## Context
