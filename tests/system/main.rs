@@ -8,6 +8,7 @@ mod api;
 mod cli_e2e;
 mod client;
 mod crash_points;
+mod eval;
 mod report;
 mod scenarios;
 mod startup;
