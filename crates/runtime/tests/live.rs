@@ -1,16 +1,15 @@
-//! A live run on the Claude Messages API, run by hand (ADR-0029, ADR-0030):
-//! does the API accept a context rebuilt in the middle of a tool-use turn,
-//! after a reply that carries thinking blocks?
+//! A live run on Pliny, run by hand (ADR-0029, ADR-0030, ADR-0036): does
+//! the provider accept a context rebuilt in the middle of a tool-use turn?
 //!
 //! The loop rebuilds the whole context for every call, so the second call
 //! of a turn starts with a first user message that differs from the one the
 //! model answered (the job state and the run history moved on), followed by
-//! the model's reply, thinking blocks unchanged, and the tool result. If the
-//! API refuses that, the runtime has to pin the turn's snapshot and job
-//! view instead (ADR-0029's fallback).
+//! the model's reply and the tool result. If the provider refuses that, the
+//! runtime has to pin the turn's snapshot and job view instead (ADR-0029's
+//! fallback).
 //!
-//! Ignored by default: it needs `ANTHROPIC_API_KEY` and costs a few cents.
-//! `SYNTH_MODEL_PROFILE` picks the Claude profile; the default is `haiku`.
+//! Ignored by default: it needs `PLINY_API_KEY` and `PLINY_BASE_URL`.
+//! `SYNTH_MODEL_PROFILE` picks the profile; the default is `pliny`.
 //!
 //! ```sh
 //! cargo test -p synth-runtime --test live -- --ignored
@@ -67,11 +66,11 @@ impl ProviderAdapter for Recording {
 }
 
 #[tokio::test]
-#[ignore = "calls the Claude Messages API; needs ANTHROPIC_API_KEY"]
+#[ignore = "calls Pliny; needs PLINY_API_KEY and PLINY_BASE_URL"]
 async fn live_rebuilt_context_mid_turn() {
     let profile_name = ProcessEnv
         .var(model_gateway::PROFILE_OVERRIDE_ENV)
-        .unwrap_or_else(|| "haiku".to_owned());
+        .unwrap_or_else(|| "pliny".to_owned());
     let config: ModelRouting = committed("models/routing.yaml");
     let routing = Routing::new(
         config,
@@ -108,29 +107,19 @@ async fn live_rebuilt_context_mid_turn() {
     let called = first.content.iter().any(
         |b| matches!(b, ContentBlock::ToolCall { name, .. } if name.as_str() == "create_plate"),
     );
-    let thinking = first
-        .content
-        .iter()
-        .filter(|b| matches!(b, ContentBlock::Opaque { .. }))
-        .count();
     eprintln!(
-        "live: profile {profile_name}, {} model calls, first reply: tool call {called}, \
-         {thinking} opaque blocks",
+        "live: profile {profile_name}, {} model calls, first reply: tool call {called}",
         responses.len()
     );
     assert!(
         called,
         "inconclusive: the first reply called no tool, so no turn was open; run it again"
     );
-    assert!(
-        thinking > 0,
-        "inconclusive: the first reply carried no thinking blocks; try another profile"
-    );
 
     // The call that matters: the second, inside the open turn.
     if let Err(error) = &ran.outcome {
         panic!(
-            "the API refused a request after {} model calls: {error}; \
+            "the provider refused a request after {} model calls: {error}; \
              apply ADR-0029's fallback and pin the turn's snapshot",
             responses.len()
         );

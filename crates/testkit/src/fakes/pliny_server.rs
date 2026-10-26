@@ -1,7 +1,7 @@
-//! A loopback HTTP server that answers the Messages API (`POST
-//! /v1/messages`) for a worker process under test, which reaches it through
-//! a plain-http `base_url`, allowed only in the Test environment
-//! (ADR-0031). A responder computes each reply from the request body; one
+//! A loopback HTTP server that answers OpenAI-compatible chat completions
+//! (`POST {base}/chat/completions`), as Pliny does, for a worker process
+//! under test, which reaches it through a plain-http base URL, allowed only
+//! in the Test environment (ADR-0031). A responder computes each reply from the request body; one
 //! chosen request can be held unanswered, so the test can kill the worker
 //! while that call is in flight.
 
@@ -15,7 +15,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
-/// Computes a Messages API response body from a request body.
+/// Computes a chat-completions response body from a request body.
 pub type Responder = Arc<dyn Fn(&Value) -> Value + Send + Sync>;
 
 struct State {
@@ -26,14 +26,14 @@ struct State {
     hold: Option<usize>,
 }
 
-pub struct FakeClaudeServer {
+pub struct FakePlinyServer {
     addr: SocketAddr,
     state: Arc<Mutex<State>>,
     held: watch::Sender<bool>,
     accepting: JoinHandle<()>,
 }
 
-impl FakeClaudeServer {
+impl FakePlinyServer {
     /// Listens on a free loopback port and answers every request with
     /// `responder`, except request number `hold` (from 0), if given, which
     /// it never answers.
@@ -43,7 +43,7 @@ impl FakeClaudeServer {
     ) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
-            .expect("bind the fake Claude server");
+            .expect("bind the fake Pliny server");
         let addr = listener.local_addr().expect("its address");
         let state = Arc::new(Mutex::new(State {
             responder: Arc::new(responder),
@@ -67,7 +67,7 @@ impl FakeClaudeServer {
         }
     }
 
-    /// The `base_url` a model profile points at.
+    /// The base URL a model profile's `base_url_env` names.
     pub fn base_url(&self) -> String {
         format!("http://{}", self.addr)
     }
@@ -94,29 +94,43 @@ impl FakeClaudeServer {
     }
 }
 
-impl Drop for FakeClaudeServer {
+impl Drop for FakePlinyServer {
     fn drop(&mut self) {
         self.accepting.abort();
     }
 }
 
-/// A Messages API reply: `content` blocks, with a stop reason that follows
-/// from them.
-pub fn message(content: Vec<Value>) -> Value {
-    let stop_reason = if content.iter().any(|b| b["type"] == "tool_use") {
-        "tool_use"
+/// The model the fake answers as: the committed `pliny` profile's.
+pub const FAKE_PLINY_MODEL: &str = "snps-provider/nemotron-3-ultra-550b-a55";
+
+/// A chat-completions reply: the assistant's text, if any, and its tool
+/// calls, with a finish reason that follows from them.
+pub fn completion(text: Option<&str>, tool_calls: Vec<Value>) -> Value {
+    let finish_reason = if tool_calls.is_empty() {
+        "stop"
     } else {
-        "end_turn"
+        "tool_calls"
     };
+    let mut message = json!({ "role": "assistant", "content": text });
+    if !tool_calls.is_empty() {
+        message["tool_calls"] = Value::Array(tool_calls);
+    }
     json!({
-        "id": "msg_fake",
-        "type": "message",
-        "role": "assistant",
-        "model": "claude-haiku-5-5",
-        "content": content,
-        "stop_reason": stop_reason,
-        "stop_sequence": null,
-        "usage": { "input_tokens": 1000, "output_tokens": 100 }
+        "id": "chatcmpl-fake",
+        "object": "chat.completion",
+        "model": FAKE_PLINY_MODEL,
+        "choices": [{ "index": 0, "message": message, "finish_reason": finish_reason }],
+        "usage": { "prompt_tokens": 1000, "completion_tokens": 100, "total_tokens": 1100 }
+    })
+}
+
+/// One entry of a reply's `tool_calls`; the arguments are sent as a JSON
+/// string, as the chat-completions format has them.
+pub fn tool_call(id: &str, name: &str, arguments: &Value) -> Value {
+    json!({
+        "id": id,
+        "type": "function",
+        "function": { "name": name, "arguments": arguments.to_string() }
     })
 }
 
@@ -142,7 +156,7 @@ async fn serve(mut stream: TcpStream, state: Arc<Mutex<State>>, held: watch::Sen
         };
         let body = reply.to_string();
         let head = format!(
-            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nrequest-id: req_fake\r\n\r\n",
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nx-request-id: req_fake\r\n\r\n",
             body.len()
         );
         if stream.write_all(head.as_bytes()).await.is_err()

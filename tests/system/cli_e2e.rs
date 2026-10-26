@@ -1,6 +1,6 @@
 //! Increment 1's exit criteria 1–5 through the `synth` CLI (ADR-0034): the
 //! `synth`, `api-server` and `worker` binaries, the build123d server through
-//! its forwarder, and a scripted model on a fake Claude server.
+//! its forwarder, and a scripted model on a fake Pliny server.
 //!
 //! The dev benchmark's request starts a run. Worker A is killed while its
 //! third model call is held, and `synth run watch` is killed mid-stream.
@@ -29,7 +29,7 @@ use infra::benchmarks::BenchmarkLoader;
 use infra::config::ConfigLoader;
 use serde_json::Value;
 use testkit::builders::id;
-use testkit::fakes::FakeClaudeServer;
+use testkit::fakes::FakePlinyServer;
 
 use crate::support::db::TestDb;
 use crate::support::*;
@@ -160,7 +160,7 @@ async fn the_dev_benchmark_runs_end_to_end_through_the_cli() {
     let synth_binary = binary("synth", "synth-cli");
     let api_binary = binary("api-server", "synth-api-server");
     let worker_binary = binary("worker", "synth-worker");
-    let model = FakeClaudeServer::start(plate_script::benchmark_plate, Some(2)).await;
+    let model = FakePlinyServer::start(plate_script::benchmark_plate, Some(2)).await;
     let db = TestDb::create().await;
     let scratch = tempfile::tempdir().expect("a scratch directory");
     let artifacts = scratch.path().join("artifacts");
@@ -170,12 +170,6 @@ async fn the_dev_benchmark_runs_end_to_end_through_the_cli() {
     let worker_yaml = TEST_WORKER_YAML
         .replace("http://127.0.0.1:9/mcp", &tools)
         .replace("connect_timeout_ms: 1000", "connect_timeout_ms: 10000");
-    let routing = std::fs::read_to_string(repo_root().join("config/models/routing.yaml"))
-        .expect("the committed routing")
-        .replace(
-            "base_url: https://api.anthropic.com",
-            &format!("base_url: {}", model.base_url()),
-        );
     let api_yaml = std::fs::read_to_string(repo_root().join("config/api.yaml"))
         .expect("the committed api settings")
         .replace("listen: 127.0.0.1:8080", &format!("listen: {address}"))
@@ -186,13 +180,13 @@ async fn the_dev_benchmark_runs_end_to_end_through_the_cli() {
     // The committed autonomy policy asks before the final commit.
     let config = TestConfig::new(&[
         ("worker.yaml", worker_yaml.as_str()),
-        ("models/routing.yaml", routing.as_str()),
         ("api.yaml", api_yaml.as_str()),
     ]);
     let logs = scratch.path().join("logs");
     std::fs::create_dir_all(&logs).expect("a log directory");
     let mut vars = vars(&db);
-    vars.insert("ANTHROPIC_API_KEY".to_owned(), "test-key".to_owned());
+    vars.insert("PLINY_API_KEY".to_owned(), "test-key".to_owned());
+    vars.insert("PLINY_BASE_URL".to_owned(), model.base_url());
     vars.insert(API_TOKEN_ENV.to_owned(), TOKEN.to_owned());
 
     // Reads the stores the processes write; it never runs.

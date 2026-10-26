@@ -5,13 +5,15 @@
 
 use std::time::Duration;
 
-use contracts::{Environment, ErrorCode, ModelProvider, ModelStopReason};
+use contracts::{
+    ContentBlock, Environment, ErrorCode, Message, ModelProvider, ModelStopReason, Role,
+};
 use serde_json::json;
 use testkit::builders::agent_spec as agent;
 use testkit::contract;
 
 use super::{OpenAiCompatibleProvider, OpenAiCompatibleSettings};
-use crate::env::Secret;
+use crate::env::{ProcessEnv, Secret};
 use crate::gateway::ModelGateway;
 use crate::providers::ProviderAdapter;
 use crate::routing::PROFILE_OVERRIDE_ENV;
@@ -167,52 +169,46 @@ async fn a_plain_http_base_url_is_refused_naming_its_variable() {
 // The committed routing.yaml: the pliny profile
 
 #[test]
-fn pliny_is_refused_at_startup_for_an_agent_with_tools() {
-    let pinned = env(&[("ANTHROPIC_API_KEY", "key"), PLINY_ENV[0], PLINY_ENV[1]]);
-    let error = ModelGateway::start(
-        committed_routing(),
-        &[agent(
-            "designer",
-            Some("pliny"),
-            &["create_plate", "measure"],
-        )],
-        &pinned,
-    )
-    .err()
-    .expect("refused");
-    assert!(
-        error.message().contains("`pliny` has tool_calling: false"),
-        "{error}"
-    );
-
-    let overridden = env(&[(PROFILE_OVERRIDE_ENV, "pliny"), PLINY_ENV[0], PLINY_ENV[1]]);
-    let error = ModelGateway::start(
-        committed_routing(),
-        &[agent("designer", None, &["create_plate"])],
-        &overridden,
-    )
-    .err()
-    .expect("refused");
-    assert!(error.message().contains("tool_calling: false"), "{error}");
-}
-
-#[test]
-fn pliny_serves_an_agent_without_tools() {
-    let vars = env(&[(PROFILE_OVERRIDE_ENV, "pliny"), PLINY_ENV[0], PLINY_ENV[1]]);
-    let gateway = ModelGateway::start(committed_routing(), &[agent("writer", None, &[])], &vars)
-        .expect("an agent without tools may use pliny");
+fn pliny_is_the_default_profile() {
+    let gateway = ModelGateway::start(committed_routing(), &[], &env(&PLINY_ENV))
+        .expect("the PLINY_ variables are set");
     assert_eq!(gateway.default_profile().as_str(), "pliny");
 }
 
 #[test]
-fn missing_pliny_variables_fail_at_startup_naming_each() {
-    let error = ModelGateway::start(
+fn pliny_serves_an_agent_with_tools() {
+    let tools = ["create_plate", "measure"];
+    ModelGateway::start(
         committed_routing(),
-        &[],
-        &env(&[(PROFILE_OVERRIDE_ENV, "pliny")]),
+        &[agent("designer", Some("pliny"), &tools)],
+        &env(&PLINY_ENV),
     )
-    .err()
-    .expect("no pliny variables");
+    .expect("a pinned model_profile: pliny");
+
+    let overridden = env(&[(PROFILE_OVERRIDE_ENV, "pliny"), PLINY_ENV[0], PLINY_ENV[1]]);
+    ModelGateway::start(
+        committed_routing(),
+        &[agent("designer", None, &tools)],
+        &overridden,
+    )
+    .expect("SYNTH_MODEL_PROFILE=pliny");
+}
+
+#[test]
+fn pliny_serves_an_agent_without_tools() {
+    ModelGateway::start(
+        committed_routing(),
+        &[agent("writer", None, &[])],
+        &env(&PLINY_ENV),
+    )
+    .expect("an agent without tools may use pliny");
+}
+
+#[test]
+fn missing_pliny_variables_fail_at_startup_naming_each() {
+    let error = ModelGateway::start(committed_routing(), &[], &env(&[]))
+        .err()
+        .expect("no pliny variables");
     let message = error.message();
     assert!(
         message.contains("PLINY_API_KEY, PLINY_BASE_URL are not set"),
@@ -251,4 +247,54 @@ async fn live_pliny_text() {
         .await
         .expect("pliny call");
     assert!(call.response.usage.output_tokens > 0, "{:?}", call.response);
+}
+
+#[tokio::test]
+#[ignore = "calls Pliny; needs PLINY_API_KEY and PLINY_BASE_URL"]
+async fn live_pliny_tool_round_trip() {
+    // The default profile, pliny, or the profile SYNTH_MODEL_PROFILE names.
+    let gateway = ModelGateway::start(committed_routing(), &[], &ProcessEnv)
+        .expect("set the PLINY_ variables");
+    let profile = gateway.default_profile().clone();
+    let mut first = request("", "Create a plate 100 mm long with the create_plate tool.");
+    first.max_output_tokens = 4000;
+    let call = gateway
+        .complete(&profile, first.clone(), &ctx())
+        .await
+        .expect("first call");
+    assert_eq!(
+        call.response.stop_reason,
+        ModelStopReason::ToolUse,
+        "{:?}",
+        call.response
+    );
+    // Pliny's model has no price.
+    assert!(call.cost_usd.is_none());
+
+    let mut follow_up = first;
+    follow_up.messages.push(Message {
+        role: Role::Assistant,
+        content: call.response.content.clone(),
+    });
+    follow_up.messages.push(Message {
+        role: Role::User,
+        content: call
+            .response
+            .content
+            .iter()
+            .filter_map(|b| match b {
+                ContentBlock::ToolCall { id, .. } => Some(ContentBlock::ToolResult {
+                    call_id: id.clone(),
+                    content: r#"{"part": "plate-1", "mass_kg": 0.42}"#.to_owned(),
+                    is_error: false,
+                }),
+                _ => None,
+            })
+            .collect(),
+    });
+    let answer = gateway
+        .complete(&profile, follow_up, &ctx())
+        .await
+        .expect("follow-up call with the tool result");
+    assert_ne!(answer.response.stop_reason, ModelStopReason::Refusal);
 }

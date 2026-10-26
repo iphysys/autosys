@@ -117,6 +117,6 @@ async fn a_missing_model_key_stops_startup_naming_it() {
     let config = TestConfig::new(&[]);
     let (check, message) = refused(setup(&config, fake_tools()), &vars(&db)).await;
     assert_eq!(check, "models", "{message}");
-    assert!(message.contains("ANTHROPIC_API_KEY"), "{message}");
+    assert!(message.contains("PLINY_API_KEY"), "{message}");
     db.drop().await;
 }

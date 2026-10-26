@@ -1,12 +1,12 @@
-//! The scripted model of the process tests, over the Messages API, for
-//! `testkit::fakes::FakeClaudeServer`. It answers from the tool results in
+//! The scripted model of the process tests, over chat completions, for
+//! `testkit::fakes::FakePlinyServer`. It answers from the tool results in
 //! each request, never from a count of calls, so a request sent again after
 //! a worker is killed gets the same reply.
 
 use std::collections::HashMap;
 
 use serde_json::{Value, json};
-use testkit::fakes::message;
+use testkit::fakes::{completion, tool_call};
 
 use super::{envelope_json, plate, propose_mass};
 
@@ -22,21 +22,25 @@ impl Seen {
         let mut tools: HashMap<String, String> = HashMap::new();
         let mut results: HashMap<String, Value> = HashMap::new();
         let mut calls = 0;
-        let blocks = request["messages"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .flat_map(|m| m["content"].as_array().into_iter().flatten());
-        for block in blocks {
-            match block["type"].as_str() {
-                Some("tool_use") => {
-                    let id = block["id"].as_str().unwrap_or_default().to_owned();
-                    tools.insert(id, block["name"].as_str().unwrap_or_default().to_owned());
-                    calls += 1;
+        let messages = request["messages"].as_array().into_iter().flatten();
+        for message in messages {
+            match message["role"].as_str() {
+                Some("assistant") => {
+                    for call in message["tool_calls"].as_array().into_iter().flatten() {
+                        let id = call["id"].as_str().unwrap_or_default().to_owned();
+                        let name = call["function"]["name"].as_str().unwrap_or_default();
+                        tools.insert(id, name.to_owned());
+                        calls += 1;
+                    }
                 }
-                Some("tool_result") if block["is_error"] != true => {
-                    let tool = tools.get(block["tool_use_id"].as_str().unwrap_or_default());
-                    let content = envelope_json(block["content"].as_str().unwrap_or_default());
+                // A failed tool's result starts with the adapter's `Error: `.
+                Some("tool") => {
+                    let text = message["content"].as_str().unwrap_or_default();
+                    if text.starts_with("Error: ") {
+                        continue;
+                    }
+                    let tool = tools.get(message["tool_call_id"].as_str().unwrap_or_default());
+                    let content = envelope_json(text);
                     if let (Some(tool), Some(content)) = (tool, content)
                         && content["status"] == "ok"
                     {
@@ -50,12 +54,8 @@ impl Seen {
     }
 
     fn use_tool(&self, name: &str, input: Value) -> Value {
-        message(vec![json!({
-            "type": "tool_use",
-            "id": format!("toolu_{}", self.calls + 1),
-            "name": name,
-            "input": input
-        })])
+        let id = format!("call_{}", self.calls + 1);
+        completion(None, vec![tool_call(&id, name, &input)])
     }
 
     /// The next step of the plate script: create `plate`, measure it, then
@@ -83,7 +83,7 @@ impl Seen {
                     .collect();
                 self.use_tool("sdr_propose", propose(&measured["result"], &evidence))
             }
-            (Some(_), Some(_), true) => message(vec![json!({ "type": "text", "text": "Done." })]),
+            (Some(_), Some(_), true) => completion(Some("Done."), vec![]),
         }
     }
 }

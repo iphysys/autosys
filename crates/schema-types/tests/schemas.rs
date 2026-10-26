@@ -80,10 +80,6 @@ const ROOT_TYPES: &[(&str, RoundTrip)] = &[
         round_trip::<schema_types::GatesPolicy>,
     ),
     (
-        "config/model-providers/anthropic.schema.json",
-        round_trip::<schema_types::AnthropicProviderSettings>,
-    ),
-    (
         "config/model-providers/openai-compatible.schema.json",
         round_trip::<schema_types::OpenAiCompatibleProviderSettings>,
     ),

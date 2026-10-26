@@ -52,7 +52,7 @@ struct Recording {
 }
 
 /// The replies of the recording at `path`, relative to the crate directory,
-/// for example `src/providers/anthropic/recordings/text.json`.
+/// for example `src/providers/openai_compatible/recordings/text.json`.
 pub(crate) fn recording(path: &str) -> Vec<Reply> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(path);
     let text = std::fs::read_to_string(&path)

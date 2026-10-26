@@ -40,7 +40,7 @@
       "properties": {
         "name": { "$ref": "../common/types.schema.json#/$defs/Identifier" },
         "provider": {
-          "description": "The name of a provider registered in the model gateway, such as anthropic or openai_compatible.",
+          "description": "The name of a provider registered in the model gateway, such as openai_compatible.",
           "$ref": "../common/types.schema.json#/$defs/Identifier"
         },
         "model": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },

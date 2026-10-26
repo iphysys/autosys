@@ -1,7 +1,7 @@
 [package]
 name = "synth-model-gateway"
 version = "0.1.0"
-description = "The model gateway: model profiles, provider adapters (Anthropic, OpenAI-compatible), retries and cost accounting (blueprint section 14.4, ADR-0027)."
+description = "The model gateway: model profiles, the OpenAI-compatible provider adapter (Pliny), retries and cost accounting (blueprint section 14.4, ADR-0027)."
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

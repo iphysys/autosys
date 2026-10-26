@@ -481,10 +481,18 @@ mod tests {
         let root = crate::workspace_root().expect("the workspace");
         let loader = infra::config::ConfigLoader::new(contracts::Environment::Production)
             .expect("the config schemas");
+        let mut config: contracts::types::ModelRouting = loader
+            .load(&root.join("config/models/routing.yaml"))
+            .expect("the routing");
+        // The committed Pliny model has no price; two priced example models
+        // exercise the arithmetic.
+        config.prices = serde_json::from_value(serde_json::json!([
+            { "model": "example-small", "input_usd_per_mtok": 0.10, "output_usd_per_mtok": 0.50 },
+            { "model": "example-large", "input_usd_per_mtok": 4.0, "output_usd_per_mtok": 20.0 }
+        ]))
+        .expect("prices");
         let routing = Routing::new(
-            loader
-                .load(&root.join("config/models/routing.yaml"))
-                .expect("the routing"),
+            config,
             Arc::new(model_gateway::providers::default_registry().expect("providers")),
             contracts::Environment::Production,
         )
@@ -497,21 +505,25 @@ mod tests {
             wall_time_seconds: 20.0,
         };
         let id = |m: &str| NonEmptyString::try_from(m.to_owned()).expect("an id");
-        // Haiku 5.5: 0.10 per input Mtok, 0.50 per output Mtok.
-        let haiku = cost_of(&routing, &[id("claude-haiku-5-5")], &usage);
+        // 0.10 per input Mtok, 0.50 per output Mtok.
+        let small = cost_of(&routing, &[id("example-small")], &usage);
         assert!(
-            (haiku.exact.expect("priced") - 0.15).abs() < 1e-12,
-            "{haiku:?}"
+            (small.exact.expect("priced") - 0.15).abs() < 1e-12,
+            "{small:?}"
         );
-        assert_eq!(haiku.exact, Some(haiku.bound));
+        assert_eq!(small.exact, Some(small.bound));
         let both = cost_of(
             &routing,
-            &[id("claude-haiku-5-5"), id("claude-opus-5-5")],
+            &[id("example-small"), id("example-large")],
             &usage,
         );
         assert_eq!(both.exact, None, "two models: no exact cost");
         assert!((both.bound - 6.0).abs() < 1e-12, "{both:?}");
-        let unpriced = cost_of(&routing, &[id("no-such-model")], &usage);
+        let unpriced = cost_of(
+            &routing,
+            &[id("snps-provider/nemotron-3-ultra-550b-a55")],
+            &usage,
+        );
         assert_eq!(
             unpriced,
             Cost {

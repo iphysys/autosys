@@ -38,8 +38,8 @@ mod tests {
             "main",
             vec![fake_profile("main", true)],
             json!([
-                { "model": "claude-opus-5-5", "input_usd_per_mtok": 4.0, "output_usd_per_mtok": 20.0 },
-                { "model": "claude-opus-4-8", "input_usd_per_mtok": 5.0, "output_usd_per_mtok": 25.0 }
+                { "model": "example-large", "input_usd_per_mtok": 4.0, "output_usd_per_mtok": 20.0 },
+                { "model": "example-larger", "input_usd_per_mtok": 5.0, "output_usd_per_mtok": 25.0 }
             ]),
         )
     }
@@ -59,8 +59,8 @@ mod tests {
         let cost = cost_usd(
             &routing(),
             &[
-                usage("claude-opus-5-5", 1_000_000, 0),
-                usage("claude-opus-4-8", 0, 1_000_000),
+                usage("example-large", 1_000_000, 0),
+                usage("example-larger", 0, 1_000_000),
             ],
         )
         .expect("both models are priced");
@@ -72,7 +72,7 @@ mod tests {
         assert_eq!(
             cost_usd(
                 &routing(),
-                &[usage("claude-opus-5-5", 10, 10), usage("unpriced", 10, 10)]
+                &[usage("example-large", 10, 10), usage("unpriced", 10, 10)]
             ),
             None
         );

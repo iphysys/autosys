@@ -312,7 +312,7 @@ pub const USAGE: TokenUsage = TokenUsage {
 
 fn response(content: Vec<ContentBlock>, stop_reason: ModelStopReason) -> ModelResponse {
     ModelResponse {
-        model_id: "claude-haiku-5-5".to_owned(),
+        model_id: "snps-provider/nemotron-3-ultra-550b-a55".to_owned(),
         content,
         stop_reason,
         usage: USAGE,
@@ -732,7 +732,7 @@ impl World {
         .expect("routing");
         let (profile, provider) = setup.provider.unwrap_or_else(|| {
             (
-                "haiku".to_owned(),
+                "pliny".to_owned(),
                 model.clone() as Arc<dyn ProviderAdapter>,
             )
         });

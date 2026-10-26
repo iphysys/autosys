@@ -1,6 +1,6 @@
 //! A real worker process is killed mid-run and another finishes the job
 //! (ADR-0031): the `worker` binary, the build123d server through its
-//! forwarder, and a fake Claude server on loopback that holds the third
+//! forwarder, and a fake Pliny server on loopback that holds the third
 //! model call. Worker A is killed while that call is in flight; worker B,
 //! a new process, reclaims the job once A's lease expires.
 //!
@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use bootstrap::{Overrides, WorkerSetup, build_worker};
 use contracts::types::JobState;
-use testkit::fakes::FakeClaudeServer;
+use testkit::fakes::FakePlinyServer;
 
 use crate::support::db::TestDb;
 use crate::support::*;
@@ -29,25 +29,19 @@ async fn a_killed_worker_process_is_recovered_by_the_next() {
     let tools = std::env::var("BUILD123D_URL")
         .expect("BUILD123D_URL must point at the build123d forwarder (cargo xtask test-tools)");
     let binary = worker_binary();
-    let server = FakeClaudeServer::start(plate_script::mass_only, Some(2)).await;
+    let server = FakePlinyServer::start(plate_script::mass_only, Some(2)).await;
     let db = TestDb::create().await;
     let worker_yaml = TEST_WORKER_YAML
         .replace("http://127.0.0.1:9/mcp", &tools)
         .replace("connect_timeout_ms: 1000", "connect_timeout_ms: 10000");
-    let routing = std::fs::read_to_string(repo_root().join("config/models/routing.yaml"))
-        .expect("the committed routing")
-        .replace(
-            "base_url: https://api.anthropic.com",
-            &format!("base_url: {}", server.base_url()),
-        );
     let config = TestConfig::new(&[
         ("worker.yaml", worker_yaml.as_str()),
-        ("models/routing.yaml", routing.as_str()),
         ("policies/autonomy.yaml", NO_APPROVALS_YAML),
     ]);
     let logs = tempfile::tempdir().expect("a log directory");
     let mut vars = vars(&db);
-    vars.insert("ANTHROPIC_API_KEY".to_owned(), "test-key".to_owned());
+    vars.insert("PLINY_API_KEY".to_owned(), "test-key".to_owned());
+    vars.insert("PLINY_BASE_URL".to_owned(), server.base_url());
 
     // Built like the processes, to seed and submit; it never runs.
     let watcher = build_worker(

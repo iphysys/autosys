@@ -37,7 +37,7 @@ use contracts::{
 use sdr::{CommitInfo, InitialVersion, Validation};
 use serde_json::{Value, json};
 use testkit::builders::{id, new_event, parse};
-use testkit::fakes::FakeTool;
+use testkit::fakes::{FAKE_PLINY_MODEL, FakeTool};
 use testkit::leases::{api_command, fenced_ctx, job_submit, project_create, unfenced_ctx};
 use tools::ServerTools;
 
@@ -119,7 +119,7 @@ pub fn vars(db: &TestDb) -> HashMap<String, String> {
     HashMap::from([
         ("DATABASE_URL".to_owned(), db.url().to_owned()),
         ("SYNTH_ENVIRONMENT".to_owned(), "test".to_owned()),
-        ("SYNTH_MODEL_PROFILE".to_owned(), "haiku".to_owned()),
+        ("SYNTH_MODEL_PROFILE".to_owned(), "pliny".to_owned()),
     ])
 }
 
@@ -294,7 +294,7 @@ pub fn next_step(request: &ModelRequest) -> ModelResponse {
 
 fn response(content: Vec<ContentBlock>, stop_reason: ModelStopReason) -> ModelResponse {
     ModelResponse {
-        model_id: "claude-haiku-5-5".to_owned(),
+        model_id: FAKE_PLINY_MODEL.to_owned(),
         content,
         stop_reason,
         usage: TokenUsage {
@@ -553,7 +553,7 @@ impl Parts {
 /// Builds a worker named `name` on `db` with `config` and `parts`.
 pub async fn build(name: &str, db: &TestDb, config: &TestConfig, parts: Parts) -> Arc<Worker> {
     let mut overrides = parts.overrides;
-    overrides.models = Some(BTreeMap::from([("haiku".to_owned(), parts.model)]));
+    overrides.models = Some(BTreeMap::from([("pliny".to_owned(), parts.model)]));
     overrides.tool_servers = Some(build123d(parts.create_plate, parts.measure));
     let setup = WorkerSetup {
         config_dir: config.path().to_owned(),

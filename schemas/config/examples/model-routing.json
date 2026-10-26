@@ -1,25 +1,24 @@
 {
   "schema_version": "0.2",
-  "default_profile": "example_claude",
+  "default_profile": "example_internal",
   "profiles": [
     {
-      "name": "example_claude",
-      "provider": "anthropic",
-      "model": "claude-haiku-5-5",
+      "name": "example_internal",
+      "provider": "openai_compatible",
+      "model": "example-provider/example-model",
       "tool_calling": true,
       "max_output_tokens": 16000,
       "request_timeout_seconds": 600,
       "retry": { "max_attempts": 3, "initial_backoff_ms": 1000, "max_backoff_ms": 30000 },
       "settings": {
-        "base_url": "https://api.anthropic.com",
-        "api_key_env": "ANTHROPIC_API_KEY",
-        "effort": "high"
+        "base_url_env": "EXAMPLE_BASE_URL",
+        "api_key_env": "EXAMPLE_API_KEY"
       }
     },
     {
-      "name": "example_internal",
+      "name": "example_text_only",
       "provider": "openai_compatible",
-      "model": "example-provider/example-model",
+      "model": "example-provider/example-small-model",
       "tool_calling": false,
       "max_output_tokens": 4096,
       "request_timeout_seconds": 120,
@@ -31,6 +30,6 @@
     }
   ],
   "prices": [
-    { "model": "claude-haiku-5-5", "input_usd_per_mtok": 0.1, "output_usd_per_mtok": 0.5 }
+    { "model": "example-provider/example-model", "input_usd_per_mtok": 0.1, "output_usd_per_mtok": 0.5 }
   ]
 }

@@ -97,7 +97,7 @@ fn benchmark_step(request: &ModelRequest) -> ModelResponse {
         (true, None, _) => step("measure", measure_args()),
         (true, Some(measured), false) => step("sdr_propose", propose_design(measured)),
         (true, Some(_), true) => ModelResponse {
-            model_id: "claude-haiku-5-5".to_owned(),
+            model_id: "snps-provider/nemotron-3-ultra-550b-a55".to_owned(),
             content: vec![ContentBlock::Text {
                 text: "The design is committed.".to_owned(),
             }],

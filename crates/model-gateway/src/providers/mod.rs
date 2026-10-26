@@ -9,7 +9,6 @@
 //! module and its settings schema, and remove its two lines here and its line
 //! in `crates/schema-types/tests/schemas.rs`.
 
-pub mod anthropic;
 pub mod openai_compatible;
 
 use std::sync::Arc;
@@ -31,10 +30,7 @@ pub use crate::http::CaBundle;
 
 /// The providers the harness ships with, in registration order.
 pub fn default_registry() -> Result<ProviderRegistry, Error> {
-    let factories: Vec<Arc<dyn ProviderFactory>> = vec![
-        Arc::new(anthropic::Factory),
-        Arc::new(openai_compatible::Factory),
-    ];
+    let factories: Vec<Arc<dyn ProviderFactory>> = vec![Arc::new(openai_compatible::Factory)];
     ProviderRegistry::new(factories)
 }
 
@@ -293,8 +289,8 @@ fn status_error(provider: &str, status: StatusCode, body: &str, request_id: Opti
         429 | 500..=599 => ErrorCode::Unavailable,
         _ => ErrorCode::Internal,
     };
-    // Both providers put `type` and `message` under `error`; the rest of the
-    // body is not kept.
+    // OpenAI-compatible servers put `type` and `message` under `error`; the
+    // rest of the body is not kept.
     let parsed: Option<Value> = serde_json::from_str(body).ok();
     let detail = parsed.as_ref().and_then(|v| v.get("error"));
     let kind = detail
@@ -385,9 +381,9 @@ mod tests {
 
     #[test]
     fn error_messages_keep_only_type_message_and_request_id() {
-        let body = r#"{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"},"request_id":"req_1","echo":"secret prompt"}"#;
+        let body = r#"{"error":{"type":"overloaded_error","message":"Overloaded"},"request_id":"req_1","echo":"secret prompt"}"#;
         let error = status_error(
-            "anthropic",
+            "openai_compatible",
             StatusCode::from_u16(529).expect("valid status"),
             body,
             Some("req_1"),

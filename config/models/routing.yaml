@@ -1,91 +1,32 @@
 # Model profiles for the model gateway (blueprint section 14.4, ADR-0027,
-# ADR-0028). Schema: schemas/config/model-routing.schema.json
+# ADR-0028, ADR-0036). Schema: schemas/config/model-routing.schema.json
 #
 # Choosing a model: each profile pairs a registered provider with one model,
-# and the profile name is the choice. The Claude models share the anthropic
-# provider:
+# and the profile name is the choice. This variant of the harness runs on
+# the internal Pliny platform only (ADR-0036):
 #
-#   haiku    claude-haiku-5-5    the default, the cheapest
-#   sonnet   claude-sonnet-5-5
-#   opus     claude-opus-5-5     the most capable
-#   pliny    the internal Pliny platform (no tool calling yet)
+#   pliny    the internal Pliny platform, the default
 #
 # An agent names a profile in its model_profile, or gets default_profile.
-# SYNTH_MODEL_PROFILE replaces the default for a run, for example
-# SYNTH_MODEL_PROFILE=opus. Another model of a registered provider is one
-# more profile here, with its price below; no code changes.
+# SYNTH_MODEL_PROFILE replaces the default for a run. Another model served
+# by Pliny is one more profile here, with its price below if it has one; no
+# code changes.
 #
 # `settings` belong to the profile's provider and follow its schema in
 # schemas/config/model-providers/. Keys and deployment endpoints are named by
 # environment variable (see .env.example) and never written here. A missing
 # variable of a profile in use fails at startup, naming it.
 schema_version: "0.2"
-default_profile: haiku
+default_profile: pliny
 profiles:
-  - name: haiku
-    provider: anthropic
-    model: claude-haiku-5-5
-    tool_calling: true
-    max_output_tokens: 16000
-    request_timeout_seconds: 600
-    retry:
-      max_attempts: 3
-      initial_backoff_ms: 1000
-      max_backoff_ms: 30000
-    settings:
-      base_url: https://api.anthropic.com
-      api_key_env: ANTHROPIC_API_KEY
-      # Needed only for a key that is not scoped to one workspace.
-      workspace_id_env: ANTHROPIC_WORKSPACE_ID
-      # Claude Haiku 5.5 defaults to medium.
-      effort: high
-      # No refusal_fallback: Claude Haiku 5.5 has no server-side fallback,
-      # so a declined request comes back as a refusal.
-
-  - name: sonnet
-    provider: anthropic
-    model: claude-sonnet-5-5
-    tool_calling: true
-    max_output_tokens: 16000
-    request_timeout_seconds: 600
-    retry:
-      max_attempts: 3
-      initial_backoff_ms: 1000
-      max_backoff_ms: 30000
-    settings:
-      base_url: https://api.anthropic.com
-      api_key_env: ANTHROPIC_API_KEY
-      workspace_id_env: ANTHROPIC_WORKSPACE_ID
-      effort: high
-      # A declined request runs again on the model the API picks for the
-      # refusal category; the response names the model that answered.
-      refusal_fallback: default
-
-  - name: opus
-    provider: anthropic
-    model: claude-opus-5-5
-    tool_calling: true
-    max_output_tokens: 16000
-    request_timeout_seconds: 600
-    retry:
-      max_attempts: 3
-      initial_backoff_ms: 1000
-      max_backoff_ms: 30000
-    settings:
-      base_url: https://api.anthropic.com
-      api_key_env: ANTHROPIC_API_KEY
-      workspace_id_env: ANTHROPIC_WORKSPACE_ID
-      # Claude Opus 5.5 defaults to medium.
-      effort: high
-      refusal_fallback: default
-
   # The internal Pliny platform, through its OpenAI-compatible endpoint.
   - name: pliny
     provider: openai_compatible
     model: snps-provider/nemotron-3-ultra-550b-a55
-    # Pliny does not return tool calls yet, so agents with tools cannot use
-    # this profile; the gateway refuses such an assignment at startup.
-    tool_calling: false
+    # Pliny returns tool calls (ADR-0036). The adapter's mapping is tested
+    # against hand-written chat-completions responses; a captured round trip
+    # follows once Pliny is reachable (docs/plans/pliny-tool-calling.md).
+    tool_calling: true
     max_output_tokens: 16000
     request_timeout_seconds: 600
     retry:
@@ -101,27 +42,6 @@ profiles:
       headers:
         X-TFY-LOGGING-CONFIG: '{"enabled":true}'
 
-# USD per million tokens, from platform.claude.com/docs/en/about-claude/pricing
-# (2026-10-24). Claude Haiku 5.5 is priced for prompts up to 100,000 tokens;
-# longer prompts cost five times as much, so their cost is under-reported.
-# Claude Sonnet 5, Opus 5 and Opus 4.8 are refusal-fallback targets. Pliny's
-# model has no price, so its calls report an unknown cost.
-prices:
-  - model: claude-haiku-5-5
-    input_usd_per_mtok: 0.10
-    output_usd_per_mtok: 0.50
-  - model: claude-sonnet-5-5
-    input_usd_per_mtok: 2.0
-    output_usd_per_mtok: 10.0
-  - model: claude-sonnet-5
-    input_usd_per_mtok: 2.0
-    output_usd_per_mtok: 10.0
-  - model: claude-opus-5-5
-    input_usd_per_mtok: 4.0
-    output_usd_per_mtok: 20.0
-  - model: claude-opus-5
-    input_usd_per_mtok: 5.0
-    output_usd_per_mtok: 25.0
-  - model: claude-opus-4-8
-    input_usd_per_mtok: 5.0
-    output_usd_per_mtok: 25.0
+# USD per million tokens. Pliny's model has no price, so its calls report an
+# unknown cost, never zero (ADR-0027), and the eval's cost cap does not bind.
+prices: []
