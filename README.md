@@ -257,12 +257,13 @@ synth run approve <run_id> <approval_id> --answer approve
 synth run report <run_id>
 ```
 
-`synth --help` lists every command: `run start|status|watch|approve|cancel|report`, `config show`, `doctor` and `completions <shell>`.
+`synth --help` lists every command: `run start|status|watch|approve|cancel|report|export`, `sdr show`, `artifact show|get`, `config show`, `doctor` and `completions <shell>`.
 
 - **Output.** On a terminal, `synth` prints a short human view: one line per event, the exact `synth run approve` command when a run asks for approval, and a requirement table for the report. When stdout is not a terminal, it prints the API's JSON unchanged, one event per line for `watch`. `--output human|json` overrides this, and `--color auto|always|never` sets the colour (`NO_COLOR` is honoured under `auto`).
 - **Settings.** Defaults < environment < flags. The API URL is `http://127.0.0.1:8080`, `SYNTH_API_URL` or `--api-url`. The state dir is `runtime-data/cli`, `SYNTH_STATE_DIR` or `--state-dir`. `SYNTH_API_TOKEN` holds the token and has no flag. `synth config show` prints each setting and where it came from. `synth doctor` checks the server, the token and the state dir.
 - **Watching.** `watch` journals every event under `<state dir>/runs/<run_id>/` before printing it, so run again it resumes after the last event it received, with no gaps or repeats. `watch --from-start` replays the run from its first event without touching that journal.
 - **Cancelling.** On a terminal, `run cancel` asks first unless given `--yes`.
+- **Outputs.** `run export <run_id>` saves the report, every SDR version up to the final one, the artifacts and, once the report is final, the events to `runtime-data/outputs/<run_id>/` (or `--out <dir>`). `sdr show <project_id> <version>` prints one version's parameters and decisions. `artifact show <id>` prints an artifact's metadata. `artifact get <id> --out <file>` saves its bytes; without `--out` it writes them to stdout, but only when stdout is not a terminal.
 - **Benchmarks.** `cargo xtask benchmark-request <id>` builds a dev problem's `RunRequest` with `evaluation::benchmarks::run_request`. Notes and expected outcomes never reach the run.
 
 `cargo xtask test-tools` runs the dev benchmark end to end through `synth`, `api-server` and two `worker` processes, one of them killed mid-run. To run the stack yourself, follow [Running a design run locally](docs/developer-guide/running-locally.md).

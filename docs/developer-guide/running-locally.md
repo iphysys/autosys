@@ -94,6 +94,23 @@ target/debug/synth run report <run_id>
 
 The report gives the stop reason and, for each requirement, its status and the evidence ids of the check findings that decided it. Pipe it, or pass `--output json`, for the full JSON. To stop a run early, use `synth run cancel <run_id> --reason "<why>"`. On a terminal it asks first; `--yes` skips the question.
 
+Save the run's outputs to a folder:
+
+```sh
+target/debug/synth run export <run_id>
+```
+
+It writes to `runtime-data/outputs/<run_id>/` (`--out <dir>` moves it):
+
+| File | Contents |
+| --- | --- |
+| `report.json` | the report, as `synth run report` prints it as JSON |
+| `sdr-v<N>.json` | each SDR version from 0 to the final one: the document, its commit record and the evidence it cites |
+| `artifacts/<artifact_id>.<format>` | the bytes of each artifact the report lists |
+| `events.jsonl` | every event of the run, written only once the report is final |
+
+On a terminal it then prints the stop reason, the requirement statuses and the final design's parameters and decisions. `synth sdr show <project_id> <version>` shows one version, and `synth artifact show <artifact_id>` one artifact's metadata. `synth artifact get <artifact_id> --out <file>` saves an artifact's bytes.
+
 ## 6. Try a crash
 
 Stop the worker with Ctrl-C mid-run, or kill it, and start it again. A stopped worker hands its job back at once. A killed one holds it until its lease expires (30 s with the committed `config/worker.yaml`). The new worker continues from the last checkpoint, and no tool call or commit happens twice ([ADR-0031](../adr/0031-scheduler-and-recovery-v0.md)). A `watch` left running sees every event once.
