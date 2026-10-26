@@ -339,8 +339,9 @@ async fn a_final_commit_asks_and_the_answer_decides() {
             approval_id,
             gate,
             subject_id,
+            rules,
             ..
-        } => Some((approval_id, gate, subject_id)),
+        } => Some((approval_id, gate, subject_id, rules)),
         _ => None,
     });
     assert_eq!(
@@ -348,9 +349,12 @@ async fn a_final_commit_asks_and_the_answer_decides() {
         Some((
             approval_id.clone(),
             id("approval.sdr_commit"),
-            id("tr-final")
-        ))
+            id("tr-final"),
+            vec![id("approve_final_design")],
+        )),
+        "the request names the rule that asked"
     );
+    assert_eq!(asked.outcome.rules, vec![id("approve_final_design")]);
 
     let again = f.commit_decision(&final_transition, &passing(), None).await;
     assert_eq!(again.approval_id, Some(approval_id), "the same approval");

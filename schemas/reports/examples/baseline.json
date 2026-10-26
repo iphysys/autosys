@@ -1,0 +1,55 @@
+{
+  "schema_version": "0.1",
+  "created_at": "2026-10-26T18:00:00Z",
+  "git_commit": "7b89cd3",
+  "agent_id": "main_orchestrator",
+  "repeat": 2,
+  "max_cost_usd": 5.0,
+  "approval_answer": "approve",
+  "truncated": false,
+  "model_ids": ["claude-haiku-5-5"],
+  "problems": [
+    {
+      "problem_id": "part_design_001",
+      "problem_sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+      "runs": [
+        {
+          "run_id": "run-a",
+          "stop_reason": "success",
+          "outcomes": [
+            {
+              "outcome_id": "stop_reason",
+              "result": "pass",
+              "checks": [{ "kind": "stop_reason", "result": "pass", "reason": "the stop reason is success" }]
+            }
+          ],
+          "usage": { "input_tokens": 40000, "output_tokens": 2000, "tool_calls": 4, "steps": 6, "wall_time_seconds": 50.5 },
+          "cost_usd": 0.005,
+          "model_ids": ["claude-haiku-5-5"]
+        },
+        {
+          "run_id": "run-b",
+          "error": "the run did not stop within 900 s",
+          "outcomes": [
+            {
+              "outcome_id": "stop_reason",
+              "result": "undecided",
+              "checks": [{ "kind": "stop_reason", "result": "undecided", "reason": "the run has no final report" }]
+            }
+          ],
+          "model_ids": []
+        }
+      ],
+      "summary": {
+        "runs": 2,
+        "all_outcomes_passed": 1,
+        "outcomes": [{ "outcome_id": "stop_reason", "passed": 1, "failed": 0, "undecided": 1, "pass_rate": 0.5 }],
+        "input_tokens": { "n": 1, "mean": 40000.0, "std_dev": 0.0, "min": 40000.0, "max": 40000.0 },
+        "output_tokens": { "n": 1, "mean": 2000.0, "std_dev": 0.0, "min": 2000.0, "max": 2000.0 },
+        "tool_calls": { "n": 1, "mean": 4.0, "std_dev": 0.0, "min": 4.0, "max": 4.0 },
+        "wall_time_seconds": { "n": 1, "mean": 50.5, "std_dev": 0.0, "min": 50.5, "max": 50.5 },
+        "cost_usd": { "n": 1, "mean": 0.005, "std_dev": 0.0, "min": 0.005, "max": 0.005 }
+      }
+    }
+  ]
+}

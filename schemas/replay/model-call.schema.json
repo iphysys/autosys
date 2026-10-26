@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ModelCallRecord",
+  "description": "One completed model call, for exact replay (ADR-0035). Keyed by the run and the seq of the call's context_assembled event. Content is stored as blobs, each the canonical JSON of one value keyed by its sha256, so a block sent by many calls is stored once.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "context_seq",
+    "context_hash",
+    "model_profile",
+    "model_id",
+    "max_output_tokens",
+    "system",
+    "messages",
+    "tools",
+    "response"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "run_id": { "$ref": "../common/types.schema.json#/$defs/RunId" },
+    "context_seq": {
+      "description": "The seq of the context_assembled event that recorded this call's context.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "context_hash": {
+      "description": "The logged context_hash. A replay rebuilt from the blobs must hash to it.",
+      "$ref": "../common/types.schema.json#/$defs/Sha256"
+    },
+    "model_profile": { "$ref": "../common/types.schema.json#/$defs/Identifier" },
+    "model_id": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+    "max_output_tokens": { "type": "integer", "minimum": 1 },
+    "system": {
+      "description": "The blob of the system prompt: a JSON string.",
+      "$ref": "../common/types.schema.json#/$defs/Sha256"
+    },
+    "messages": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ReplayMessage" }
+    },
+    "tools": {
+      "description": "The blob of the tool definitions: a JSON array of ReplayToolSpec.",
+      "$ref": "../common/types.schema.json#/$defs/Sha256"
+    },
+    "response": { "$ref": "#/$defs/ReplayResponse" }
+  },
+  "$defs": {
+    "ReplayMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "blocks"],
+      "properties": {
+        "role": { "type": "string", "enum": ["user", "assistant"] },
+        "blocks": {
+          "description": "The blob of each block, in order: a TurnBlock each.",
+          "type": "array",
+          "items": { "$ref": "../common/types.schema.json#/$defs/Sha256" }
+        }
+      }
+    },
+    "ReplayResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["blocks", "stop_reason", "usage"],
+      "properties": {
+        "blocks": {
+          "description": "The blob of each block of the reply, in order: a TurnBlock each.",
+          "type": "array",
+          "items": { "$ref": "../common/types.schema.json#/$defs/Sha256" }
+        },
+        "stop_reason": { "$ref": "#/$defs/ReplayStopReason" },
+        "usage": { "$ref": "../events/event.schema.json#/$defs/TokenUsage" }
+      }
+    },
+    "ReplayStopReason": {
+      "description": "Why the model stopped generating; not the run's stop reason.",
+      "type": "string",
+      "enum": ["end_turn", "tool_use", "max_tokens", "refusal"]
+    },
+    "ReplayToolSpec": {
+      "description": "One tool definition sent to the model.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "description", "input_schema"],
+      "properties": {
+        "name": { "$ref": "../common/types.schema.json#/$defs/ToolName" },
+        "description": { "type": "string" },
+        "input_schema": { "type": "object" }
+      }
+    }
+  }
+}

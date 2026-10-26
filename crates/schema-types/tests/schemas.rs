@@ -44,6 +44,10 @@ const ROOT_TYPES: &[(&str, RoundTrip)] = &[
     ),
     ("api/run.schema.json", round_trip::<schema_types::Run>),
     (
+        "api/sdr-version.schema.json",
+        round_trip::<schema_types::SdrVersionView>,
+    ),
+    (
         "artifacts/artifact.schema.json",
         round_trip::<schema_types::ArtifactMetadata>,
     ),
@@ -115,6 +119,14 @@ const ROOT_TYPES: &[(&str, RoundTrip)] = &[
     (
         "prompts/prompt-header.schema.json",
         round_trip::<schema_types::PromptHeader>,
+    ),
+    (
+        "replay/model-call.schema.json",
+        round_trip::<schema_types::ModelCallRecord>,
+    ),
+    (
+        "reports/baseline.schema.json",
+        round_trip::<schema_types::Baseline>,
     ),
     (
         "reports/run-report.schema.json",

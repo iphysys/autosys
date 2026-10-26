@@ -1,0 +1,128 @@
+{
+  "schema_version": "0.1",
+  "document": {
+    "schema_version": "0.1",
+    "project_id": "example-project",
+    "version": 2,
+    "parent_version": 1,
+    "requirements": [
+      {
+        "id": "req-mass",
+        "text": "The part mass shall not exceed 0.25 kg.",
+        "priority": "must",
+        "numeric": {
+          "parameter_id": "part.mass",
+          "criterion": {
+            "comparator": "le",
+            "limit": {
+              "value": 0.25,
+              "unit": "kg"
+            }
+          }
+        },
+        "evidence_ids": [
+          "ev-check-mass-1"
+        ]
+      }
+    ],
+    "design": {
+      "parameters": [
+        {
+          "id": "part.mass",
+          "value": {
+            "value": 0.212,
+            "unit": "kg"
+          },
+          "source": {
+            "kind": "tool_result",
+            "evidence_id": "ev-tool-measure-1"
+          },
+          "evidence_ids": [
+            "ev-tool-measure-1"
+          ]
+        }
+      ],
+      "decisions": [],
+      "assumptions": []
+    }
+  },
+  "record": {
+    "schema_version": "0.1",
+    "project_id": "example-project",
+    "version": 2,
+    "parent_version": 1,
+    "transition_id": "tr-0002",
+    "actor": {
+      "kind": "agent",
+      "agent_id": "main_orchestrator"
+    },
+    "reason": "Record the measured mass and the ribbed-section decision.",
+    "committed_at": "2026-10-22T09:04:14Z",
+    "evidence_ids": [
+      "ev-check-mass-1"
+    ],
+    "document_sha256": "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+    "harness": {
+      "harness_build": "synth 0.1.0 (example)",
+      "model_ids": [
+        "example-model-1"
+      ],
+      "prompts": [
+        {
+          "id": "orchestrator.main",
+          "version": "0.1.0",
+          "sha256": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+        }
+      ],
+      "skills": [],
+      "agent_specs": [
+        {
+          "id": "main_orchestrator",
+          "version": "0.1.0",
+          "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    }
+  },
+  "evidence": [
+    {
+      "schema_version": "0.1",
+      "id": "ev-check-mass-1",
+      "run_id": "run-0001",
+      "created_at": "2026-10-22T09:04:13.250Z",
+      "sdr_version": 2,
+      "subject_ids": [
+        "req-mass"
+      ],
+      "body": {
+        "kind": "check",
+        "check_id": "requirement.numeric_threshold",
+        "check_version": "0.1.0",
+        "method": "deterministic",
+        "inputs": [
+          {
+            "name": "part.mass",
+            "quantity": {
+              "value": 212,
+              "unit": "g"
+            },
+            "normalized": {
+              "value": 0.212,
+              "unit": "kg"
+            },
+            "source_evidence_id": "ev-tool-measure-1"
+          },
+          {
+            "name": "limit",
+            "quantity": {
+              "value": 0.25,
+              "unit": "kg"
+            }
+          }
+        ],
+        "verdict": "pass",
+        "message": "0.212 kg is at most 0.25 kg"
+      }
+    }
+  ]
+}

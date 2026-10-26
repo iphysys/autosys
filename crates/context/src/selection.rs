@@ -155,11 +155,13 @@ pub(crate) fn view(event: &Event) -> Option<EventView> {
                 reasons("reasons", gate_reasons),
             )
         }
+        // The rules are in the summary the model reads.
         P::ApprovalRequested {
             approval_id,
             gate,
             subject_id,
             summary,
+            rules: _,
         } => (
             Line::new(seq, "approval_requested")
                 .field("approval", approval_id.as_str())

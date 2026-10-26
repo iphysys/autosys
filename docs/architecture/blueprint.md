@@ -596,8 +596,9 @@ repo-root/
 │   ├── tools/
 │   ├── jobs/                       # job, wake condition, heartbeat lease
 │   ├── events/
+│   ├── replay/                     # model calls recorded for exact replay (ADR-0035)
 │   ├── artifacts/
-│   ├── reports/                    # run, improvement, and change reports
+│   ├── reports/                    # run, improvement, change, and baseline reports
 │   └── config/
 │
 ├── knowledge/                      # Tier I only; Tier II lives in runtime-data

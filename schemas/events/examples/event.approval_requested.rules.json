@@ -1,0 +1,16 @@
+{
+  "schema_version": "0.3",
+  "run_id": "run-0001",
+  "seq": 10,
+  "occurred_at": "2026-10-22T09:04:14Z",
+  "correlation_id": "corr-0005",
+  "actor": { "kind": "system", "component": "governance" },
+  "payload": {
+    "type": "approval_requested",
+    "approval_id": "appr-0001",
+    "gate": "approval",
+    "subject_id": "tr-0002",
+    "summary": "approve_final_design: Ask a human before committing the design the run intends to stop on.",
+    "rules": ["approve_final_design"]
+  }
+}

@@ -50,6 +50,10 @@ pub struct GateOutcome {
     pub decision: GateDecision,
     pub reasons: Vec<String>,
     pub evidence_ids: Vec<EvidenceId>,
+    /// The policy rules that matched, for an approval gate: what a human is
+    /// asked about, recorded with the request (ADR-0035). Empty for other
+    /// gates.
+    pub rules: Vec<Identifier>,
 }
 
 #[async_trait]

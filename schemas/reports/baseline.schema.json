@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Baseline",
+  "description": "Repeated benchmark runs and their spread (blueprint sections 16.4 and 18, ADR-0035). Written by cargo xtask eval; every score is decided from the run's report, its event log and its SDR versions, never from what the model wrote.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "created_at",
+    "git_commit",
+    "agent_id",
+    "repeat",
+    "max_cost_usd",
+    "approval_answer",
+    "truncated",
+    "model_ids",
+    "problems"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "created_at": { "$ref": "../common/types.schema.json#/$defs/Timestamp" },
+    "git_commit": {
+      "description": "The commit the harness was built from, as git describes it.",
+      "$ref": "../common/types.schema.json#/$defs/NonEmptyString"
+    },
+    "agent_id": { "$ref": "../common/types.schema.json#/$defs/AgentId" },
+    "repeat": {
+      "description": "The runs asked for per problem.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "max_cost_usd": { "type": "number", "exclusiveMinimum": 0 },
+    "approval_answer": {
+      "description": "How the eval answered every approval a run asked for: the baseline measures the loop with approvals granted.",
+      "type": "string",
+      "enum": ["approve"]
+    },
+    "truncated": {
+      "description": "True when the cost cap stopped the eval before every run was made.",
+      "type": "boolean"
+    },
+    "model_ids": {
+      "description": "Every model id the runs' reports name.",
+      "type": "array",
+      "items": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" }
+    },
+    "problems": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/BaselineProblem" }
+    }
+  },
+  "$defs": {
+    "BaselineProblem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["problem_id", "problem_sha256", "runs", "summary"],
+      "properties": {
+        "problem_id": { "$ref": "../common/types.schema.json#/$defs/Identifier" },
+        "problem_sha256": {
+          "description": "The canonical sha256 of the problem as loaded, so a score is traceable to the exact benchmark (blueprint section 9.4).",
+          "$ref": "../common/types.schema.json#/$defs/Sha256"
+        },
+        "runs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/BaselineRun" }
+        },
+        "summary": { "$ref": "#/$defs/BaselineSummary" }
+      }
+    },
+    "BaselineRun": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "outcomes", "model_ids"],
+      "properties": {
+        "run_id": { "$ref": "../common/types.schema.json#/$defs/RunId" },
+        "stop_reason": {
+          "description": "Absent when the run has no final report, for example when the eval gave up waiting.",
+          "$ref": "../common/types.schema.json#/$defs/StopReason"
+        },
+        "error": {
+          "description": "Why the run could not be scored in full, when it could not.",
+          "$ref": "../common/types.schema.json#/$defs/NonEmptyString"
+        },
+        "outcomes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/OutcomeScore" }
+        },
+        "usage": { "$ref": "../common/types.schema.json#/$defs/Usage" },
+        "cost_usd": {
+          "description": "Absent when a model the run used has no price.",
+          "type": "number",
+          "minimum": 0
+        },
+        "model_ids": {
+          "type": "array",
+          "items": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" }
+        }
+      }
+    },
+    "OutcomeScore": {
+      "description": "One expected outcome of the problem: it passes only when every check passes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome_id", "result", "checks"],
+      "properties": {
+        "outcome_id": { "$ref": "../common/types.schema.json#/$defs/Identifier" },
+        "result": { "$ref": "#/$defs/ScoreResult" },
+        "checks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/CheckScore" }
+        }
+      }
+    },
+    "CheckScore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "result", "reason"],
+      "properties": {
+        "kind": {
+          "description": "The kind of the outcome check (ADR-0025).",
+          "type": "string",
+          "enum": [
+            "stop_reason",
+            "parameters_present",
+            "requirements_passing",
+            "requirement_never_passing",
+            "parameter_matches_reference",
+            "approval_answered"
+          ]
+        },
+        "result": { "$ref": "#/$defs/ScoreResult" },
+        "reason": {
+          "description": "What the result was decided from, or what was missing to decide it.",
+          "$ref": "../common/types.schema.json#/$defs/NonEmptyString"
+        }
+      }
+    },
+    "ScoreResult": {
+      "description": "undecided: the run lacked what the check needs, so it does not pass.",
+      "type": "string",
+      "enum": ["pass", "fail", "undecided"]
+    },
+    "BaselineSummary": {
+      "description": "Over the problem's runs. A spread is absent when no run has the value.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runs", "all_outcomes_passed", "outcomes"],
+      "properties": {
+        "runs": { "type": "integer", "minimum": 0 },
+        "all_outcomes_passed": {
+          "description": "How many runs passed every outcome.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "outcomes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/OutcomeSummary" }
+        },
+        "input_tokens": { "$ref": "#/$defs/Spread" },
+        "output_tokens": { "$ref": "#/$defs/Spread" },
+        "tool_calls": { "$ref": "#/$defs/Spread" },
+        "wall_time_seconds": { "$ref": "#/$defs/Spread" },
+        "cost_usd": { "$ref": "#/$defs/Spread" }
+      }
+    },
+    "OutcomeSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome_id", "passed", "failed", "undecided", "pass_rate"],
+      "properties": {
+        "outcome_id": { "$ref": "../common/types.schema.json#/$defs/Identifier" },
+        "passed": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "undecided": { "type": "integer", "minimum": 0 },
+        "pass_rate": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "Spread": {
+      "description": "std_dev is the sample standard deviation (n - 1), 0 for a single run.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["n", "mean", "std_dev", "min", "max"],
+      "properties": {
+        "n": { "type": "integer", "minimum": 1 },
+        "mean": { "type": "number" },
+        "std_dev": { "type": "number", "minimum": 0 },
+        "min": { "type": "number" },
+        "max": { "type": "number" }
+      }
+    }
+  }
+}

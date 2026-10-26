@@ -7,9 +7,9 @@
   "required": ["schema_version", "run_id", "seq", "occurred_at", "correlation_id", "actor", "payload"],
   "properties": {
     "schema_version": {
-      "description": "0.2 adds the provenance fields of context_assembled and job_state_changed (ADR-0033). Events written as 0.1 stay valid.",
+      "description": "0.2 adds the provenance fields of context_assembled and job_state_changed (ADR-0033); 0.3 adds the rules of approval_requested (ADR-0035). Events written as 0.1 or 0.2 stay valid.",
       "type": "string",
-      "enum": ["0.1", "0.2"]
+      "enum": ["0.1", "0.2", "0.3"]
     },
     "run_id": { "$ref": "../common/types.schema.json#/$defs/RunId" },
     "seq": {
@@ -181,7 +181,12 @@
             "approval_id": { "$ref": "../common/types.schema.json#/$defs/ApprovalId" },
             "gate": { "$ref": "../common/types.schema.json#/$defs/Identifier" },
             "subject_id": { "$ref": "../common/types.schema.json#/$defs/Identifier" },
-            "summary": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" }
+            "summary": { "$ref": "../common/types.schema.json#/$defs/NonEmptyString" },
+            "rules": {
+              "description": "The autonomy rules that asked (config/policies/autonomy.yaml), so a reader never parses the summary (ADR-0035). Absent in events written before 0.3.",
+              "type": "array",
+              "items": { "$ref": "../common/types.schema.json#/$defs/Identifier" }
+            }
           }
         },
         {
