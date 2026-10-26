@@ -3312,7 +3312,9 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "serde_json",
+ "synth-api-client",
  "synth-context",
  "synth-contracts",
  "synth-evaluation",
@@ -3320,6 +3322,7 @@ dependencies = [
  "synth-model-gateway",
  "synth-runtime",
  "tempfile",
+ "tokio",
 ]
 
 [[package]]

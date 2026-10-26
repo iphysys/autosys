@@ -87,7 +87,7 @@
         },
         "usage": { "$ref": "../common/types.schema.json#/$defs/Usage" },
         "cost_usd": {
-          "description": "Absent when a model the run used has no price.",
+          "description": "Absent unless the cost is known exactly: one model, with a price.",
           "type": "number",
           "minimum": 0
         },
