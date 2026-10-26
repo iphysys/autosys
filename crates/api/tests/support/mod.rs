@@ -24,7 +24,7 @@ use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use testkit::builders::{agent_spec, completed, continuation, id, parse};
 use testkit::clock::ManualClock;
-use testkit::fakes::{FakeReports, FakeSubmitter};
+use testkit::fakes::{FakeReports, FakeSdrViews, FakeSubmitter};
 use testkit::leases::{LONG_LEASE, api_command};
 use testkit::stores::{InMemoryArtifactStore, InMemoryEventLog, InMemoryJobStore, sdr_storage};
 use tokio_util::sync::CancellationToken;
@@ -72,6 +72,12 @@ impl World {
                 vec![agent_spec(AGENT, None, &["sdr_read", "sdr_propose"])],
             )),
             reports: Arc::new(FakeReports::new(jobs.clone(), report)),
+            sdr: Arc::new(FakeSdrViews::new(vec![parse(
+                serde_json::from_str::<Value>(include_str!(
+                    "../../../../schemas/api/examples/sdr-version.json"
+                ))
+                .expect("the view example is JSON"),
+            )])),
             command: api_command(),
             actor: parse(json!({ "kind": "user", "user_id": "dev" })),
             clock: clock.clone(),

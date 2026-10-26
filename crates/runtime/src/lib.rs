@@ -20,8 +20,9 @@
 //!   at every phase boundary through a [`CheckpointSink`], as a
 //!   `ContinuationRecord`; a run then continues from the job store alone,
 //!   after a crash, a requeue or an approval (ADR-0031).
-//! - [`Submissions`] and [`Reports`] are what the API calls (ADR-0018):
-//!   they start the runs clients ask for, and serve their reports.
+//! - [`Submissions`], [`Reports`] and [`Views`] are what the API calls
+//!   (ADR-0018, ADR-0035): they start the runs clients ask for, serve their
+//!   reports, and serve committed SDR versions.
 //!
 //! Only `SdrManager` writes design state; the runtime reaches the SDR
 //! through it alone.
@@ -38,6 +39,7 @@ mod query_loop;
 mod reports;
 mod scheduler;
 mod sdr_tools;
+mod sdr_views;
 mod stop;
 mod tool_schemas;
 
@@ -50,3 +52,4 @@ pub use query_loop::{
 };
 pub use reports::Reports;
 pub use scheduler::{Ended, Scheduler, SchedulerSettings, Submissions, Tick};
+pub use sdr_views::Views;

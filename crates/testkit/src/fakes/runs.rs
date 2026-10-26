@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use contracts::ids::{Identifier, RunId, SdrVersion};
+use contracts::ids::{Identifier, ProjectId, RunId, SdrVersion};
 use contracts::types::{
     Actor, AgentSpec, Event, EventPayload, Job, JobState, JobStatus, NonEmptyString, RunReport,
-    RunRequest, SdrDocument, Timestamp,
+    RunRequest, SdrDocument, SdrVersionView, Timestamp,
 };
 use contracts::{
     Clock, Error, ErrorCode, EventLog, ExecutionContext, JobStore, NewEvent, RunReports,
-    RunSubmitter, SdrRepository, Submitted, job_state,
+    RunSubmitter, SdrRepository, SdrViews, Submitted, job_state,
 };
 use serde_json::json;
 use sha2::Digest;
@@ -237,6 +237,45 @@ impl RunReports for FakeReports {
                 Ok(report)
             }
         }
+    }
+}
+
+/// A [`SdrViews`] that serves the views it was given, by project and
+/// version.
+#[derive(Default)]
+pub struct FakeSdrViews {
+    views: Vec<SdrVersionView>,
+}
+
+impl FakeSdrViews {
+    pub fn new(views: Vec<SdrVersionView>) -> Self {
+        Self { views }
+    }
+}
+
+#[async_trait]
+impl SdrViews for FakeSdrViews {
+    async fn version(
+        &self,
+        project_id: &ProjectId,
+        version: &SdrVersion,
+        ctx: &ExecutionContext,
+    ) -> Result<SdrVersionView, Error> {
+        ctx.ensure_not_cancelled()?;
+        self.views
+            .iter()
+            .find(|v| &v.document.project_id == project_id && &v.document.version == version)
+            .cloned()
+            .ok_or_else(|| {
+                Error::new(
+                    ErrorCode::NotFound,
+                    format!(
+                        "version {} of project {} does not exist",
+                        version.0,
+                        project_id.as_str()
+                    ),
+                )
+            })
     }
 }
 

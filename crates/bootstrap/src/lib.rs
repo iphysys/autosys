@@ -44,6 +44,7 @@ use infra::persistence::{
 use model_gateway::{ModelGateway, ProviderAdapter, Routing};
 use runtime::{
     AgentRegistry, Components, Orchestrator, Reports, Scheduler, SchedulerSettings, Submissions,
+    Views,
 };
 use sdr::SdrManager;
 use tokio_util::task::TaskTracker;
@@ -457,6 +458,7 @@ pub async fn build_api(
         .map_err(|e| BootstrapError::other("api", e))?,
     );
     let io_timeout = Duration::from_millis(config.api.database.operation_timeout_ms.get());
+    let views = Arc::new(Views::new(sdr.clone(), evidence.clone(), io_timeout));
     let assembler = ReportAssembler::new(
         ReportSources {
             jobs: jobs.clone(),
@@ -479,6 +481,7 @@ pub async fn build_api(
         artifacts,
         submitter,
         reports: Arc::new(Reports::new(assembler)),
+        sdr: views,
         command: WriteAuthority::Unfenced(UnfencedReason::ApiCommand),
         actor,
         clock,

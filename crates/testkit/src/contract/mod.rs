@@ -29,6 +29,7 @@ mod replay_store;
 mod run_reports;
 mod run_submitter;
 mod sdr_repository;
+mod sdr_views;
 mod step_store;
 mod tool;
 
@@ -45,6 +46,7 @@ pub use replay_store::replay_store;
 pub use run_reports::{ReportsWorld, run_reports};
 pub use run_submitter::{SubmitterWorld, run_submitter};
 pub use sdr_repository::sdr_repository;
+pub use sdr_views::{SdrViewsWorld, sdr_views};
 pub use step_store::step_store;
 pub use tool::tool;
 

@@ -49,7 +49,7 @@ pub use model::{
     ToolSpec,
 };
 pub use replay::{ReplayBlob, ReplayCall};
-pub use runs::{RunReports, RunSubmitter, Submitted};
+pub use runs::{RunReports, RunSubmitter, SdrViews, Submitted};
 pub use schema::SchemaSet;
 pub use spawn::{BackgroundTask, Spawner, TaskHandle};
 pub use status::{ConsideredFinding, requirement_status};
