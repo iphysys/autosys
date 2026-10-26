@@ -11,6 +11,10 @@
 //! run approve <run_id> <approval_id> --answer <approve|reject> [--comment <text>]
 //! run cancel  <run_id> [--reason <text>] [--yes]
 //! run report  <run_id>
+//! run export  <run_id> [--out <dir>]
+//! sdr show    <project_id> <version>
+//! artifact show <artifact_id>
+//! artifact get  <artifact_id> [--out <file>]
 //! config show
 //! doctor
 //! completions <shell>

@@ -8,6 +8,8 @@
 //! sees the approval the autonomy policy asks for, and `synth run approve`
 //! answers it. The run completes with a stop reason the checks decided,
 //! and `synth run report` links every requirement to stored evidence.
+//! `synth run export` saves the report, every SDR version, the artifacts
+//! and the events.
 //!
 //! Ignored by default: it needs the forwarder (`BUILD123D_URL`) and the
 //! three binaries built. `cargo xtask test-tools` provides them.
@@ -23,7 +25,8 @@ use api_client::{Client, ClientConfig, ClientError, Token};
 use bootstrap::{API_TOKEN_ENV, Overrides, WorkerSetup, build_worker};
 use contracts::ids::RunId;
 use contracts::types::{
-    AgentSpec, Event, EventPayload, JobState, RequirementStatus, RunReport, StopReason, Verdict,
+    AgentSpec, ArtifactMetadata, Event, EventPayload, JobState, RequirementStatus, RunReport,
+    SdrVersionView, StopReason, Verdict,
 };
 use infra::benchmarks::BenchmarkLoader;
 use infra::config::ConfigLoader;
@@ -340,8 +343,8 @@ async fn the_dev_benchmark_runs_end_to_end_through_the_cli() {
 
     // 1 and 5. The report through the CLI: success, decided by checks, and
     // every requirement linked to evidence that exists.
-    let report: RunReport =
-        serde_json::from_str(&synth.run(&["run", "report", &run])).expect("the report as JSON");
+    let report_text = synth.run(&["run", "report", &run]);
+    let report: RunReport = serde_json::from_str(&report_text).expect("the report as JSON");
     assert!(report.final_);
     assert_eq!(report.stop_reason, StopReason::Success);
     let rows: HashMap<&str, _> = report
@@ -372,6 +375,48 @@ async fn the_dev_benchmark_runs_end_to_end_through_the_cli() {
                     )
                 });
         }
+    }
+
+    // The export: the report as `run report` prints it, every SDR version,
+    // the events as the watch journalled them, and each artifact whole.
+    let exported = scratch.path().join("export");
+    synth.run(&[
+        "run",
+        "export",
+        &run,
+        "--out",
+        exported.to_str().expect("a UTF-8 path"),
+    ]);
+    assert_eq!(
+        std::fs::read_to_string(exported.join("report.json")).expect("report.json"),
+        report_text
+    );
+    for version in 0..=report.final_sdr_version.0 {
+        let path = exported.join(format!("sdr-v{version}.json"));
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("{} is not written: {e}", path.display()));
+        let view: SdrVersionView = serde_json::from_str(&text)
+            .unwrap_or_else(|e| panic!("{} is not an SDR version: {e}", path.display()));
+        assert_eq!(view.document.version.0, version);
+    }
+    let next = report.final_sdr_version.0 + 1;
+    assert!(!exported.join(format!("sdr-v{next}.json")).exists());
+    let seqs = |events: Vec<Event>| events.iter().map(|e| e.seq).collect::<Vec<_>>();
+    assert_eq!(
+        seqs(journaled(&exported.join("events.jsonl"))),
+        seqs(journaled(&journal))
+    );
+    for listed in &report.artifacts {
+        let id = listed.artifact_id.as_str();
+        let metadata: ArtifactMetadata =
+            serde_json::from_str(&synth.run(&["artifact", "show", id])).expect("the metadata");
+        let path = exported
+            .join("artifacts")
+            .join(format!("{id}.{}", metadata.format.as_str()));
+        let length = std::fs::metadata(&path)
+            .unwrap_or_else(|e| panic!("{} is not written: {e}", path.display()))
+            .len();
+        assert_eq!(length, metadata.size_bytes, "{id}");
     }
 
     drop(watcher);
