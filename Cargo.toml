@@ -47,6 +47,10 @@ synth-testkit = { path = "crates/testkit" }
 synth-tools = { path = "crates/tools" }
 
 anyhow = "1.0"
+# Colour output of the synth CLI (ADR-0036): strips styles when stdout is not
+# a terminal or NO_COLOR is set, and turns on VT mode on Windows consoles.
+# The 1.0 line clap's color feature already brings in.
+anstream = "1.0"
 # The HTTP server of crates/api (ADR-0018): routing, extractors and
 # server-sent events on the hyper 1 and tower 0.5 already in the tree
 # through reqwest and rmcp. Features are chosen per crate.
@@ -54,6 +58,11 @@ axum = { version = "0.8", default-features = false }
 # Object-safe async traits (ADR-0015).
 async-trait = "0.1"
 chrono = { version = "0.4", default-features = false, features = ["serde", "std"] }
+# The synth CLI's command line (ADR-0036): help, usage errors, typo
+# suggestions and global flags from one derive definition.
+clap = { version = "4", features = ["derive"] }
+# Shell completions for the synth CLI, from the same clap definition (ADR-0036).
+clap_complete = "4"
 # The Stream trait of the query loop only (ADR-0030). Already in the tree
 # through rmcp and sqlx.
 futures-core = { version = "0.3", default-features = false, features = ["std"] }

@@ -1,7 +1,7 @@
 [package]
 name = "synth-cli"
 version = "0.1.0"
-description = "The synth CLI: a thin client of API v0 that starts, watches, approves, cancels and reports runs (ADR-0034)."
+description = "The synth CLI: a thin client of API v0 that starts, watches, approves, cancels and reports runs (ADR-0034, ADR-0036)."
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -15,7 +15,12 @@ path = "src/main.rs"
 synth-api-client.workspace = true
 
 # Allowed in binaries (blueprint section 13.1).
+anstream.workspace = true
 anyhow.workspace = true
+# Event times in local time (ADR-0036).
+chrono = { workspace = true, features = ["clock"] }
+clap.workspace = true
+clap_complete.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["net", "rt", "time"] }
