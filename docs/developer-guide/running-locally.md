@@ -4,12 +4,12 @@ This guide takes you from a clean checkout to a run of the dev benchmark on your
 
 ```text
 synth  --HTTP-->  api-server  <-->  PostgreSQL  <-->  worker  --MCP-->  build123d (Docker)
-                                                         \--HTTPS-->  Claude
+                                                         \--HTTPS-->  Pliny
 ```
 
 ## 1. Prerequisites
 
-Install what the README's [Prerequisites](../../README.md#prerequisites) section lists. To run, rather than develop, you need rustup and Docker with Compose. You also need an Anthropic API key.
+Install what the README's [Prerequisites](../../README.md#prerequisites) section lists. To run, rather than develop, you need rustup and Docker with Compose. You also need a Pliny API key and the base URL of Pliny's OpenAI-compatible endpoint, and Pliny must be reachable from your machine.
 
 ## 2. Environment
 
@@ -19,7 +19,9 @@ Copy `.env.example` to `.env`, which Git ignores, and fill in:
 | --- | --- |
 | `AUTOSYS_DB_PASSWORD` | A password for the local database |
 | `DATABASE_URL` | `postgres://autosys:<that password>@127.0.0.1:5432/autosys` |
-| `ANTHROPIC_API_KEY` | Your key; the model profiles in `config/models/routing.yaml` name it |
+| `PLINY_API_KEY` | Your key; the `pliny` profile in `config/models/routing.yaml` names it |
+| `PLINY_BASE_URL` | Pliny's OpenAI-compatible base URL, up to and excluding `/chat/completions`; `https` |
+| `INTERNAL_CA_BUNDLE` | Optional: a PEM bundle of internal CAs, if Pliny's certificate needs one |
 | `SYNTH_API_TOKEN` | A long random string, shared by `api-server` and `synth` ([ADR-0022](../adr/0022-dev-token-auth-increment-1.md)) |
 
 The binaries do not read `.env`, so export the variables in each shell you use:
@@ -56,7 +58,7 @@ cargo run -p synth-api-server -- --config config --prompts prompts
 cargo run -p synth-worker -- --config config --prompts prompts --id worker-1
 ```
 
-Both migrate the database at startup and stop with exit code 2 if a startup check fails, naming it. The API listens on `http://127.0.0.1:8080` (`config/api.yaml`). `SYNTH_MODEL_PROFILE` picks the model for the worker: `haiku` (the default), `sonnet` or `opus`.
+Both migrate the database at startup and stop with exit code 2 if a startup check fails, naming it. The API listens on `http://127.0.0.1:8080` (`config/api.yaml`). The worker uses the `pliny` profile, the only one ([ADR-0036](../adr/0036-pliny-only-variant.md)); `SYNTH_MODEL_PROFILE` picks another if you add one.
 
 ## 5. Run the benchmark
 
@@ -108,7 +110,7 @@ cargo xtask eval --repeat 5 --max-cost-usd 5
 
 - Each run is driven through the API, like `synth`. The eval answers every approval with `approve`, and the baseline records that it did.
 - Scores come from the run report, the event log and the SDR at every committed version, never from what the model wrote. A check the record cannot decide is `undecided`, which never counts as passing.
-- No run starts once the cost reaches `--max-cost-usd`, priced from `config/models/routing.yaml`. A run past its deadline (its wall-time budget plus 5 min, or `--deadline-seconds`) is cancelled.
+- No run starts once the cost reaches `--max-cost-usd`, priced from `config/models/routing.yaml`. Pliny's model has no price there, so on this branch the cap does not bind and the eval warns that each run's cost is unknown. A run past its deadline (its wall-time budget plus 5 min, or `--deadline-seconds`) is cancelled.
 - The worker's `SYNTH_MODEL_PROFILE` picks the model. The results go to `evals/baselines/<date>-<profile>/baseline.json`, checked against `schemas/reports/baseline.schema.json`. Use `--out <dir>` for another directory, and `--problem <id>` to run one problem.
 
 Every model call of a run is recorded for exact replay, whether or not the eval runs: the replay store keeps what each call sent and received, keyed by its `context_assembled` event.
@@ -120,7 +122,7 @@ Every model call of a run is recorded for exact replay, whether or not the eval 
 | `SYNTH_API_TOKEN must hold the API token` | The variable is not exported in the shell running `synth` |
 | `synth`: `401 permission_denied` | `synth` and `api-server` have different tokens |
 | `cannot reach the API` | `api-server` is not running, or `SYNTH_API_URL` points elsewhere |
-| The worker stops with a startup check about a key | `ANTHROPIC_API_KEY` is not exported in the worker's shell |
+| The worker stops with a startup check about a key | `PLINY_API_KEY` or `PLINY_BASE_URL` is not exported in the worker's shell |
 | A run fails on its first tool call | The forwarder is not up: start `build123d-forward` |
 | `eval`: `baseline.json exists` | A baseline was already recorded today for that profile: pass `--out` |
 

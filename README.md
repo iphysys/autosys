@@ -151,19 +151,16 @@ The isolation tests skip outside the compose network; only `cargo xtask test-too
 
 ## Model gateway
 
-`crates/model-gateway` is the harness side of every model call (blueprint §14.4, [ADR-0027](docs/adr/0027-model-gateway-providers.md), [ADR-0028](docs/adr/0028-pluggable-model-providers.md)). Two providers are registered behind `contracts::ModelProvider`:
-
-- `anthropic`: Claude through the Messages API;
-- `openai_compatible`: the internal Pliny platform.
+`crates/model-gateway` is the harness side of every model call (blueprint §14.4, [ADR-0027](docs/adr/0027-model-gateway-providers.md), [ADR-0028](docs/adr/0028-pluggable-model-providers.md)). This branch is the Pliny-only variant ([ADR-0036](docs/adr/0036-pliny-only-variant.md)): one provider is registered behind `contracts::ModelProvider`, `openai_compatible`, which serves the internal Pliny platform. No Claude model is used.
 
 Profiles are in `config/models/routing.yaml`. Each one names a provider, a model and the shared limits. Its `settings` follow the provider's schema in `schemas/config/model-providers/`.
 
-- **Choosing a model.** Each profile pairs a provider with one model. The Claude options all use the `anthropic` provider: `haiku` (Claude Haiku 5.5, the default and the cheapest), `sonnet` (Claude Sonnet 5.5) and `opus` (Claude Opus 5.5). Set `SYNTH_MODEL_PROFILE=opus`, for example, to use another for a run. An agent that names a profile in `model_profile` keeps it. Another model is one more profile and its price in the routing file; no code changes.
-- **Tool calling.** `pliny` has `tool_calling: false`, so `ModelGateway::start` refuses it for an agent with tools.
+- **Choosing a model.** Each profile pairs a provider with one model. `pliny` is the only profile and the default. `SYNTH_MODEL_PROFILE` picks another profile for a run, and an agent that names a profile in `model_profile` keeps it. Another model served by Pliny is one more profile in the routing file; no code changes.
+- **Tool calling.** `pliny` has `tool_calling: true`. `ModelGateway::start` refuses a profile with `tool_calling: false` for an agent with tools.
 - **Credentials.** Keys and the Pliny base URL come from environment variables (see `.env.example`). A missing one fails at startup, naming it.
 - **TLS.** Verification always uses the system's roots. `INTERNAL_CA_BUNDLE` adds a PEM bundle of internal CAs.
 - **Retries.** Rate limits, overload and timeouts are retried with a bound. Every request has a timeout and stops when its context is cancelled.
-- **Cost.** Each call reports its tokens and its cost at the prices in the routing file.
+- **Cost.** Each call reports its tokens and its cost at the prices in the routing file. Pliny's model has no price, so its cost is reported as unknown, never as zero.
 
 Each provider is one module, `crates/model-gateway/src/providers/<provider>/`: its adapter, its factory, its tests, its recordings and a live smoke test.
 
@@ -175,7 +172,7 @@ Each provider is one module, `crates/model-gateway/src/providers/<provider>/`: i
 
 To add a provider, do the same in reverse, plus its adapter.
 
-The tests replay hand-written provider responses from a loopback server, so CI needs no key. The smoke tests against the real providers are ignored by default; they need the keys and cost money. `SYNTH_MODEL_PROFILE` picks the Claude model:
+The tests replay hand-written provider responses from a loopback server, so CI needs no key. The smoke tests against Pliny are ignored by default; they need `PLINY_API_KEY` and `PLINY_BASE_URL`, and `SYNTH_MODEL_PROFILE` picks the profile:
 
 ```sh
 cargo test -p synth-model-gateway --lib -- --ignored --test-threads=1
@@ -209,7 +206,7 @@ cargo test -p synth-model-gateway --lib -- --ignored --test-threads=1
 - **The stream.** It yields every event of the run, read back from the event log in order, then the outcome. It is driven by polling, with no spawned task. A harness failure ends it with an error instead, and no `run_stopped` is written.
 - **Timeouts.** `config/runtime.yaml` holds the timeout of the loop's own reads and writes.
 
-`cargo test -p synth-runtime` runs every stop reason with a scripted model and fake build123d tools. The ignored live test checks that the Claude API accepts a context rebuilt in the middle of a tool-use turn. It needs `ANTHROPIC_API_KEY` and costs a few cents:
+`cargo test -p synth-runtime` runs every stop reason with a scripted model and fake build123d tools. The ignored live test checks that Pliny accepts a context rebuilt in the middle of a tool-use turn. It needs `PLINY_API_KEY` and `PLINY_BASE_URL`:
 
 ```sh
 cargo test -p synth-runtime --test live -- --ignored
@@ -323,6 +320,7 @@ A mass or other reference value is an arithmetic expression over parameter IDs. 
 | [0032](docs/adr/0032-lease-fencing.md) | Lease fencing | Proposed |
 | [0033](docs/adr/0033-run-report-v0.md) | Run report v0 | Proposed |
 | [0034](docs/adr/0034-cli-and-api-client.md) | The CLI, the API client and benchmark run requests | Proposed |
+| [0036](docs/adr/0036-pliny-only-variant.md) | A Pliny-only variant of the harness (this branch) | Proposed |
 
 ## License
 

@@ -1,6 +1,7 @@
 # Plan: tool calling on Pliny
 
 - Status: Ready, not scheduled. Start it once Pliny returns tool calls (the entry gate below).
+- On the `pliny-only` branch (ADR-0036): the flag is already `true`, the refusal test is already `pliny_serves_an_agent_with_tools`, and `live_pliny_tool_round_trip` exists. What is left there is the entry gate and the captured round trip (steps 2–4), once Pliny is reachable.
 - Prepared: 2026-10-24
 - Increment 1 plan entry: PR 9.2
 - Builds on: ADR-0027 (providers, the tool-calling flag), ADR-0028 (one module per provider)
