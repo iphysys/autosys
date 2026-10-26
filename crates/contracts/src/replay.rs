@@ -24,6 +24,7 @@ use crate::ids::{Identifier, RunId};
 use crate::model::{
     ContentBlock, Message, ModelRequest, ModelResponse, ModelStopReason, Role, ToolSpec,
 };
+use crate::storage::ReplayStore;
 
 /// One stored value of a replay record, keyed by the sha256 of its canonical
 /// JSON.
@@ -157,6 +158,22 @@ pub fn rebuild(
         usage: record.response.usage.clone(),
     };
     Ok((request, response))
+}
+
+/// The blobs `record` names, read from `store`, by hash: what [`rebuild`]
+/// takes.
+pub async fn fetch(
+    store: &dyn ReplayStore,
+    record: &ModelCallRecord,
+) -> Result<BTreeMap<String, Value>, Error> {
+    let mut blobs = BTreeMap::new();
+    for hash in blob_hashes(record) {
+        if !blobs.contains_key(hash.as_str()) {
+            let blob = store.blob(hash).await?;
+            blobs.insert(blob.sha256.as_str().to_owned(), blob.content);
+        }
+    }
+    Ok(blobs)
 }
 
 /// Every blob hash `record` names, in order, with repeats.

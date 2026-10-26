@@ -18,10 +18,10 @@ use crate::error::ContextError;
 
 const PREFIX: &[u8] = b"synth-context/v1\n";
 
-pub(crate) fn context_hash(
-    system: &str,
-    messages: &[Message],
-) -> Result<ContextHash, ContextError> {
+/// The hash of a context with this system prompt and these messages: what
+/// `context_assembled` logs, and what a replay is checked against
+/// (ADR-0035).
+pub fn context_hash(system: &str, messages: &[Message]) -> Result<ContextHash, ContextError> {
     let mut hasher = Sha256::new();
     hasher.update(PREFIX);
     hasher.update(b"S");

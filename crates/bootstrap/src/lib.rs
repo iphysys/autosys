@@ -31,15 +31,15 @@ use contracts::ids::Identifier;
 use contracts::types::{Actor, WorkerDatabase};
 use contracts::{
     ArtifactStore, Check, Clock, Environment, EventLog, EvidenceStore, ExecutionContext, Gate,
-    GateSubjectKind, JobStore, ModelProvider, SdrRepository, Spawner, StepStore, SystemClock,
-    UnfencedReason, WriteAuthority,
+    GateSubjectKind, JobStore, ModelProvider, ReplayStore, SdrRepository, Spawner, StepStore,
+    SystemClock, UnfencedReason, WriteAuthority,
 };
 use evaluation::Evaluator;
 use evaluation::checks::{NumericThresholdCheck, SchemaCheck, UnitsCheck};
 use governance::{ApprovalGate, GateRunner, SdrCommitGate, ToolPermissionGate};
 use infra::persistence::{
-    Database, PgArtifactStore, PgEventLog, PgEvidenceStore, PgJobStore, PgSdrRepository,
-    PgStepStore, PoolSettings,
+    Database, PgArtifactStore, PgEventLog, PgEvidenceStore, PgJobStore, PgReplayStore,
+    PgSdrRepository, PgStepStore, PoolSettings,
 };
 use model_gateway::{ModelGateway, ProviderAdapter, Routing};
 use runtime::{
@@ -142,6 +142,8 @@ pub struct Worker {
     pub events: Arc<dyn EventLog>,
     pub steps: Arc<dyn StepStore>,
     pub evidence: Arc<dyn EvidenceStore>,
+    /// Every completed model call, for exact replay (ADR-0035).
+    pub replay: Arc<dyn ReplayStore>,
     pub sdr: Arc<SdrManager>,
     tracker: TaskTracker,
 }
@@ -206,6 +208,7 @@ pub async fn build_worker(
         overrides.steps.take(),
     );
     let evidence: Arc<dyn EvidenceStore> = Arc::new(PgEvidenceStore::new(db.clone()));
+    let replay: Arc<dyn ReplayStore> = Arc::new(PgReplayStore::new(db.clone()));
     let storage = wrap(
         Arc::new(PgSdrRepository::new(db)) as Arc<dyn SdrRepository>,
         overrides.sdr_storage.take(),
@@ -326,6 +329,7 @@ pub async fn build_worker(
             evidence: evidence.clone(),
             commit_gates,
             models: Arc::new(models),
+            replay: replay.clone(),
             events: events.clone(),
             clock: clock.clone(),
             settings: config.runtime.clone(),
@@ -355,6 +359,7 @@ pub async fn build_worker(
         events,
         steps,
         evidence,
+        replay,
         sdr,
         tracker,
     })
