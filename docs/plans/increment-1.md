@@ -409,6 +409,14 @@ Settled while planning, and recorded in [ADR-0034](../adr/0034-cli-and-api-clien
 
 **Done when:** exit criterion 6 passes and the baseline is committed.
 
+Settled while planning, and recorded in [ADR-0035](../adr/0035-replay-store-and-evaluation.md) and an ADR-0025 amendment:
+- **The replay store keeps the full trace.** One record per completed model call, keyed by its `context_assembled` seq: the context's blocks, the tool definitions and the reply, each block stored once by its sha256. Unfenced, like evidence.
+- **An SDR version route.** `GET /v0/projects/{project_id}/sdr/versions/{version}` returns the document, its record and the evidence it cites, through `contracts::SdrViews`.
+- **Approvals name their rules.** `approval_requested` gains an optional `rules` (event schema 0.3), so scoring never parses text.
+- **Scoring is pure and reads check evidence.** Each check is pass, fail or undecided; requirement status uses the rule of the `success` stop.
+- **The baseline:** `haiku`, five runs of each dev problem, a $5 cap. `cargo xtask eval` answers approvals with `approve` and says so in the baseline.
+- **The Increment 1 exit edits** (ADR acceptances, §24, the question log) close this PR.
+
 ## Out of scope
 
 These are deliberately left out of Increment 1, so no crate or folder for them is created yet.
