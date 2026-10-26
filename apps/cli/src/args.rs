@@ -42,6 +42,12 @@ pub(crate) enum Command {
     /// Start, follow, answer, cancel and report runs.
     #[command(subcommand)]
     Run(RunCommand),
+    /// Show a committed version of a project's design.
+    #[command(subcommand)]
+    Sdr(SdrCommand),
+    /// Show an artifact's metadata or fetch its bytes.
+    #[command(subcommand)]
+    Artifact(ArtifactCommand),
     /// The CLI's own settings.
     #[command(subcommand)]
     Config(ConfigCommand),
@@ -97,6 +103,33 @@ pub(crate) enum RunCommand {
     },
     /// Show a run's report.
     Report { run: String },
+    /// Save a run's report, design versions, artifacts and events to a
+    /// directory.
+    Export {
+        run: String,
+        /// Where to write [default: runtime-data/outputs/<run_id>]
+        #[arg(long, value_name = "DIR")]
+        out: Option<PathBuf>,
+    },
+}
+
+#[derive(Debug, PartialEq, Subcommand)]
+pub(crate) enum SdrCommand {
+    /// Show one committed version: its parameters and decisions.
+    Show { project: String, version: u64 },
+}
+
+#[derive(Debug, PartialEq, Subcommand)]
+pub(crate) enum ArtifactCommand {
+    /// Show an artifact's metadata.
+    Show { artifact: String },
+    /// Fetch an artifact's bytes, to a file or to piped stdout.
+    Get {
+        artifact: String,
+        /// The file to write; required when stdout is a terminal.
+        #[arg(long, value_name = "FILE")]
+        out: Option<PathBuf>,
+    },
 }
 
 #[derive(Debug, PartialEq, Subcommand)]
@@ -241,6 +274,46 @@ mod tests {
             }
         );
         assert_eq!(
+            run(&["run", "export", "run-1"]),
+            RunCommand::Export {
+                run: "run-1".to_owned(),
+                out: None
+            }
+        );
+        assert_eq!(
+            run(&["run", "export", "run-1", "--out", "o"]),
+            RunCommand::Export {
+                run: "run-1".to_owned(),
+                out: Some("o".into())
+            }
+        );
+        assert_eq!(
+            parse(&["sdr", "show", "proj-1", "3"])
+                .map(|c| c.command)
+                .ok(),
+            Some(Command::Sdr(SdrCommand::Show {
+                project: "proj-1".to_owned(),
+                version: 3
+            }))
+        );
+        assert_eq!(
+            parse(&["artifact", "show", "art-1"])
+                .map(|c| c.command)
+                .ok(),
+            Some(Command::Artifact(ArtifactCommand::Show {
+                artifact: "art-1".to_owned()
+            }))
+        );
+        assert_eq!(
+            parse(&["artifact", "get", "art-1", "--out", "f.step"])
+                .map(|c| c.command)
+                .ok(),
+            Some(Command::Artifact(ArtifactCommand::Get {
+                artifact: "art-1".to_owned(),
+                out: Some("f.step".into())
+            }))
+        );
+        assert_eq!(
             parse(&["config", "show"]).map(|c| c.command).ok(),
             Some(Command::Config(ConfigCommand::Show))
         );
@@ -363,6 +436,14 @@ mod tests {
             ErrorKind::InvalidSubcommand
         );
         assert_eq!(usage_error(&["deploy"]), ErrorKind::InvalidSubcommand);
+        assert_eq!(
+            usage_error(&["sdr", "show", "proj-1", "latest"]),
+            ErrorKind::ValueValidation
+        );
+        assert_eq!(
+            usage_error(&["sdr", "show", "proj-1", "-1"]),
+            ErrorKind::UnknownArgument
+        );
         assert_eq!(
             usage_error(&["--output", "yaml", "doctor"]),
             ErrorKind::InvalidValue

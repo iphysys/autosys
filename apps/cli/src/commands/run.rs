@@ -1,14 +1,13 @@
-//! `synth run …`: start, status, watch, approve, cancel and report.
+//! `synth run …`: start, status, watch, approve, cancel, report and export.
 
 use std::io::{BufRead as _, IsTerminal as _, Write as _};
-use std::path::PathBuf;
 
 use anyhow::Context as _;
 use api_client::ids::{ApprovalId, RunId};
 use api_client::types::{ApprovalAnswerRequest, CancelRequest, RunRequest};
 use api_client::{Client, EventJournal, IdempotencyKey};
 
-use super::{api_error, print_human, print_json};
+use super::{Replay, api_error, export, print_human, print_json};
 use crate::Failure;
 use crate::args::RunCommand;
 use crate::render::event::Renderer;
@@ -156,6 +155,9 @@ pub(crate) async fn run(command: RunCommand, settings: &Settings) -> Result<(), 
                 print_json(&report)
             }
         }
+        RunCommand::Export { run, out } => {
+            export::export(&client, settings, &parse_run(&run)?, out).await
+        }
     }
 }
 
@@ -169,7 +171,7 @@ async fn watch(
     run: &RunId,
     from_start: bool,
 ) -> Result<(), Failure> {
-    let replay = from_start.then(|| Replay::new(run));
+    let replay = from_start.then(|| Replay::new("watch", run));
     let path = match &replay {
         Some(replay) => replay.0.join("events.jsonl"),
         None => settings
@@ -227,28 +229,6 @@ async fn watch(
     .and_then(|()| out.flush())
     .context("cannot print an event")?;
     Ok(())
-}
-
-/// The directory of a `--from-start` journal, removed when dropped.
-struct Replay(PathBuf);
-
-impl Replay {
-    fn new(run: &RunId) -> Self {
-        let dir = std::env::temp_dir().join(format!(
-            "synth-watch-{}-{}",
-            run.as_str(),
-            std::process::id()
-        ));
-        // Left by an earlier process with the same id: start it afresh.
-        let _ = std::fs::remove_dir_all(&dir);
-        Self(dir)
-    }
-}
-
-impl Drop for Replay {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
 }
 
 /// Whether `run cancel` asks first: only when someone at a terminal can

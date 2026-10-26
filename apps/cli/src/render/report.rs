@@ -1,6 +1,8 @@
 //! The human views of `run report` and `run status` (ADR-0036).
 
-use api_client::types::{JobStatus, ReportFinding, Run, RunReport, WakeCondition};
+use api_client::types::{
+    JobStatus, ReportFinding, RequirementStatusRow, Run, RunReport, WakeCondition,
+};
 
 use super::{MAX_WIDTH, Zone, sanitize, state_name, table};
 
@@ -29,14 +31,10 @@ pub(crate) fn report_lines(report: &RunReport) -> Vec<String> {
             .requirements
             .iter()
             .map(|row| {
-                let status = match &row.reason {
-                    Some(reason) => format!("{} ({reason})", row.status),
-                    None => row.status.to_string(),
-                };
                 vec![
                     row.requirement_id.as_str().to_owned(),
                     row.priority.to_string(),
-                    status,
+                    status_cell(row),
                     evidence(&row.evidence),
                 ]
             })
@@ -94,6 +92,14 @@ pub(crate) fn report_lines(report: &RunReport) -> Vec<String> {
         ));
     }
     lines
+}
+
+/// A requirement's status, with the reason when it has one.
+pub(crate) fn status_cell(row: &RequirementStatusRow) -> String {
+    match &row.reason {
+        Some(reason) => format!("{} ({reason})", row.status),
+        None => row.status.to_string(),
+    }
 }
 
 /// A requirement's findings by evidence id; a finding that did not count

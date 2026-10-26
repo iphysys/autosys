@@ -2,6 +2,7 @@
 //! short view of it. Text from the model, a tool or the server is untrusted:
 //! it goes through `sanitize` before it is printed.
 
+pub(crate) mod design;
 pub(crate) mod event;
 pub(crate) mod report;
 
