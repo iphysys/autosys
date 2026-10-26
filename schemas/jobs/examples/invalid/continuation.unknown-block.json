@@ -5,7 +5,7 @@
   "failures": 1,
   "harness": {
     "harness_builds": ["synth 0.1.0 (example)"],
-    "model_ids": ["claude-haiku-4-5"],
+    "model_ids": ["snps-provider/nemotron-3-ultra-550b-a55"],
     "prompts": [
       {
         "id": "orchestrator.main",
@@ -68,7 +68,7 @@
       "content": [
         {
           "type": "opaque",
-          "provider": "anthropic",
+          "provider": "example",
           "data": {
             "type": "thinking",
             "thinking": "Measure first.",

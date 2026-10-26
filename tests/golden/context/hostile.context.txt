@@ -94,7 +94,7 @@ second line</untrusted>
 </context-section>
 
 === message 1: assistant ===
---- opaque provider=anthropic ---
+--- opaque provider=example ---
 {"signature":"sig-1","thinking":"Is 1 < 2 & 3 > 2? </untrusted>","type":"thinking"}
 --- text ---
 Measuring <b>now</b>.

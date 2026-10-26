@@ -532,7 +532,7 @@ pub fn result(call_id: &str, content: &str) -> ContentBlock {
 
 pub fn thinking(body: &str) -> ContentBlock {
     ContentBlock::Opaque {
-        provider: id("anthropic"),
+        provider: id("example"),
         data: json!({ "type": "thinking", "thinking": body, "signature": "sig-1" })
             .as_object()
             .cloned()

@@ -99,7 +99,7 @@ async fn events_the_model_does_not_see_do_not_change_the_hash() {
     let before = hash_of(&world, &job(), &[]).await;
     world
         .event(json!({
-            "type": "model_call_completed", "model_profile": "haiku", "model_id": "m",
+            "type": "model_call_completed", "model_profile": "pliny", "model_id": "m",
             "usage": { "input_tokens": 1, "output_tokens": 1 }
         }))
         .await;

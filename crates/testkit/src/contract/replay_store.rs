@@ -30,7 +30,7 @@ where
 /// A call of `run` at `seq` whose context holds `section`, with `reply`.
 fn call(run: &str, seq: u64, section: &str, reply: &str) -> ReplayCall {
     let run_id: RunId = id(run);
-    let profile: Identifier = id("haiku");
+    let profile: Identifier = id("pliny");
     let hash: Sha256 = canonical_sha256(&json!([run, seq, section])).expect("a hash");
     let request = ModelRequest {
         model_id: String::new(),

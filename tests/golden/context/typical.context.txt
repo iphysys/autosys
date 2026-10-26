@@ -97,7 +97,7 @@ assumption {"id":"A-001","related_ids":[],"statement":"The plate is aluminium 60
 </context-section>
 
 === message 1: assistant ===
---- opaque provider=anthropic ---
+--- opaque provider=example ---
 {"signature":"sig-1","thinking":"The mass needs measuring.","type":"thinking"}
 --- text ---
 Measuring the plate.

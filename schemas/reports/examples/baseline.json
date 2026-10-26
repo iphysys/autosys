@@ -7,7 +7,7 @@
   "max_cost_usd": 5.0,
   "approval_answer": "approve",
   "truncated": false,
-  "model_ids": ["claude-haiku-5-5"],
+  "model_ids": ["snps-provider/nemotron-3-ultra-550b-a55"],
   "problems": [
     {
       "problem_id": "part_design_001",
@@ -25,7 +25,7 @@
           ],
           "usage": { "input_tokens": 40000, "output_tokens": 2000, "tool_calls": 4, "steps": 6, "wall_time_seconds": 50.5 },
           "cost_usd": 0.005,
-          "model_ids": ["claude-haiku-5-5"]
+          "model_ids": ["snps-provider/nemotron-3-ultra-550b-a55"]
         },
         {
           "run_id": "run-b",

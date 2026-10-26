@@ -451,7 +451,11 @@ mod tests {
     #[test]
     fn a_commit_records_the_build_the_models_the_prompts_and_the_agent_spec() {
         let build: NonEmptyString = "build-7".parse().expect("text");
-        let models: Vec<NonEmptyString> = vec!["claude-haiku-5-5".parse().expect("text")];
+        let models: Vec<NonEmptyString> = vec![
+            "snps-provider/nemotron-3-ultra-550b-a55"
+                .parse()
+                .expect("text"),
+        ];
         let prompts = [versioned("system.base"), versioned("orchestrator.main")];
         let spec = versioned("main_orchestrator");
         let recorded = harness(&Provenance {

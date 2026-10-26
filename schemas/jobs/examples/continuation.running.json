@@ -5,7 +5,7 @@
   "failures": 1,
   "harness": {
     "harness_builds": ["synth 0.1.0 (example)"],
-    "model_ids": ["claude-haiku-4-5"],
+    "model_ids": ["snps-provider/nemotron-3-ultra-550b-a55"],
     "prompts": [
       {
         "id": "orchestrator.main",
@@ -47,7 +47,7 @@
     "assistant": {
       "role": "assistant",
       "content": [
-        { "type": "opaque", "provider": "anthropic", "data": { "type": "thinking", "thinking": "Measure first.", "signature": "c2lnbmF0dXJl" } },
+        { "type": "opaque", "provider": "example", "data": { "type": "thinking", "thinking": "Measure first.", "signature": "c2lnbmF0dXJl" } },
         { "type": "text", "text": "I will build the plate, then measure it." },
         { "type": "tool_call", "id": "call-1", "name": "create_plate", "arguments": { "length_mm": 80, "width_mm": 40, "thickness_mm": 4 } },
         { "type": "tool_call", "id": "call-2", "name": "measure", "arguments": { "part_id": "part-step-3.1" } }

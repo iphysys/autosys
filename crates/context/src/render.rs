@@ -499,7 +499,7 @@ mod tests {
     #[test]
     fn only_tool_results_are_wrapped_and_the_rest_passes_through() {
         let thinking = ContentBlock::Opaque {
-            provider: "anthropic".parse().expect("id"),
+            provider: "example".parse().expect("id"),
             data: json!({ "type": "thinking", "thinking": "a < b", "signature": "sig" })
                 .as_object()
                 .cloned()

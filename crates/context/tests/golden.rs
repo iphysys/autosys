@@ -73,8 +73,8 @@ async fn typical() {
             "total_tokens": 3100, "sdr_version": 1, "last_event_seq": 1
         }),
         json!({
-            "type": "model_call_completed", "model_profile": "haiku",
-            "model_id": "claude-haiku-5-5", "usage": { "input_tokens": 3000, "output_tokens": 120 }
+            "type": "model_call_completed", "model_profile": "pliny",
+            "model_id": "snps-provider/nemotron-3-ultra-550b-a55", "usage": { "input_tokens": 3000, "output_tokens": 120 }
         }),
         json!({
             "type": "tool_call_started", "step_id": "step-1", "tool": "measure",

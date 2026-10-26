@@ -133,7 +133,7 @@ pub fn continuation(run_id: &str, version: u64) -> ContinuationRecord {
                 "content": [
                     {
                         "type": "opaque",
-                        "provider": "anthropic",
+                        "provider": "example",
                         "data": { "type": "thinking", "thinking": "Measure first.", "signature": "c2ln", "z": [3, 1, 2], "a": { "y": 1, "b": 2 } }
                     },
                     { "type": "tool_call", "id": "call-1", "name": "measure", "arguments": { "part_id": "p1" } }

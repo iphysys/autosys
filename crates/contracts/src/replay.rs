@@ -291,7 +291,7 @@ mod tests {
                     role: Role::Assistant,
                     content: vec![
                         ContentBlock::Opaque {
-                            provider: "anthropic".parse().expect("id"),
+                            provider: "example".parse().expect("id"),
                             data,
                         },
                         ContentBlock::ToolCall {
@@ -321,7 +321,7 @@ mod tests {
 
     fn response() -> ModelResponse {
         ModelResponse {
-            model_id: "claude-haiku-5-5".into(),
+            model_id: "snps-provider/nemotron-3-ultra-550b-a55".into(),
             content: vec![ContentBlock::Text {
                 // The same text as a block the request sent: stored once.
                 text: "<context-section name=\"task_contract\">…".into(),
@@ -337,7 +337,7 @@ mod tests {
     fn recorded() -> ReplayCall {
         let run_id: RunId = "run-1".parse().expect("id");
         let hash = canonical_sha256(&json!("context")).expect("hash");
-        let profile: Identifier = "haiku".parse().expect("id");
+        let profile: Identifier = "pliny".parse().expect("id");
         record_call(
             &CallKey {
                 run_id: &run_id,
@@ -365,7 +365,7 @@ mod tests {
         assert_eq!(
             request,
             ModelRequest {
-                model_id: "claude-haiku-5-5".into(),
+                model_id: "snps-provider/nemotron-3-ultra-550b-a55".into(),
                 ..self::request()
             }
         );

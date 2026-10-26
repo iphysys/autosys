@@ -98,7 +98,7 @@ parameter {"evidence_ids":[],"id":"part.mass","source":{"kind":"user"},"value":{
 </context-section>
 
 === message 1: assistant ===
---- opaque provider=anthropic ---
+--- opaque provider=example ---
 {"signature":"sig-1","thinking":"The mass needs measuring.","type":"thinking"}
 --- text ---
 Measuring the plate.

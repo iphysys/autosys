@@ -228,13 +228,13 @@ mod tests {
             "harness": { "harness_builds": ["b"], "model_ids": [], "prompts": [], "skills": [],
                 "agent_specs": [] },
             "committed": [], "evidence_ids": [],
-            "turn": [{ "role": "user", "content": [{ "type": "opaque", "provider": "anthropic",
+            "turn": [{ "role": "user", "content": [{ "type": "opaque", "provider": "example",
                 "data": { "b": 1, "a": { "z": 2, "y": 3 } } }] }]
         }))
         .expect("a record");
         let reordered: ContinuationRecord = serde_json::from_value(json!({
             "turn": [{ "content": [{ "data": { "a": { "y": 3, "z": 2 }, "b": 1 },
-                "provider": "anthropic", "type": "opaque" }], "role": "user" }],
+                "provider": "example", "type": "opaque" }], "role": "user" }],
             "evidence_ids": [], "committed": [], "failures": 0,
             "harness": { "skills": [], "prompts": [], "model_ids": [], "harness_builds": ["b"],
                 "agent_specs": [] },
@@ -295,7 +295,7 @@ mod tests {
         let message: Message = serde_json::from_value(json!({
             "role": "assistant",
             "content": [
-                { "type": "opaque", "provider": "anthropic",
+                { "type": "opaque", "provider": "example",
                   "data": { "type": "thinking", "signature": "c2ln", "z": [3, 1], "a": { "y": 1, "b": 2 } } },
                 { "type": "text", "text": "Measuring." },
                 { "type": "tool_call", "id": "c1", "name": "measure", "arguments": { "part_id": "p1" } },
