@@ -8,7 +8,8 @@ mod support;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use infra::persistence::{
-    PgArtifactStore, PgEventLog, PgEvidenceStore, PgJobStore, PgSdrRepository, PgStepStore,
+    PgArtifactStore, PgEventLog, PgEvidenceStore, PgJobStore, PgReplayStore, PgSdrRepository,
+    PgStepStore,
 };
 use support::TestDb;
 use testkit::contract;
@@ -122,6 +123,17 @@ async fn postgres_evidence_store() {
     contract::evidence_store(|| async {
         db.empty().await;
         PgEvidenceStore::new(db.database())
+    })
+    .await;
+    db.drop().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn postgres_replay_store() {
+    let db = TestDb::create().await;
+    contract::replay_store(|| async {
+        db.empty().await;
+        PgReplayStore::new(db.database())
     })
     .await;
     db.drop().await;

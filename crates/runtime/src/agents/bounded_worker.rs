@@ -23,11 +23,14 @@ use std::sync::Arc;
 
 use context::{AssembledContext, BuildRequest, ByteEstimate, ContextError, TokenCounter};
 use contracts::ids::{ApprovalId, SdrVersion, StepId};
+use contracts::replay::{CallKey, record_call};
 use contracts::types::{
     ApprovalAnswer, ElementKind, ErrorInfo, Event, EventPayload, Job, NonEmptyString, Requirement,
     SdrSlice, StopReason, Task, Usage,
 };
-use contracts::{Error, ErrorCode, EventKind, ExecutionContext, Gate, Message, Role, ToolSpec};
+use contracts::{
+    Error, ErrorCode, EventKind, ExecutionContext, Gate, Message, ModelRequest, Role, ToolSpec,
+};
 use governance::{GateRunner, WriteScopeGate};
 use model_gateway::ModelCall;
 use tokio::sync::mpsc;
@@ -551,9 +554,11 @@ impl Worker<'_> {
                 .deadline
                 .run(
                     &step_ctx,
-                    self.components
-                        .models
-                        .complete(&self.model.profile, request, &step_ctx),
+                    self.components.models.complete(
+                        &self.model.profile,
+                        request.clone(),
+                        &step_ctx,
+                    ),
                 )
                 .await;
             self.tick(state);
@@ -573,6 +578,7 @@ impl Worker<'_> {
                 }
             };
             self.account(state, &call);
+            self.record_call(&assembled, &request, &call).await?;
             self.model_call_completed(&assembled, &call).await?;
             self.forwarder.forward(state).await?;
 
@@ -786,6 +792,46 @@ impl Worker<'_> {
             .saturating_add(call.response.usage.output_tokens);
         used.steps += 1;
         state.job.progress.steps_completed += 1;
+    }
+
+    /// Stores the call for exact replay (ADR-0035), keyed by the seq of the
+    /// context's `context_assembled`. It comes before `model_call_completed`,
+    /// so every such event has a record; if it fails, the step fails.
+    async fn record_call(
+        &self,
+        assembled: &AssembledContext,
+        request: &ModelRequest,
+        call: &ModelCall,
+    ) -> Result<(), RuntimeError> {
+        let run_id = self
+            .ctx
+            .run_id()
+            .ok_or_else(|| RuntimeError::Internal("a model call without a run".to_owned()))?;
+        let context_seq = assembled.event_seq().ok_or_else(|| {
+            RuntimeError::Internal("a built context has no context_assembled seq".to_owned())
+        })?;
+        let recorded = record_call(
+            &CallKey {
+                run_id,
+                context_seq,
+                context_hash: assembled.hash(),
+                model_profile: &call.profile,
+            },
+            request,
+            &call.response,
+        )
+        .map_err(|source| RuntimeError::Component {
+            operation: "recording the model call",
+            source,
+        })?;
+        timed(
+            self.recorder.io_timeout,
+            "recording the model call",
+            self.components
+                .replay
+                .put_call(&recorded.record, &recorded.blobs),
+        )
+        .await
     }
 
     /// Appends `model_call_completed`, then compares the context's size

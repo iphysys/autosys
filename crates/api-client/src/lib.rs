@@ -6,11 +6,13 @@
 //! server does. [`Client::events`] streams a run's events and reconnects
 //! with `Last-Event-ID` when the connection breaks, so its caller sees
 //! every event once, in order. [`EventJournal`] keeps them on disk for a
-//! caller that stops and starts again.
+//! caller that stops and starts again. [`drive::drive`] runs one request to
+//! its end, answering its approvals, for evaluation (ADR-0035).
 //!
 //! Every request carries the development token (ADR-0022), which is never
 //! logged, and has a time limit.
 
+pub mod drive;
 mod error;
 mod journal;
 mod key;
@@ -21,10 +23,10 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
-use contracts::ids::{ApprovalId, ArtifactId, RunId};
+use contracts::ids::{ApprovalId, ArtifactId, ProjectId, RunId, SdrVersion};
 use contracts::types::{
     ApprovalAnswerRequest, ArtifactMetadata, CancelRequest, Event, JobState, Run, RunReport,
-    RunRequest,
+    RunRequest, SdrVersionView,
 };
 use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderValue};
 use reqwest::{Method, RequestBuilder, Response, StatusCode};
@@ -193,6 +195,21 @@ impl Client {
     /// `GET /v0/runs/{run_id}/report`.
     pub async fn report(&self, run_id: &RunId) -> Result<RunReport, ClientError> {
         let path = format!("/v0/runs/{}/report", run_id.as_str());
+        self.get_json(&path).await
+    }
+
+    /// `GET /v0/projects/{project_id}/sdr/versions/{version}`: a committed
+    /// version with its record and the evidence it cites (ADR-0035).
+    pub async fn sdr_version(
+        &self,
+        project_id: &ProjectId,
+        version: &SdrVersion,
+    ) -> Result<SdrVersionView, ClientError> {
+        let path = format!(
+            "/v0/projects/{}/sdr/versions/{}",
+            project_id.as_str(),
+            version.0
+        );
         self.get_json(&path).await
     }
 

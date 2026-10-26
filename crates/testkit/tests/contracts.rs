@@ -15,12 +15,12 @@ use testkit::builders::{
 };
 use testkit::contract::{self, FencedStores};
 use testkit::fakes::{
-    FakeCheck, FakeGate, FakeReports, FakeSubmitter, FakeTool, RecordedModelProvider,
+    FakeCheck, FakeGate, FakeReports, FakeSdrViews, FakeSubmitter, FakeTool, RecordedModelProvider,
     RecordingSubscriber, ScriptedModelProvider, text_response, tool_call_response,
 };
 use testkit::stores::{
     InMemoryArtifactStore, InMemoryEventLog, InMemoryEvidenceStore, InMemoryJobStore,
-    InMemorySdrRepository, InMemoryStepStore,
+    InMemoryReplayStore, InMemorySdrRepository, InMemoryStepStore,
 };
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -74,6 +74,11 @@ async fn in_memory_fencing() {
 #[tokio::test]
 async fn in_memory_evidence_store() {
     contract::evidence_store(|| async { InMemoryEvidenceStore::new() }).await;
+}
+
+#[tokio::test]
+async fn in_memory_replay_store() {
+    contract::replay_store(|| async { InMemoryReplayStore::new() }).await;
 }
 
 #[tokio::test]
@@ -251,6 +256,22 @@ async fn fake_reports() {
         reports: Arc::new(FakeReports::new(jobs, report)),
         not_stopped: id("run-2"),
         stopped: id("run-1"),
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn fake_sdr_views() {
+    let view = parse(
+        serde_json::from_str(include_str!(
+            "../../../schemas/api/examples/sdr-version.json"
+        ))
+        .expect("the view example is JSON"),
+    );
+    contract::sdr_views(contract::SdrViewsWorld {
+        views: Arc::new(FakeSdrViews::new(vec![view])),
+        project: id("example-project"),
+        committed: contracts::ids::SdrVersion(2),
     })
     .await;
 }

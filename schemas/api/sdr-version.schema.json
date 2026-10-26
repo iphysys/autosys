@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SdrVersionView",
+  "description": "One committed SDR version as a client reads it (ADR-0035): the document, its version record, and the evidence the record cites, so a client can decide requirement status with the same rule as the harness.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "document", "record", "evidence"],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["0.1"] },
+    "document": { "$ref": "../sdr/system.schema.json" },
+    "record": { "$ref": "../sdr/version.schema.json" },
+    "evidence": {
+      "description": "The evidence of record.evidence_ids, in that order.",
+      "type": "array",
+      "items": { "$ref": "../sdr/evidence.schema.json" }
+    }
+  }
+}

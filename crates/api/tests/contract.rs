@@ -226,6 +226,31 @@ async fn every_documented_response_conforms_to_the_document() {
         assert_eq!(checked.status, status, "{uri}");
     }
 
+    // getSdrVersion: the example view is version 2 of example-project.
+    let versions = "/v0/projects/example-project/sdr/versions";
+    for (uri, status) in [
+        (format!("{versions}/2"), StatusCode::OK),
+        (format!("{versions}/3"), StatusCode::NOT_FOUND),
+        (
+            "/v0/projects/project-unknown/sdr/versions/0".to_owned(),
+            StatusCode::NOT_FOUND,
+        ),
+        (format!("{versions}/two"), StatusCode::BAD_REQUEST),
+        (
+            "/v0/projects/bad%20id/sdr/versions/2".to_owned(),
+            StatusCode::BAD_REQUEST,
+        ),
+    ] {
+        let checked = contract
+            .check("getSdrVersion", w.send(get(&uri)).await)
+            .await;
+        assert_eq!(checked.status, status, "{uri}: {:?}", checked.json);
+        if status == StatusCode::OK {
+            assert_eq!(checked.json["record"]["version"], 2);
+            assert_eq!(checked.json["evidence"][0]["id"], "ev-check-mass-1");
+        }
+    }
+
     // getArtifact and getArtifactContent
     for (uri, status) in [
         ("/v0/artifacts/art-1", StatusCode::OK),
@@ -283,7 +308,9 @@ async fn every_documented_response_conforms_to_the_document() {
         let uri = path
             .replace("{run_id}", queued.as_str())
             .replace("{approval_id}", "appr-1")
-            .replace("{artifact_id}", "art-1");
+            .replace("{artifact_id}", "art-1")
+            .replace("{project_id}", "example-project")
+            .replace("{version}", "2");
         let operation = op["operationId"].as_str().expect("an id").to_owned();
         for token in [None, Some("Bearer wrong-token"), Some(TOKEN)] {
             let mut builder = Request::builder()

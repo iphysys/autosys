@@ -61,3 +61,15 @@ One expected outcome compares the reported mass with a closed-form formula of th
 - Blueprint §4.1, §9.4, §14.7, §16.4
 - ADR-0021; Increment 1 plan, PR 7 and PR 15
 - `schemas/benchmarks/benchmark-problem.schema.json`, `crates/infra/src/benchmarks/`, `evals/benchmarks/dev/`
+
+## Amendments
+
+### PR 15b: expressions are evaluation's
+
+The reference expression module moves from `infra::benchmarks::expression` to `evaluation::expression`, beside the scoring that evaluates it (ADR-0035). `infra` may not depend on `evaluation` (blueprint §10.3), so:
+
+- `BenchmarkLoader` checks the schema, identifiers and references, but no longer parses expressions;
+- `evaluation::benchmarks::expression_problems` reports an expression that does not parse or uses a variable it does not declare;
+- `cargo xtask validate-benchmarks` runs both, so CI checks exactly what it checked before.
+
+Outcomes are scored by `evaluation::outcomes` as ADR-0035 describes; the format is unchanged.

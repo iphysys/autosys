@@ -19,6 +19,7 @@ pub mod ids;
 pub mod job;
 pub mod model;
 pub mod provenance;
+pub mod replay;
 pub mod runs;
 pub mod schema;
 pub mod spawn;
@@ -47,12 +48,13 @@ pub use model::{
     ContentBlock, Message, ModelProvider, ModelRequest, ModelResponse, ModelStopReason, Role,
     ToolSpec,
 };
-pub use runs::{RunReports, RunSubmitter, Submitted};
+pub use replay::{ReplayBlob, ReplayCall};
+pub use runs::{RunReports, RunSubmitter, SdrViews, Submitted};
 pub use schema::SchemaSet;
 pub use spawn::{BackgroundTask, Spawner, TaskHandle};
 pub use status::{ConsideredFinding, requirement_status};
 pub use storage::{
     ArtifactStore, Claimed, EventLog, EvidenceStore, JobStore, JobWrite, NewEvent, NewStep, Parked,
-    RecordWrite, SdrRepository, StepStart, StepStore, WakeReason,
+    RecordWrite, ReplayStore, SdrRepository, StepStart, StepStore, WakeReason,
 };
 pub use tool::{Tool, ToolDescriptor, ToolOutput, ToolRequest};

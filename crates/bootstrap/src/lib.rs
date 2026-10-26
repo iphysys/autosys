@@ -31,19 +31,20 @@ use contracts::ids::Identifier;
 use contracts::types::{Actor, WorkerDatabase};
 use contracts::{
     ArtifactStore, Check, Clock, Environment, EventLog, EvidenceStore, ExecutionContext, Gate,
-    GateSubjectKind, JobStore, ModelProvider, SdrRepository, Spawner, StepStore, SystemClock,
-    UnfencedReason, WriteAuthority,
+    GateSubjectKind, JobStore, ModelProvider, ReplayStore, SdrRepository, Spawner, StepStore,
+    SystemClock, UnfencedReason, WriteAuthority,
 };
 use evaluation::Evaluator;
 use evaluation::checks::{NumericThresholdCheck, SchemaCheck, UnitsCheck};
 use governance::{ApprovalGate, GateRunner, SdrCommitGate, ToolPermissionGate};
 use infra::persistence::{
-    Database, PgArtifactStore, PgEventLog, PgEvidenceStore, PgJobStore, PgSdrRepository,
-    PgStepStore, PoolSettings,
+    Database, PgArtifactStore, PgEventLog, PgEvidenceStore, PgJobStore, PgReplayStore,
+    PgSdrRepository, PgStepStore, PoolSettings,
 };
 use model_gateway::{ModelGateway, ProviderAdapter, Routing};
 use runtime::{
     AgentRegistry, Components, Orchestrator, Reports, Scheduler, SchedulerSettings, Submissions,
+    Views,
 };
 use sdr::SdrManager;
 use tokio_util::task::TaskTracker;
@@ -142,6 +143,8 @@ pub struct Worker {
     pub events: Arc<dyn EventLog>,
     pub steps: Arc<dyn StepStore>,
     pub evidence: Arc<dyn EvidenceStore>,
+    /// Every completed model call, for exact replay (ADR-0035).
+    pub replay: Arc<dyn ReplayStore>,
     pub sdr: Arc<SdrManager>,
     tracker: TaskTracker,
 }
@@ -206,6 +209,7 @@ pub async fn build_worker(
         overrides.steps.take(),
     );
     let evidence: Arc<dyn EvidenceStore> = Arc::new(PgEvidenceStore::new(db.clone()));
+    let replay: Arc<dyn ReplayStore> = Arc::new(PgReplayStore::new(db.clone()));
     let storage = wrap(
         Arc::new(PgSdrRepository::new(db)) as Arc<dyn SdrRepository>,
         overrides.sdr_storage.take(),
@@ -326,6 +330,7 @@ pub async fn build_worker(
             evidence: evidence.clone(),
             commit_gates,
             models: Arc::new(models),
+            replay: replay.clone(),
             events: events.clone(),
             clock: clock.clone(),
             settings: config.runtime.clone(),
@@ -355,6 +360,7 @@ pub async fn build_worker(
         events,
         steps,
         evidence,
+        replay,
         sdr,
         tracker,
     })
@@ -452,6 +458,7 @@ pub async fn build_api(
         .map_err(|e| BootstrapError::other("api", e))?,
     );
     let io_timeout = Duration::from_millis(config.api.database.operation_timeout_ms.get());
+    let views = Arc::new(Views::new(sdr.clone(), evidence.clone(), io_timeout));
     let assembler = ReportAssembler::new(
         ReportSources {
             jobs: jobs.clone(),
@@ -474,6 +481,7 @@ pub async fn build_api(
         artifacts,
         submitter,
         reports: Arc::new(Reports::new(assembler)),
+        sdr: views,
         command: WriteAuthority::Unfenced(UnfencedReason::ApiCommand),
         actor,
         clock,

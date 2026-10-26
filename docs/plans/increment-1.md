@@ -409,6 +409,14 @@ Settled while planning, and recorded in [ADR-0034](../adr/0034-cli-and-api-clien
 
 **Done when:** exit criterion 6 passes and the baseline is committed.
 
+Settled while planning, and recorded in [ADR-0035](../adr/0035-replay-store-and-evaluation.md) and an ADR-0025 amendment:
+- **The replay store keeps the full trace.** One record per completed model call, keyed by its `context_assembled` seq: the context's blocks, the tool definitions and the reply, each block stored once by its sha256. Unfenced, like evidence.
+- **An SDR version route.** `GET /v0/projects/{project_id}/sdr/versions/{version}` returns the document, its record and the evidence it cites, through `contracts::SdrViews`.
+- **Approvals name their rules.** `approval_requested` gains an optional `rules` (event schema 0.3), so scoring never parses text.
+- **Scoring is pure and reads check evidence.** Each check is pass, fail or undecided; requirement status uses the rule of the `success` stop.
+- **The baseline:** `haiku`, five runs of each dev problem, a $5 cap. `cargo xtask eval` answers approvals with `approve` and says so in the baseline.
+- **The Increment 1 exit edits** (ADR acceptances, §24, the question log) close this PR.
+
 ## Out of scope
 
 These are deliberately left out of Increment 1, so no crate or folder for them is created yet.
@@ -445,10 +453,44 @@ The biggest risk is SDR v0 churning while the design workflow is still unsettled
 
 Increment 1 closes when every item below is ticked.
 
-- [ ] The six exit criteria in the scope section pass: in CI with recorded responses, and in `cargo xtask eval` with the live model.
-- [ ] The proposed ADRs (0015, 0016, 0020, 0021, 0022, 0027) are accepted, and decisions 3, 4 and 7 are recorded in the benchmark and config.
+- [ ] The six exit criteria in the scope section pass: in CI with scripted responses (`tests/system/cli_e2e.rs` for 1–5, `tests/system/eval.rs` for 6), and in `cargo xtask eval` with the live model.
+- [x] The proposed ADRs (0015, 0016, 0020, 0021, 0022, 0027) are accepted, and decisions 3, 4 and 7 are recorded in the benchmark and config: `evals/benchmarks/dev/part_design_001`, the `anthropic` and `pliny` profiles of `config/models/routing.yaml`, and the `approve_final_design` rule of `config/policies/autonomy.yaml`.
 - [ ] Baseline results are committed to `evals/baselines/`.
 - [ ] A new team member can run the benchmark from a clean checkout using the developer guide.
-- [ ] Questions raised during the increment are logged for Increment 2 planning.
+- [x] Questions raised during the increment are logged for Increment 2 planning (below).
 
-**Blueprint §24 needs a matching edit:** Increment 1's exit runs through the CLI instead of the UI, the frontend and BFF move to a later increment, and the numeric requirement check (decision 6) is added.
+**Blueprint §24 is edited to match (PR 15b):** Increment 1's exit runs through the CLI instead of the UI, the frontend and BFF move to a later increment, and the numeric requirement check (decision 6) is added.
+
+## Questions for Increment 2 planning
+
+Raised during Increment 1 and left open on purpose. Each names where it was raised.
+
+**Design model (blueprint §24, Increment 2)**
+- Fidelity on evidence and a required fidelity per requirement row; staleness from dependency invalidation (ADR-0033).
+- `waived`, from an approval-gate record that names the requirement and the version (ADR-0033).
+- A provenance check: a parameter's value and source must match the evidence it cites. Until then only `parameter_matches_reference` catches a fabricated value (PR 11).
+- Typed givens, for example as SDR version 0 parameters with source `user`, in a `RunRequest` 0.2 (ADR-0034).
+
+**Context and models**
+- Map a provider's "prompt too long" to `context_overflow`, with recordings (ADR-0029).
+- A `context_window` per model in the routing schema, and the limit `min(ceiling, window − max output − headroom)` (ADR-0029).
+- Blueprint §9.1: the improvement loop may change context profiles within the ceiling (ADR-0029).
+- An optional `context_profile` in agent specs once a second agent exists (ADR-0029).
+- Whether to drive `RecordedModelProvider` from replay records of live runs instead of hand-made recordings (ADR-0035).
+- Retention of replay blobs: nothing deletes them yet (ADR-0035).
+
+**Execution**
+- A repeat-with-the-same-key test for each build123d tool, then `idempotent: true` (ADR-0031).
+- A NOTIFY nudge inside the Postgres adapter, if polling proves slow (ADR-0031).
+- An ADR for `config/environments/` once a second environment needs its own values (ADR-0031).
+- Untrusted text in the `error` fields of the log (ADR-0032 amendment).
+- An optional `summary` on the finish call, copied into the report's narrative (ADR-0033).
+
+**Interface and evaluation**
+- Authorization per project (Open Decision 9); TypeScript client generation from `openapi.yaml`, with the frontend (PR 14).
+- The eval answers every approval with `approve`, so the baseline measures the loop with approvals granted. Whether a later baseline should exercise rejections (ADR-0035).
+- Whether the benchmark format needs a fidelity level and token or cost budgets, once the team sets them (ADR-0025).
+
+**Toward Increment 3 and 4**
+- The persistent Python kernel (ADR-0013, Open) and recursive sub-agents beyond delegation depth two (blueprint §2.6, ADR-0006) both diverge from the Prime Agent / RLM direction and need their own ADRs.
+- The wake condition for a parent waiting on a child, and the kernel crash point (ADR-0031).

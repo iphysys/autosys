@@ -1,0 +1,12 @@
+{
+  "schema_version": "0.1",
+  "run_id": "run-0001",
+  "context_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+  "model_profile": "haiku",
+  "model_id": "claude-haiku-5-5",
+  "max_output_tokens": 16000,
+  "system": "sha256:0000000000000000000000000000000000000000000000000000000000000002",
+  "messages": [],
+  "tools": "sha256:0000000000000000000000000000000000000000000000000000000000000007",
+  "response": { "blocks": [], "stop_reason": "end_turn", "usage": { "input_tokens": 1, "output_tokens": 1 } }
+}

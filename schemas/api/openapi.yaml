@@ -194,6 +194,27 @@ paths:
             application/json:
               schema: { $ref: "./error.schema.json" }
         default: { $ref: "#/components/responses/Error" }
+  /v0/projects/{project_id}/sdr/versions/{version}:
+    get:
+      operationId: getSdrVersion
+      summary: One committed SDR version.
+      description: >-
+        The document, its version record, and the evidence the record cites
+        (ADR-0035), so a client can decide requirement status with the
+        harness's own rule. Read only: the API never writes the SDR.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/SdrVersion"
+      responses:
+        "200":
+          description: The version.
+          content:
+            application/json:
+              schema: { $ref: "./sdr-version.schema.json" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        default: { $ref: "#/components/responses/Error" }
   /v0/artifacts/{artifact_id}:
     get:
       operationId: getArtifact
@@ -250,6 +271,16 @@ components:
       in: path
       required: true
       schema: { $ref: "../common/types.schema.json#/$defs/ArtifactId" }
+    ProjectId:
+      name: project_id
+      in: path
+      required: true
+      schema: { $ref: "../common/types.schema.json#/$defs/ProjectId" }
+    SdrVersion:
+      name: version
+      in: path
+      required: true
+      schema: { $ref: "../common/types.schema.json#/$defs/SdrVersion" }
   responses:
     BadRequest:
       description: The request is malformed or breaks its schema.

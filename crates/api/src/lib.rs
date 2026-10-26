@@ -4,8 +4,9 @@
 //! Commands are requests, not state edits. Starting a run goes to the
 //! [`RunSubmitter`]; an approval's answer and a cancel are events appended
 //! with the command authority bootstrap hands in (ADR-0032), which permits
-//! those two events and nothing else. Reads go to the stores and to
-//! [`RunReports`]. The API never writes the SDR or the job store itself.
+//! those two events and nothing else. Reads go to the stores, to
+//! [`RunReports`] and to [`SdrViews`]. The API never writes the SDR or the
+//! job store itself.
 //!
 //! Every request needs the development token (ADR-0022) and gets a
 //! correlation id, returned in `X-Correlation-Id` and in every error body.
@@ -18,6 +19,7 @@ mod events;
 mod reports;
 mod request;
 mod runs;
+mod sdr;
 
 use std::fmt;
 use std::sync::Arc;
@@ -30,7 +32,7 @@ use axum::routing::{get, post};
 use contracts::types::{Actor, ApiSettings};
 use contracts::{
     ArtifactStore, Clock, Error, ErrorCode, EventLog, JobStore, RunReports, RunSubmitter,
-    SchemaSet, WriteAuthority,
+    SchemaSet, SdrViews, WriteAuthority,
 };
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
@@ -98,6 +100,8 @@ pub struct Services {
     pub artifacts: Arc<dyn ArtifactStore>,
     pub submitter: Arc<dyn RunSubmitter>,
     pub reports: Arc<dyn RunReports>,
+    /// Committed SDR versions, read through the SDR manager (ADR-0035).
+    pub sdr: Arc<dyn SdrViews>,
     /// The authority of a client's command: it permits appending
     /// `approval_answered` and `cancel_requested` only.
     pub command: WriteAuthority,
@@ -148,6 +152,10 @@ pub fn router(services: Services, shutdown: CancellationToken) -> Result<Router,
             post(approvals::answer),
         )
         .route("/v0/runs/{run_id}/report", get(reports::get))
+        .route(
+            "/v0/projects/{project_id}/sdr/versions/{version}",
+            get(sdr::version),
+        )
         .route("/v0/artifacts/{artifact_id}", get(artifacts::metadata))
         .route(
             "/v0/artifacts/{artifact_id}/content",

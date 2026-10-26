@@ -75,6 +75,7 @@ impl Gate for FakeGate {
             decision,
             reasons: vec![reason.to_owned()],
             evidence_ids: Vec::new(),
+            rules: Vec::new(),
         })
     }
 }

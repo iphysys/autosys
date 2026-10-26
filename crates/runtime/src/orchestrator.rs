@@ -9,7 +9,9 @@ use std::sync::Arc;
 
 use context::{ContextBuilder, ContextProfiles};
 use contracts::types::{ApprovalAnswer, Job, NonEmptyString, RuntimeSettings};
-use contracts::{Clock, EventLog, EvidenceStore, ExecutionContext, Gate, GateSubjectKind};
+use contracts::{
+    Clock, EventLog, EvidenceStore, ExecutionContext, Gate, GateSubjectKind, ReplayStore,
+};
 use evaluation::Evaluator;
 use governance::SdrCommitGate;
 use model_gateway::ModelGateway;
@@ -41,6 +43,9 @@ pub struct Components {
     /// approval gate for SDR commits. Each run adds its task's write scope.
     pub commit_gates: Vec<Arc<dyn Gate>>,
     pub models: Arc<ModelGateway>,
+    /// Where every completed model call is recorded for exact replay
+    /// (ADR-0035).
+    pub replay: Arc<dyn ReplayStore>,
     /// The log every component appends to.
     pub events: Arc<dyn EventLog>,
     pub clock: Arc<dyn Clock>,

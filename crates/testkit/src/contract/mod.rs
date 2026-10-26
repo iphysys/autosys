@@ -25,9 +25,11 @@ mod fencing;
 mod gate;
 mod job_store;
 mod model_provider;
+mod replay_store;
 mod run_reports;
 mod run_submitter;
 mod sdr_repository;
+mod sdr_views;
 mod step_store;
 mod tool;
 
@@ -40,9 +42,11 @@ pub use fencing::{FencedStores, fencing};
 pub use gate::gate;
 pub use job_store::job_store;
 pub use model_provider::{model_provider, model_provider_tool_round_trip};
+pub use replay_store::replay_store;
 pub use run_reports::{ReportsWorld, run_reports};
 pub use run_submitter::{SubmitterWorld, run_submitter};
 pub use sdr_repository::sdr_repository;
+pub use sdr_views::{SdrViewsWorld, sdr_views};
 pub use step_store::step_store;
 pub use tool::tool;
 

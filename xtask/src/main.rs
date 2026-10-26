@@ -7,6 +7,7 @@
 
 mod arch_check;
 mod codegen;
+mod eval;
 mod tool_servers;
 
 use std::collections::BTreeSet;
@@ -31,10 +32,18 @@ Tasks:
                 the runtime's agent registry: prompt, tools, skills, result schema and
                 repair behavior (ADR-0030)
   validate-benchmarks
-                Every problem in evals/benchmarks/ against its schema (blueprint 14.7)
+                Every problem in evals/benchmarks/ against its schema (blueprint 14.7), and
+                its reference expressions through evaluation (ADR-0025)
   benchmark-request <problem-id> [--agent <agent-id>]
                 Prints the RunRequest that starts a run on a dev benchmark problem, for
                 `synth run start` (ADR-0034); the agent defaults to main_orchestrator
+  eval [--problem <id>]... [--repeat <n>] [--max-cost-usd <usd>] [--agent <id>]
+       [--out <dir>] [--deadline-seconds <s>]
+                Runs each dev benchmark problem n times (5) through a running api-server
+                (SYNTH_API_URL, SYNTH_API_TOKEN), answering approvals with approve, scores
+                every expected outcome and writes the baseline with its spread to
+                evals/baselines/<date>-<profile>/baseline.json (ADR-0035). No run starts
+                once the cost reaches the cap ($5)
   codegen [--check]
                 Python models for the tool servers from schemas/tools/ (blueprint 7.1);
                 --check fails if the committed models differ
@@ -69,6 +78,16 @@ fn run() -> Result<()> {
         Some("benchmark-request") => {
             let (problem, agent) = benchmark_request_args(std::env::args().skip(2))?;
             benchmark_request(&workspace_root()?, &problem, &agent)
+        }
+        Some("eval") => {
+            let args = eval::parse_args(std::env::args().skip(2)).map_err(|e| {
+                anyhow::anyhow!(
+                    "{e:#}
+
+{USAGE}"
+                )
+            })?;
+            eval::run(&workspace_root()?, args)
         }
         Some("test-tools") => tool_servers::run(&workspace_root()?),
         Some("-h" | "--help") => {
@@ -210,7 +229,7 @@ fn arch_check(root: &Path) -> Result<()> {
 
 /// The environment `SYNTH_ENVIRONMENT` names; unset is production, which is
 /// what the committed `config/` is.
-fn environment() -> Result<contracts::Environment> {
+pub(crate) fn environment() -> Result<contracts::Environment> {
     let value = std::env::var(contracts::Environment::VAR).ok();
     contracts::Environment::from_var(value.as_deref()).map_err(|e| anyhow::anyhow!("{e}"))
 }
@@ -406,14 +425,55 @@ fn validate_benchmarks(root: &Path) -> Result<()> {
     let rules: BTreeSet<String> = policy.approvals.iter().map(|r| r.id.to_string()).collect();
     let loader =
         infra::benchmarks::BenchmarkLoader::new().context("loading the benchmark schema")?;
-    let problems = loader
-        .validate_dir(&root.join("evals/benchmarks"), &rules)
+    let benchmarks = root.join("evals/benchmarks");
+    let mut problems = loader
+        .validate_dir(&benchmarks, &rules)
         .context("reading evals/benchmarks/")?;
+    // Reference expressions are evaluation's to parse (ADR-0025 amendment).
+    // A problem that does not load is already reported above.
+    for path in problem_files(&benchmarks)? {
+        if let Ok(problem) = loader.load(&path) {
+            problems.extend(
+                evaluation::benchmarks::expression_problems(&problem)
+                    .into_iter()
+                    .map(|p| format!("{}: {p}", path.display())),
+            );
+        }
+    }
     if !problems.is_empty() {
         bail!("invalid benchmarks:\n  - {}", problems.join("\n  - "));
     }
     eprintln!("xtask: validate-benchmarks: passed");
     Ok(())
+}
+
+/// Every `<split>/<id>/problem.yaml` under `benchmarks`, sorted.
+pub(crate) fn problem_files(benchmarks: &Path) -> Result<Vec<PathBuf>> {
+    let mut files = Vec::new();
+    for split in read_dirs(benchmarks)? {
+        for problem in read_dirs(&split)? {
+            let file = problem.join(infra::benchmarks::PROBLEM_FILE);
+            if file.is_file() {
+                files.push(file);
+            }
+        }
+    }
+    files.sort();
+    Ok(files)
+}
+
+/// The directories directly inside `dir`.
+fn read_dirs(dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut dirs = Vec::new();
+    for entry in std::fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
+        let path = entry
+            .with_context(|| format!("reading {}", dir.display()))?
+            .path();
+        if path.is_dir() {
+            dirs.push(path);
+        }
+    }
+    Ok(dirs)
 }
 
 /// The agent a benchmark request names unless `--agent` says otherwise.
@@ -515,7 +575,7 @@ fn cargo(root: &Path) -> Command {
     cmd
 }
 
-fn workspace_root() -> Result<PathBuf> {
+pub(crate) fn workspace_root() -> Result<PathBuf> {
     let manifest_dir = std::env::var_os("CARGO_MANIFEST_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")));

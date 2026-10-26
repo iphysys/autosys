@@ -19,9 +19,14 @@ synth-model-gateway.workspace = true
 # Agent spec checks: the runtime's own agent registry (ADR-0030).
 synth-runtime.workspace = true
 
+# cargo xtask eval drives runs through the client the CLI uses (ADR-0035).
+synth-api-client.workspace = true
+
 anyhow.workspace = true
+chrono = { workspace = true, features = ["clock"] }
 serde_json.workspace = true
 tempfile.workspace = true
+tokio = { workspace = true, features = ["rt", "time"] }
 
 [lints]
 workspace = true

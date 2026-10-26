@@ -98,6 +98,21 @@ The report gives the stop reason and, for each requirement, its status and the c
 
 Stop the worker with Ctrl-C mid-run, or kill it, and start it again. A stopped worker hands its job back at once. A killed one holds it until its lease expires (30 s with the committed `config/worker.yaml`). The new worker continues from the last checkpoint, and no tool call or commit happens twice ([ADR-0031](../adr/0031-scheduler-and-recovery-v0.md)). A `watch` left running sees every event once.
 
+## 7. Record the baseline
+
+`cargo xtask eval` runs each dev benchmark problem several times against the running stack, scores every expected outcome and writes the results with their spread ([ADR-0035](../adr/0035-replay-store-and-evaluation.md)). With `api-server` and a worker running as in section 4, and `SYNTH_API_TOKEN` exported in the shell:
+
+```sh
+cargo xtask eval --repeat 5 --max-cost-usd 5
+```
+
+- Each run is driven through the API, like `synth`. The eval answers every approval with `approve`, and the baseline records that it did.
+- Scores come from the run report, the event log and the SDR at every committed version, never from what the model wrote. A check the record cannot decide is `undecided`, which never counts as passing.
+- No run starts once the cost reaches `--max-cost-usd`, priced from `config/models/routing.yaml`. A run past its deadline (its wall-time budget plus 5 min, or `--deadline-seconds`) is cancelled.
+- The worker's `SYNTH_MODEL_PROFILE` picks the model. The results go to `evals/baselines/<date>-<profile>/baseline.json`, checked against `schemas/reports/baseline.schema.json`. Use `--out <dir>` for another directory, and `--problem <id>` to run one problem.
+
+Every model call of a run is recorded for exact replay, whether or not the eval runs: the replay store keeps what each call sent and received, keyed by its `context_assembled` event.
+
 ## Troubleshooting
 
 | Symptom | Cause |
@@ -107,6 +122,7 @@ Stop the worker with Ctrl-C mid-run, or kill it, and start it again. A stopped w
 | `cannot reach the API` | `api-server` is not running, or `SYNTH_API_URL` points elsewhere |
 | The worker stops with a startup check about a key | `ANTHROPIC_API_KEY` is not exported in the worker's shell |
 | A run fails on its first tool call | The forwarder is not up: start `build123d-forward` |
+| `eval`: `baseline.json exists` | A baseline was already recorded today for that profile: pass `--out` |
 
 ## Stopping everything
 

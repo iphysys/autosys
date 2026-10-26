@@ -234,7 +234,7 @@
       ]
     },
     "ReferenceExpression": {
-      "description": "Arithmetic only: decimal numbers, variable parameter IDs, pi, + - * / ^ and parentheses. Data, not code: it is parsed by the benchmark loader and never executed.",
+      "description": "Arithmetic only: decimal numbers, variable parameter IDs, pi, + - * / ^ and parentheses. Data, not code: evaluation parses it into a tree and never executes it (ADR-0025 amendment).",
       "type": "string",
       "pattern": "^[0-9A-Za-z_.+*/^() -]{1,256}$"
     },

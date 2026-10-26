@@ -1,4 +1,5 @@
-//! A benchmark problem as a run request (ADR-0034).
+//! A benchmark problem as a run request (ADR-0034), and the checks on its
+//! reference expressions (ADR-0025 amendment).
 //!
 //! [`run_request`] builds the `RunRequest` a client sends to start a run on a
 //! problem. It copies what the task needs and nothing that grades it: the
@@ -7,13 +8,50 @@
 //! file, the evaluation runs and the improvement loop build the same request
 //! from the same problem.
 
+use std::collections::BTreeSet;
+
 use contracts::types::{
-    AgentSpec, BenchmarkProblem, Budget, NonEmptyString, Requirement, RunRequest,
+    AgentSpec, BenchmarkProblem, Budget, NonEmptyString, OutcomeCheck, Requirement, RunRequest,
     RunRequestSchemaVersion,
 };
 use contracts::{Error, ErrorCode};
 
+use crate::expression;
 use crate::units::Unit;
+
+/// One message per reference expression that does not parse or uses a
+/// variable its check does not list; empty means valid. Messages start with
+/// the location in the problem, as the loader's do.
+pub fn expression_problems(problem: &BenchmarkProblem) -> Vec<String> {
+    let mut problems = Vec::new();
+    for (i, outcome) in problem.expected_outcomes.iter().enumerate() {
+        for (j, check) in outcome.checks.iter().enumerate() {
+            let OutcomeCheck::ParameterMatchesReference {
+                expression,
+                variables,
+                ..
+            } = check
+            else {
+                continue;
+            };
+            let at = format!("expected_outcomes/{i}/checks/{j}");
+            let names: BTreeSet<&str> = variables.iter().map(|v| v.parameter_id.as_str()).collect();
+            match expression::parse(expression.as_str()) {
+                Err(e) => problems.push(format!("{at}: expression: {e}")),
+                Ok(parsed) => {
+                    for used in parsed.variables() {
+                        if !names.contains(used) {
+                            problems.push(format!(
+                                "{at}: expression uses {used}, which is not in variables"
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    problems
+}
 
 /// The request that starts a run of `agent` on `problem`.
 ///
@@ -266,5 +304,77 @@ mod tests {
     fn quantity(value: f64, unit: &str) -> contracts::types::Quantity {
         serde_json::from_value(serde_json::json!({ "value": value, "unit": unit }))
             .expect("a quantity")
+    }
+
+    /// part_design_001 with `edit` applied to its text.
+    fn edited(edit: impl Fn(&str) -> String) -> BenchmarkProblem {
+        // The edits match whole lines ending in "\n"; a Windows checkout with
+        // core.autocrlf has CRLF, which would leave the text unedited.
+        let path = "evals/benchmarks/dev/part_design_001/problem.yaml";
+        let text = std::fs::read_to_string(repo_root().join(path))
+            .expect("readable")
+            .replace("\r\n", "\n");
+        let value: Value = serde_saphyr::from_str(&edit(&text)).expect("still YAML");
+        serde_json::from_value(value).expect("still a problem")
+    }
+
+    #[test]
+    fn the_dev_expressions_are_valid() {
+        for (path, problem) in problems() {
+            assert_eq!(
+                expression_problems(&problem),
+                Vec::<String>::new(),
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn bad_expressions_are_reported() {
+        let problems =
+            expression_problems(&edited(|t| t.replace("* 3.25^2) * T\"", "* 3.25^2) * D\"")));
+        assert_eq!(problems.len(), 1, "{problems:#?}");
+        assert!(problems[0].contains("expression uses D"), "{problems:#?}");
+
+        let problems =
+            expression_problems(&edited(|t| t.replace("* 3.25^2) * T\"", "* 3.25^2 * T\"")));
+        assert_eq!(problems.len(), 1, "{problems:#?}");
+        assert!(problems[0].contains("expression: "), "{problems:#?}");
+        assert!(
+            problems[0].starts_with("expected_outcomes/2/checks/0"),
+            "{problems:#?}"
+        );
+    }
+
+    /// The mass reference of part_design_001, evaluated on the draft's worked
+    /// examples, gives the masses the draft quotes (to one decimal, as written).
+    #[test]
+    fn the_reference_mass_reproduces_the_drafts_worked_examples() {
+        let (_, problem) = problems().remove(0);
+        let reference = problem
+            .expected_outcomes
+            .iter()
+            .flat_map(|o| &o.checks)
+            .find_map(|check| match check {
+                OutcomeCheck::ParameterMatchesReference { expression, .. } => Some(expression),
+                _ => None,
+            })
+            .expect("part_design_001 has a mass reference");
+        let parsed = expression::parse(reference.as_str()).expect("the reference parses");
+        for (length, width, thickness, quoted) in [
+            (120.0, 80.0, 6.0, 153.4),
+            (120.0, 70.0, 6.0, 133.9),
+            (110.0, 70.0, 6.0, 122.6),
+            (112.0, 72.0, 6.0, 128.5),
+        ] {
+            let values =
+                std::collections::BTreeMap::from([("L", length), ("W", width), ("T", thickness)]);
+            let mass = parsed.evaluate(&values).expect("finite");
+            assert_eq!(
+                (mass * 10.0).round() / 10.0,
+                quoted,
+                "{length} x {width} x {thickness}"
+            );
+        }
     }
 }

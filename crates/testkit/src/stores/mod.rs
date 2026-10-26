@@ -6,6 +6,7 @@ mod event;
 mod evidence;
 mod job;
 mod leases;
+mod replay;
 mod sdr;
 mod step;
 
@@ -14,6 +15,7 @@ pub use event::InMemoryEventLog;
 pub use evidence::InMemoryEvidenceStore;
 pub use job::InMemoryJobStore;
 pub use leases::Leases;
+pub use replay::InMemoryReplayStore;
 pub use sdr::InMemorySdrRepository;
 pub use step::InMemoryStepStore;
 

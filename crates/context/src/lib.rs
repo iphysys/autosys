@@ -38,6 +38,7 @@ pub use builder::{
     Snapshot, UsageComparison, assemble,
 };
 pub use error::ContextError;
+pub use hash::context_hash;
 pub use prompts::{Prompt, PromptLibrary};
 pub use render::{Omission, Trust, untrusted};
 pub use token_budget::{ByteEstimate, ContextProfiles, DEFAULT_PROFILE, TokenCounter};

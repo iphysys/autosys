@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    INSERT INTO replay_blobs (sha256, content)\n                    SELECT * FROM UNNEST($1::text[], $2::text[])\n                    ON CONFLICT (sha256) DO NOTHING\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cfd422840ba1c9d48db2d118e6b670cb451b9f91a1a705bce175795b3409003d"
+}

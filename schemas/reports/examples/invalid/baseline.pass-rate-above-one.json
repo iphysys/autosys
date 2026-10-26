@@ -1,0 +1,23 @@
+{
+  "schema_version": "0.1",
+  "created_at": "2026-10-26T18:00:00Z",
+  "git_commit": "7b89cd3",
+  "agent_id": "main_orchestrator",
+  "repeat": 1,
+  "max_cost_usd": 5.0,
+  "approval_answer": "approve",
+  "truncated": false,
+  "model_ids": [],
+  "problems": [
+    {
+      "problem_id": "part_design_001",
+      "problem_sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+      "runs": [],
+      "summary": {
+        "runs": 0,
+        "all_outcomes_passed": 0,
+        "outcomes": [{ "outcome_id": "stop_reason", "passed": 2, "failed": 0, "undecided": 0, "pass_rate": 2.0 }]
+      }
+    }
+  ]
+}

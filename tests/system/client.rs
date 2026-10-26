@@ -191,6 +191,29 @@ async fn a_run_is_driven_to_its_end_through_the_client() {
     assert!(report.final_);
     assert_eq!(report.stop_reason, StopReason::Success);
 
+    // The final version, as a client scores it (ADR-0035).
+    let view = client
+        .sdr_version(&report.project_id, &report.final_sdr_version)
+        .await
+        .expect("the final version");
+    assert_eq!(view.document.version, report.final_sdr_version);
+    assert_eq!(view.record.version, report.final_sdr_version);
+    let cited: Vec<&str> = view
+        .record
+        .evidence_ids
+        .iter()
+        .map(|e| e.as_str())
+        .collect();
+    let served: Vec<&str> = view.evidence.iter().map(|e| e.id.as_str()).collect();
+    assert!(!cited.is_empty(), "the final commit cites evidence");
+    assert_eq!(served, cited);
+    let later = contracts::ids::SdrVersion(report.final_sdr_version.0 + 1);
+    let missing = client
+        .sdr_version(&report.project_id, &later)
+        .await
+        .expect_err("not committed");
+    assert_eq!(api_status(&missing).map(|s| s.0), Some(404), "{missing}");
+
     let refused = client
         .answer_approval(
             &run,

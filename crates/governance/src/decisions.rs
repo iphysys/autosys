@@ -90,6 +90,7 @@ impl GateRunner {
                     decision: GateDecision::Deny,
                     reasons: vec![format!("the gate failed, so it denies: {e}")],
                     evidence_ids: Vec::new(),
+                    rules: Vec::new(),
                 },
             };
             self.record(
@@ -133,6 +134,7 @@ impl GateRunner {
                         .parse()
                         .or_else(|_| "approval required".parse())
                         .map_err(|_| Error::new(ErrorCode::Internal, "invalid approval summary"))?,
+                    rules: combined.rules.clone(),
                 },
             )
             .await?;
@@ -195,6 +197,7 @@ fn combine(decided: &[(Identifier, GateOutcome)]) -> GateOutcome {
             decision: GateDecision::Deny,
             reasons: vec!["no gate decides this kind of subject".to_owned()],
             evidence_ids: Vec::new(),
+            rules: Vec::new(),
         };
     };
     let reasons = decided
@@ -213,10 +216,19 @@ fn combine(decided: &[(Identifier, GateOutcome)]) -> GateOutcome {
         .filter(|id| seen.insert(id.as_str().to_owned()))
         .cloned()
         .collect();
+    let mut seen = HashSet::new();
+    let rules: Vec<Identifier> = decided
+        .iter()
+        .filter(|(_, o)| o.decision == decision)
+        .flat_map(|(_, o)| o.rules.iter())
+        .filter(|rule| seen.insert(rule.as_str().to_owned()))
+        .cloned()
+        .collect();
     GateOutcome {
         decision,
         reasons,
         evidence_ids,
+        rules,
     }
 }
 
@@ -274,6 +286,7 @@ mod tests {
                 decision,
                 reasons: vec![format!("{gate} says so")],
                 evidence_ids: evidence.iter().map(|e| e.parse().unwrap()).collect(),
+                rules: Vec::new(),
             },
         )
     }

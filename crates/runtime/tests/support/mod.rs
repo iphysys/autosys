@@ -50,7 +50,8 @@ use testkit::clock::ManualClock;
 use testkit::fakes::FakeTool;
 use testkit::leases::{HOLDER, LONG_LEASE, LeasedJob};
 use testkit::stores::{
-    InMemoryEventLog, InMemoryEvidenceStore, InMemoryStepStore, fenced_sdr_storage,
+    InMemoryEventLog, InMemoryEvidenceStore, InMemoryReplayStore, InMemoryStepStore,
+    fenced_sdr_storage,
 };
 use tools::{ServerTools, ToolGateway, ToolRegistry};
 
@@ -601,6 +602,7 @@ pub struct World {
     pub sdr: Arc<SdrManager>,
     pub events: Arc<InMemoryEventLog>,
     pub evidence: Arc<InMemoryEvidenceStore>,
+    pub replay: Arc<InMemoryReplayStore>,
     pub clock: Arc<ManualClock>,
     pub model: Arc<ScriptedAdapter>,
     pub create_plate: Arc<FakeTool>,
@@ -633,6 +635,7 @@ impl World {
         let leased = LeasedJob::with_lease(clock.clone(), RUN, &id(HOLDER), setup.lease);
         let events = Arc::new(InMemoryEventLog::fenced_by(leased.leases()));
         let evidence = Arc::new(InMemoryEvidenceStore::new());
+        let replay = Arc::new(InMemoryReplayStore::new());
         let steps = Arc::new(InMemoryStepStore::fenced_by(leased.leases()));
         let sdr = Arc::new(
             SdrManager::new(fenced_sdr_storage(leased.leases()), clock.clone())
@@ -756,6 +759,7 @@ impl World {
                 evidence: evidence.clone(),
                 commit_gates,
                 models,
+                replay: replay.clone(),
                 events: events.clone(),
                 clock: clock.clone(),
                 settings,
@@ -768,6 +772,7 @@ impl World {
             sdr,
             events,
             evidence,
+            replay,
             clock,
             model,
             create_plate,

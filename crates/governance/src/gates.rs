@@ -29,6 +29,7 @@ fn outcome(
         decision,
         reasons,
         evidence_ids,
+        rules: Vec::new(),
     }
 }
 
@@ -456,7 +457,8 @@ impl Gate for ApprovalGate {
             GateSubjectKind::ToolCall => GateDecision::Deny,
         };
         let names: Vec<&str> = rules.iter().map(|r| r.id.as_str()).collect();
-        Ok(match request.approval {
+        let matched: Vec<Identifier> = rules.iter().map(|r| r.id.clone()).collect();
+        let decided = match request.approval {
             None => outcome(
                 GateDecision::Ask,
                 rules
@@ -475,6 +477,10 @@ impl Gate for ApprovalGate {
                 vec![format!("a human refused ({})", names.join(", "))],
                 Vec::new(),
             ),
+        };
+        Ok(GateOutcome {
+            rules: matched,
+            ..decided
         })
     }
 }

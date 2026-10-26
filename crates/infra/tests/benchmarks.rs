@@ -4,12 +4,12 @@
 
 #![allow(clippy::expect_used, reason = "integration tests")]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use contracts::types::{AutonomyPolicy, BenchmarkProblem, OutcomeCheck};
-use infra::benchmarks::{BenchmarkLoader, expression};
+use contracts::types::{AutonomyPolicy, BenchmarkProblem};
+use infra::benchmarks::BenchmarkLoader;
 use infra::config::ConfigLoader;
 
 fn repo() -> PathBuf {
@@ -40,37 +40,6 @@ fn the_dev_benchmarks_are_valid() {
         .validate_dir(&repo().join("evals/benchmarks"), &approval_rules())
         .expect("evals/benchmarks/ is readable");
     assert!(problems.is_empty(), "{problems:#?}");
-}
-
-/// The mass reference of part_design_001, evaluated on the draft's worked
-/// examples, gives the masses the draft quotes (to one decimal, as written).
-#[test]
-fn the_reference_mass_reproduces_the_drafts_worked_examples() {
-    let problem = dev_problem("part_design_001");
-    let reference = problem
-        .expected_outcomes
-        .iter()
-        .flat_map(|o| &o.checks)
-        .find_map(|check| match check {
-            OutcomeCheck::ParameterMatchesReference { expression, .. } => Some(expression),
-            _ => None,
-        })
-        .expect("part_design_001 has a mass reference");
-    let parsed = expression::parse(reference.as_str()).expect("the reference parses");
-    for (length, width, thickness, quoted) in [
-        (120.0, 80.0, 6.0, 153.4),
-        (120.0, 70.0, 6.0, 133.9),
-        (110.0, 70.0, 6.0, 122.6),
-        (112.0, 72.0, 6.0, 128.5),
-    ] {
-        let values = BTreeMap::from([("L", length), ("W", width), ("T", thickness)]);
-        let mass = parsed.evaluate(&values).expect("finite");
-        assert_eq!(
-            (mass * 10.0).round() / 10.0,
-            quoted,
-            "{length} x {width} x {thickness}"
-        );
-    }
 }
 
 /// part_design_002 is part_design_001 with only R4 changed.
@@ -126,9 +95,6 @@ fn undeclared_references_are_reported() {
         "{problems:#?}"
     );
 
-    let problems = problems_for(|t| t.replace("* 3.25^2) * T\"", "* 3.25^2) * D\""));
-    assert!(problems[0].contains("expression uses D"), "{problems:#?}");
-
     let problems = problems_for(|t| t.replace("approve_final_design", "approve_everything"));
     assert!(
         problems[0].contains("approval rule approve_everything"),
@@ -136,10 +102,12 @@ fn undeclared_references_are_reported() {
     );
 }
 
+/// Expressions are evaluation's to parse (ADR-0025 amendment): the loader
+/// accepts one that does not parse.
 #[test]
-fn malformed_expressions_and_duplicates_are_reported() {
+fn duplicates_are_reported_and_expressions_are_left_to_evaluation() {
     let problems = problems_for(|t| t.replace("* 3.25^2) * T\"", "* 3.25^2 * T\""));
-    assert!(problems[0].contains("expression: "), "{problems:#?}");
+    assert_eq!(problems, Vec::<String>::new());
 
     let problems = problems_for(|t| t.replace("  - id: R4\n", "  - id: R3\n"));
     assert!(

@@ -18,8 +18,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use schema_types::{
-    Actor, ArtifactMetadata, ContinuationRecord, Event, EventPayload, Evidence, Job, SdrDocument,
-    SdrVersionRecord, Sha256, StepOutcome, StepRecord, Timestamp,
+    Actor, ArtifactMetadata, ContinuationRecord, Event, EventPayload, Evidence, Job,
+    ModelCallRecord, SdrDocument, SdrVersionRecord, Sha256, StepOutcome, StepRecord, Timestamp,
 };
 
 use crate::context::ExecutionContext;
@@ -30,6 +30,7 @@ use crate::ids::{
     ApprovalId, ArtifactId, CorrelationId, EvidenceId, Identifier, JobId, ProjectId, RunId,
     SdrVersion, StepId, ToolName,
 };
+use crate::replay::ReplayBlob;
 
 /// Why a waiting or suspended job should be looked at again.
 #[derive(Clone, Debug, PartialEq)]
@@ -317,4 +318,29 @@ pub trait ArtifactStore: Send + Sync {
 
     /// Ordered by `created_at`, then id.
     async fn list_for_run(&self, run_id: &RunId) -> Result<Vec<ArtifactMetadata>, Error>;
+}
+
+/// Records of completed model calls, for exact replay (ADR-0035), keyed by
+/// the run and the seq of the call's `context_assembled` event.
+///
+/// Unfenced, like evidence (ADR-0032): records and blobs are immutable, and
+/// a stale worker cannot get a new key, since the seq comes from a fenced
+/// append.
+#[async_trait]
+pub trait ReplayStore: Send + Sync {
+    /// Stores `record` and `blobs` in one write, each blob once however many
+    /// records name it. Storing the same record again is Ok. Conflict if the
+    /// key holds a different record; InvalidInput if a blob does not hash to
+    /// its key or the record names a blob neither given nor stored
+    /// ([`crate::replay::verify`]).
+    async fn put_call(&self, record: &ModelCallRecord, blobs: &[ReplayBlob]) -> Result<(), Error>;
+
+    /// NotFound if no call has the key.
+    async fn call(&self, run_id: &RunId, context_seq: u64) -> Result<ModelCallRecord, Error>;
+
+    /// Ordered by `context_seq`.
+    async fn calls_for_run(&self, run_id: &RunId) -> Result<Vec<ModelCallRecord>, Error>;
+
+    /// NotFound if no blob has the hash.
+    async fn blob(&self, sha256: &Sha256) -> Result<ReplayBlob, Error>;
 }
